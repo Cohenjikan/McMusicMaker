@@ -1,0 +1,21 @@
+# 版权/生成/体积 —— 不入公开仓库(见 DEVLOG §8)
+# 歌曲 MIDI 及其衍生数据(版权)
+*.mid
+poc/notes.json
+poc/schedule.json
+# 音频与采样(版权/许可/体积;脚本可重新抓取生成)
+*.ogg
+*.wav
+*.flac
+poc/samples/
+poc/samples_piano/
+poc/samples_manifest*.json
+reconstruction_preview*
+original_*
+# 构建产物 / 缓存 / 工作区
+poc/build/
+_work/
+poc/_work/
+**/__pycache__/
+*.zip
+*.pyc
