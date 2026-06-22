@@ -36,7 +36,21 @@ for inst, sub in LIBS:
 
 assert not missing, f"缺 ogg: {missing[:5]}"
 json.dump(sounds_json, open(os.path.join(PACK, 'assets', 'qzpno', 'sounds.json'), 'w', encoding='utf-8'), ensure_ascii=False)
-json.dump({"pack": {"pack_format": 34, "description": "qzpno 钢琴+乐队(piano/bass/lead/pad/drums) for RedPiano mod"}},
+# ★ pack_format 必须匹配 MC 版本! 用错(如 34=1.21.0)MC 判"不兼容"并把本包从 options 移除
+#   -> 所有 qzpno 音 "unknown soundEvent" = 全静音(本轮踩过)。自动读同目录可用包的格式以永远匹配。
+def detect_rp_format(default=64):
+    rpdir = os.path.dirname(RP_DST)
+    for ref in ('dyfi_mv.zip', 'lyy_mv.zip', 'qzgtr_mv.zip'):
+        p = os.path.join(rpdir, ref)
+        if os.path.isfile(p):
+            try:
+                with zipfile.ZipFile(p) as z:
+                    return json.loads(z.read('pack.mcmeta'))['pack']['pack_format']
+            except Exception:
+                pass
+    return default
+RP_FORMAT = detect_rp_format(64)
+json.dump({"pack": {"pack_format": RP_FORMAT, "description": "qzpno 钢琴+乐队(piano/bass/lead/pad/drums) for RedPiano mod"}},
           open(os.path.join(PACK, 'pack.mcmeta'), 'w', encoding='utf-8'), indent=2)
 
 # 打包 zip(根含 pack.mcmeta + assets/)
@@ -52,5 +66,5 @@ print('=== 02e 资源包(钢琴+新乐器) ===')
 print(f'sounds.json 事件数 = {len(sounds_json)} (= {total} 个 ogg)')
 for inst, sub in LIBS:
     if inst in counts: print(f'  {inst:6s}: {counts[inst]} ogg')
-print(f'打包 -> {RP_DST}  ({os.path.getsize(RP_DST)//1024} KB)')
-print('注: qzpno_mv 已在 options.txt 启用, 同名替换即生效(钢琴音色不变)。游戏内 /reload 或重进世界。')
+print(f'打包 -> {RP_DST}  ({os.path.getsize(RP_DST)//1024} KB)  pack_format={RP_FORMAT}')
+print('注: 若 MC 曾因格式不兼容把本包从 options 移除 -> 游戏内 选项→资源包 重新启用 qzpno_mv 即可(无需重启)。')
