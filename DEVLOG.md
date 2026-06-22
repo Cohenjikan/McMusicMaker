@@ -6,6 +6,43 @@
 
 ---
 
+## ★★ 交接 / HANDOFF(2026-06-22,最新状态置顶)
+
+**项目当前形态 = "真音符盒 + 双轨辐射红石机器 + 以玩家为中心的自定义采样",已可完美演奏。** 下面是接手者需要的全部。
+
+### 跑一首歌(最短路径)
+1. 装好 **RedPiano 模组**(`mod/redpiano/`,见构建)+ **qzpno 资源包**,启动 MC(改 jar 必须重启)。
+2. `python poc/parse_midi.py <song>.mid poc/notes_xxx.json`(需 mido)。
+3. `python poc/30_build_full.py poc/notes_xxx.json <NS> <OX>`(部署数据包到世界)。
+4. 游戏内:`/reload` → `/tick rate 80`(**必须手动**,见 §3-坑3) → `/function <NS>:setup`(等绿字 built) → 按 **[直接播放]**(站/飞均可听全曲)或 **[骑行播放]**(spectator 平滑巡游);卡住按 **[停止]**。
+
+### 架构(三件套)
+- **RedPiano 模组**(`mod/redpiano/src/main/java/com/redpiano/`):mixin 原版 `NoteBlock.triggerEvent`,音符盒坐在"映射方块"上时改播 qzpno 自定义钢琴采样 + 按 note 强制移调。**关键(让它"完美"的修复)**:不在音符盒位置播定位音(玩家一动就出声音球被剪),而是 **`RedPiano.flush()` 在游戏刻末给每个玩家在其自身脚下播该音(`playSeededSound(null, player, ...)` Entity 重载)** → 声音跟随玩家、任意移速不断不糊。刻末统一发还做了**复音增益 ×1/√N**(防大和弦削顶)+ **微抖 ±3音分/±2%**(去复印感);两者经记分板 `rpcfg`(`poly`/`human`)开关。构建:`JAVA_HOME=C:\Users\Cohen\jdk\jdk-21.0.11+10`,gradle 9.2.1 wrapper dist `gradle.bat -p mod/redpiano build`,jar 拷到 `C:\Minecraft\ModrinthApp\profiles\Fabric 1.21.8\mods`,**重启 MC**。
+- **建造器 `poc/30_build_full.py`(当前整机)**:MIDI→notes→**双轨辐射机**。7 条单音 lane(z 占13)→ **2 条轨 × 3 声部=6**,每轨一个强充能导体同刻辐射【上+±Z】三音(和弦)。两轨共享**同一变延迟中继器骨架**(并集触发刻,delay 1-4)→ 逐刻同列、绝对同步、灯闪一致。直链(未折叠)。健壮播放(setup复位/play/play_ride spectator滑行/stop/toggles)。
+- **资源包 qzpno**:60 段钢琴采样(Salamander CC-BY,20 音×3 力度),`poc/02c_make_piano_velocity.py` 抓取,`poc/gen_redpiano_map.py` 生成 `redpiano_map.json`(块→音→音量)。
+
+### 已部署的机器(世界 `新的世界`)
+| NS | 曲子 | OX | 建造器 | 说明 |
+|---|---|---|---|---|
+| qzv2 | 春娇与志明 | 220000 | 30(双轨) | **最新整机**, 6 声部, 2857长×6宽 |
+| qzws / qzolk | 我落泪 / OLK | 170000/180000 | 25(7lane+相机+灯) | 旧 7lane 同步版(可用, 已被 30 取代) |
+
+### 已验证的几何(逐项实测/对抗验证,均有独立测试台)
+真音符盒垫映射块发声(19)✓ / 行进脉冲中继器直插(20)✓ / **多 lane 共享骨架同步**(24,记忆`redstone-multilane-shared-timeline`)✓ / **以玩家为中心发声治移动断音**(根因=SoundEngine 每刻按听者位置重算、出声音球即剪样本;记忆`redstone-music-audio-and-camera`)✓ / **平面蛇形折叠**水平拐角+U形(26)✓ / **一信号辐射同刻多音(三音和弦)**(27)✓ / **dust 触发音符盒**(28)✓ / **折叠+辐射共存**(29)✓。
+
+### 未做 / 下一步(几何已验,差集成)
+1. **整机折叠**:把 30 的直链按平面蛇形折叠压 X 跨度。难点=折叠在 Z 换行 vs 和弦在 ±Z 辐射 → 行距 ROW_DZ≥4(脚本29用4)给和弦留空;且 U形连接中继器的延迟须计入共享时间轴(否则错拍)。建议 `31_build_foldfull.py`,先在小段验证时序断言再放大。
+2. **每轨 4 音(dust 第4音)**:28 已证 dust 能触发;30 现用 3 音/轨(6声部,够春娇/OLK;我落泪偶发第7音被丢)。要 8 声部就给每轨 C 引一小段 dust 到第4个音符盒。
+3. **OLK 高音钳音=36**(MIDI 99 > band 上限 93):补 2 个高 band(C6/D#6)+ 重生成 map + 重打 jar。
+4. **远期**:MP3→AI分轨(Demucs)→逐轨转谱→真红石乐队重演(见下文远期目标)。
+
+### 备份 / 仓库
+GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢琴完美态)。版权 MIDI/notes/ogg/deployed 经 `.gitignore` 排除。不可再生输入本地备份在 `C:\Users\Cohen\McMusicMaker_backup\v1-perfect\`。世界存档(833MB)用户暂不备份。
+
+> 以下为历史开发记录(排查链、规格),接手细节见各 §。
+
+---
+
 ## ★ 当前主线:RedPiano 模组 —— 真音符盒播自定义音色(2026-06-22)
 
 **重大转向**:从"命令方块 /playsound"升级为"**真·音符盒** + 自写 Fabric 模组"。原因:命令方块虽音质满分,但用户判定为"**伪音符盒、欺骗观众**";而原版音符盒仅 16 乐器/2 八度(音色不够)、资源包覆盖乐器会量化染色(用户**拒绝任何音色亏损**)、玩家头颅音效不随 note 移调且不美观。**唯一同时满足"真音符盒外观+机制" 和 "零音色亏损" 的方案=写模组解开音色限制。**
