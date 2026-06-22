@@ -22,10 +22,39 @@
 - **资源包 qzpno**:60 段钢琴采样(Salamander CC-BY,20 音×3 力度),`poc/02c_make_piano_velocity.py` 抓取,`poc/gen_redpiano_map.py` 生成 `redpiano_map.json`(块→音→音量)。
 
 ### 已部署的机器(世界 `新的世界`)
-| NS | 曲子 | OX | 建造器 | 说明 |
-|---|---|---|---|---|
-| qzv2 | 春娇与志明 | 220000 | 30(双轨) | **最新整机**, 6 声部, 2857长×6宽 |
-| qzws / qzolk | 我落泪 / OLK | 170000/180000 | 25(7lane+相机+灯) | 旧 7lane 同步版(可用, 已被 30 取代) |
+| NS | 曲子 | OX | Y | 家族 | 建造器 | tick | 说明 |
+|---|---|---|---|---|---|---|---|
+| qzv2 | 春娇与志明 | 220000 | 255 | A 重演 | poc/30(双轨) | **80** | **最新整机**, 6 声部, 2857长×6宽, 真音符盒钢琴 |
+| qzws / qzolk | 我落泪 / OLK | 170000/180000 | 255 | A 重演 | poc/25(7lane) | 80 | 旧 7lane 同步版(可用, 已被 30 取代) |
+| **dyfi** | **Do You Feel It?** | **70000** | **-59** | **B 切片** | **add_song.py** | **20** | **原曲音色复刻, 5 乐器轨+垫底, 1762音/1215cell** |
+
+### ★ 两套机器家族(同一世界,接手必读 —— 播放方式/tick rate/依赖都不同)
+- **家族 A —— RedPiano 真音符盒"重演"**(本仓库 McMusicMaker):MIDI → 共享骨架红石 → 真音符盒播 qzpno 钢琴采样。**程序化定产**(音色=钢琴,丢原音色)。**需 RedPiano 模组 + `/tick rate 80`**。当前机器 = `qzv2`。
+- **家族 B —— 切片回放"音色复刻"**(旧项目 `C:\Users\Cohen\mc-noteblock-demo`,流水线见其 `PIPELINE.md`):原曲音频 → Demucs `htdemucs_6s` 分 6 轨 → librosa onset → ffmpeg 把**原音频本身**逐 onset 切 ogg → 数据包红石脉冲逐格 `/playsound` 原声片段。**100% 保留原音色 + 天然多乐器** = 开发文档里**远期"MP3 音色级复刻"目标的初步实现**(用户本轮指定"原曲不是 midi")。**无需模组,但需 `/tick rate 20`(默认)**——按 DELAY=2=200ms/cell 设计,残留 tick80 会快 4 倍跑飞。资源包 `<曲>_mv.zip`。
+- **共存**:qzv2@X=220000/Y=255 与 dyfi@X=70000/Y=-59 坐标与 Y 层都不撞。**切歌必换 tick rate(A=80 / B=20)**。
+
+### 两首歌的播放命令(各自)
+**春娇与志明(家族 A,qzv2)** — 需 RedPiano 模组(已装)+ `qzpno_mv.zip`(已启用):
+```
+/reload
+/tick rate 80
+/function qzv2:setup        # 等聊天框绿字 "built"(自动 forceload+传送到现场+建造)
+# 然后按现场 [直接播放](站/飞都听全曲)或 [骑行播放](spectator 平滑);卡住按 [停止]
+# 或直接:/function qzv2:play   或   /function qzv2:play_ride
+```
+**Do You Feel It?(家族 B,dyfi)** — 需 `dyfi_mv.zip`(已部署+已在 options.txt 启用,无需模组):
+```
+/reload
+/tick rate 20               # ★ 默认值;若刚玩过 qzv2 必须从 80 改回 20,否则快 4 倍
+/function dyfi:setup        # 等绿字 "built"
+/function dyfi:play         # 起跑(现场也有按钮);/function dyfi:ride 影院跟随;/function dyfi:cleanup 拆除
+```
+
+### 第二首歌构建记(Do You Feel It? — Chaos Chaos,2026-06-22)
+- 来源 bilibili BV1Te411u7S9 原曲(247.9s)。**下载坑**:`playurl` 端点 412 拦 yt-dlp 的 WBI 签名 → 直接打 bilibili API(自造 `buvid3/buvid4` cookie + 取 DASH 音频流 curl 下载)绕过;原始音频在桌面 `dyfi.wav`(私人用,**不入任何公开库**)。
+- 一条命令:`C:\Users\Cohen\mc-noteblock-demo\venv-demucs\Scripts\python.exe add_song.py C:\Users\Cohen\Desktop\dyfi.wav dyfi`(幂等跑完 分轨→onset分析→切片→资源包+数据包→部署到 nbviz 桥)。
+- 自动选轨:5 乐器轨全入(vocals/guitar/bass/drums/piano,onset 469/351/82/750/251,均过能量门)+ `other` 连续垫底。
+- 部署:`dyfi_redstone.zip`→`新的世界\datapacks\`;`dyfi_mv.zip`(44MB/1769段ogg)→profile `resourcepacks\` 并已写入 `options.txt`。(桥 `nbviz\datapacks`、`nbviz\resourcepacks` 非 junction 到本 profile,故手动 copy;songs.json 注册项 add_song 已写。)
 
 ### 已验证的几何(逐项实测/对抗验证,均有独立测试台)
 真音符盒垫映射块发声(19)✓ / 行进脉冲中继器直插(20)✓ / **多 lane 共享骨架同步**(24,记忆`redstone-multilane-shared-timeline`)✓ / **以玩家为中心发声治移动断音**(根因=SoundEngine 每刻按听者位置重算、出声音球即剪样本;记忆`redstone-music-audio-and-camera`)✓ / **平面蛇形折叠**水平拐角+U形(26)✓ / **一信号辐射同刻多音(三音和弦)**(27)✓ / **dust 触发音符盒**(28)✓ / **折叠+辐射共存**(29)✓。
@@ -34,7 +63,9 @@
 1. **整机折叠**:把 30 的直链按平面蛇形折叠压 X 跨度。难点=折叠在 Z 换行 vs 和弦在 ±Z 辐射 → 行距 ROW_DZ≥4(脚本29用4)给和弦留空;且 U形连接中继器的延迟须计入共享时间轴(否则错拍)。建议 `31_build_foldfull.py`,先在小段验证时序断言再放大。
 2. **每轨 4 音(dust 第4音)**:28 已证 dust 能触发;30 现用 3 音/轨(6声部,够春娇/OLK;我落泪偶发第7音被丢)。要 8 声部就给每轨 C 引一小段 dust 到第4个音符盒。
 3. **OLK 高音钳音=36**(MIDI 99 > band 上限 93):补 2 个高 band(C6/D#6)+ 重生成 map + 重打 jar。
-4. **远期**:MP3→AI分轨(Demucs)→逐轨转谱→真红石乐队重演(见下文远期目标)。
+4. **远期(MP3 音色级复刻)**:
+   - ✅ **切片回放路(家族 B)已初步落地** = `dyfi`(Do You Feel It?):原曲→Demucs 6轨→逐 onset 切原声片段→红石 `/playsound`,**100% 原音色 + 多乐器**。这是"命令方块播放级复刻"的最忠实形态(代价=本质是放原声颗粒,非"真音符盒重演")。
+   - ⬜ **转谱重演路(家族 A 扩展)**:MP3→Demucs→逐轨**转谱**→多乐器**真音符盒**乐队重演 + 逐轨音色匹配(mixin 已按垫底块定音色,天然支持多乐器)。受转谱精度限、人声只能改编为乐器。验证实验:对同时有 MP3+钢琴 MIDI 的曲子比"钢琴+贝斯+pad 重演"是否更丰满。**缺 polyphonic 转谱器**(basic-pitch 未装;现有 librosa 仅单音 pyin)。
 
 ### 备份 / 仓库
 GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢琴完美态)。版权 MIDI/notes/ogg/deployed 经 `.gitignore` 排除。不可再生输入本地备份在 `C:\Users\Cohen\McMusicMaker_backup\v1-perfect\`。世界存档(833MB)用户暂不备份。
