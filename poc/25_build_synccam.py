@@ -169,7 +169,7 @@ wf('setup', [f'scoreboard players set PLAY {NS} 0', 'stopsound @a master', f'sco
 wf('startbuild', f'scoreboard players set BLD {NS} 0\ntellraw @a "[{NS}] building ({NLANES} lanes x {NCELLS}格 + {len(cam_x)}相机锚点)..."')
 wf('tick', f'execute if score BLD {NS} matches 0.. run function {NS}:buildstep\n'
            f'execute if score CLR {NS} matches 0.. run function {NS}:clearstep\n'
-           f'execute if score RIDE {NS} matches 1 as @e[tag=rpride,limit=1] at @s run tp @s ~{RIDE_SPEED} ~ ~')
+           f'execute if score RIDE {NS} matches 1 run tp @a ~{RIDE_SPEED} ~ ~')
 bs = [f'execute if score BLD {NS} matches {k} run function {NS}:bld/b{k}' for k in range(len(batches))]
 bs += [f'execute if score BLD {NS} matches {len(batches)} run function {NS}:builddone',
        f'execute if score BLD {NS} matches 0..{len(batches)} run scoreboard players add BLD {NS} 1']
@@ -194,23 +194,20 @@ wf('play', [f'scoreboard players set CAM {NS} 0', f'function {NS}:playcore',
 wf('play_cam', [f'execute if score PLAY {NS} matches 1 run return 0', 'gamemode spectator @a',
                 f'scoreboard players set CAM {NS} 1', f'function {NS}:playcore',
                 f'tellraw @a "[{NS}] GO(相机跟随)。红石驱动 tp, 永远跟着脉冲。"'])
-# 骑行播放: 骑隐形 armor_stand 平滑巡游(tick 里恒速 +X 推进); 声音绑玩家本人 -> 移动不断不糊
-wf('play_ride', [f'execute if score PLAY {NS} matches 1 run return 0', 'kill @e[tag=rpride]',
-                 f'summon armor_stand {OX} {RIDEY} {CAMZ} {{Invisible:1b,NoGravity:1b,Tags:["rpride"],Rotation:[-90f,12f]}}',
-                 f'ride @a mount @e[tag=rpride,limit=1]', f'scoreboard players set RIDE {NS} 1',
+# 平滑巡游: 不骑实体(实体挂载在 MC 里太挑), 直接每刻把玩家 +X 滑行一小段(保留自由转视角);
+# 声音已绑玩家本人 -> 任意移速都不断不糊, 故无需骑实体。先把玩家放到起点+初始朝向, 再逐刻滑。
+wf('play_ride', [f'execute if score PLAY {NS} matches 1 run return 0',
+                 f'tp @a {OX} {RIDEY} {CAMZ} -90 22', f'scoreboard players set RIDE {NS} 1',
                  f'scoreboard players set CAM {NS} 0',
                  f'schedule function {NS}:ridestop {MUSIC_TICKS + 60}t', f'function {NS}:playcore',
-                 f'tellraw @a "[{NS}] GO(骑行巡游)。声音绑定你本人, 任意移速都不断不糊。Shift 下马自由飞也行。"'])
-wf('ridestop', [f'scoreboard players set RIDE {NS} 0', 'ride @a dismount', 'kill @e[tag=rpride]',
-                f'tellraw @a "[{NS}] (骑行巡游结束)"'])
+                 f'tellraw @a "[{NS}] GO(平滑巡游)。每刻自动 +X 滑行, 鼠标可自由转视角; 声音绑你本人=移动不断不糊。"'])
+wf('ridestop', [f'scoreboard players set RIDE {NS} 0', f'tellraw @a "[{NS}] (巡游结束, 可自由飞)"'])
 wf('fire', flbuild + [f'setblock {sx} {Y} {sz} minecraft:redstone_block' for sx, sz in src_pts]
    + [f'schedule function {NS}:firestop {PULSE}t', f'schedule function {NS}:done {END_TICKS}t'])
 wf('firestop', TRIG_CLEAR)
 wf('done', [f'scoreboard players set PLAY {NS} 0',
             f'execute if score CAM {NS} matches 1 run gamemode creative @a',
-            f'scoreboard players set CAM {NS} 0',
-            f'execute if score RIDE {NS} matches 1 run ride @a dismount', 'kill @e[tag=rpride]',
-            f'scoreboard players set RIDE {NS} 0', 'forceload remove all',
+            f'scoreboard players set CAM {NS} 0', f'scoreboard players set RIDE {NS} 0', 'forceload remove all',
             f'tellraw @a "[{NS}] (end) replay: /function {NS}:setup; cleanup: /function {NS}:cleanup."'])
 SEG = 200
 clr_segs = (LEN + 12) // SEG + 1
@@ -224,7 +221,7 @@ cs += [f'execute if score CLR {NS} matches {clr_segs} run function {NS}:cleardon
 wf('clearstep', cs)
 wf('cleanup', ['gamerule commandModificationBlockLimit 2147483647', f'scoreboard players set PLAY {NS} 0',
                f'execute if score CAM {NS} matches 1 run gamemode creative @a', f'scoreboard players set CAM {NS} 0',
-               'ride @a dismount', 'kill @e[tag=rpride]', f'scoreboard players set RIDE {NS} 0',
+               f'scoreboard players set RIDE {NS} 0',
                'stopsound @a master', f'scoreboard players set BLD {NS} -1'] + SCHED_CLEAR + TRIG_CLEAR
    + [f'scoreboard players set CLR {NS} 0', f'tellraw @a "[{NS}] tearing down..."'])
 
