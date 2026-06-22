@@ -128,7 +128,14 @@ build += [f'setblock {PBX} {Y-1} {OZ} {LAMP}',
           f'setblock {PBX} {Y+1} {OZ} minecraft:stone_button[face=floor]',
           f'setblock {PBX-2} {Y-1} {OZ} {LAMP}',
           f'setblock {PBX-2} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:play_cam",auto:0b}}',
-          f'setblock {PBX-2} {Y+1} {OZ} minecraft:stone_button[face=floor]']
+          f'setblock {PBX-2} {Y+1} {OZ} minecraft:stone_button[face=floor]',
+          # 命令方块开关: 复音增益 / 微抖动(切 rpcfg 记分板, mod 读取)
+          f'setblock {PBX-4} {Y-1} {OZ} {LAMP}',
+          f'setblock {PBX-4} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:cfg/polytoggle",auto:0b}}',
+          f'setblock {PBX-4} {Y+1} {OZ} minecraft:stone_button[face=floor]',
+          f'setblock {PBX-6} {Y-1} {OZ} {LAMP}',
+          f'setblock {PBX-6} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:cfg/humantoggle",auto:0b}}',
+          f'setblock {PBX-6} {Y+1} {OZ} minecraft:stone_button[face=floor]']
 batches = [build[i:i + BATCH] for i in range(0, len(build), BATCH)]
 LEN = endx - OX
 WX0, WZ0, WX1, WZ1 = OX - 6, OZ - 2, endx + 2, OZ + (NLANES - 1) * LANE_DZ + 2
@@ -147,7 +154,9 @@ END_TICKS = (MAXTICK + OFFSET) * 2 + 200
 
 wf('load', [f'scoreboard objectives add {NS} dummy', f'scoreboard players set BLD {NS} -1',
             f'scoreboard players set CLR {NS} -1', f'scoreboard players set PLAY {NS} 0',
-            f'scoreboard players set CAM {NS} 0', 'forceload remove all']
+            f'scoreboard players set CAM {NS} 0', 'forceload remove all',
+            'scoreboard objectives add rpcfg dummy',                          # mod 读此目标做复音增益/微抖开关
+            'scoreboard players set poly rpcfg 1', 'scoreboard players set human rpcfg 1']
    + SCHED_CLEAR + TRIG_CLEAR
    + [f'tellraw @a ["",{{"text":"[{NS}] 同步真音符盒+相机 loaded. ","color":"aqua"}},{{"text":"需mod+资源包. 曲速80 -> /function {NS}:setup"}}]'])
 wf('setup', [f'scoreboard players set PLAY {NS} 0', 'stopsound @a master', f'scoreboard players set CLR {NS} -1']
@@ -167,6 +176,15 @@ wf('builddone', f'scoreboard players set BLD {NS} -1\n'
 # playcore: 真正起跑(被 play / play_cam 共用; CAM 由各自先设好)
 wf('playcore', [f'execute if score PLAY {NS} matches 1 run return 0', f'scoreboard players set PLAY {NS} 1', 'stopsound @a master']
    + TRIG_CLEAR + [f'schedule function {NS}:fire 2t'])
+# 开关: 算术翻转 new = 1 - old(rptmp 暂存), 防"同函数内顺序重判"翻不动
+wf('cfg/polytoggle', ['scoreboard players set rptmp rpcfg 1', 'scoreboard players operation rptmp rpcfg -= poly rpcfg',
+                      'scoreboard players operation poly rpcfg = rptmp rpcfg',
+                      f'execute if score poly rpcfg matches 1 run tellraw @a "[{NS}] 复音增益 ON (大和弦自动降幅防糊)"',
+                      f'execute if score poly rpcfg matches 0 run tellraw @a "[{NS}] 复音增益 OFF (原始满音量)"'])
+wf('cfg/humantoggle', ['scoreboard players set rptmp rpcfg 1', 'scoreboard players operation rptmp rpcfg -= human rpcfg',
+                       'scoreboard players operation human rpcfg = rptmp rpcfg',
+                       f'execute if score human rpcfg matches 1 run tellraw @a "[{NS}] 微抖动 ON (±3音分/±2%, 去复印感)"',
+                       f'execute if score human rpcfg matches 0 run tellraw @a "[{NS}] 微抖动 OFF"'])
 wf('play', [f'scoreboard players set CAM {NS} 0', f'function {NS}:playcore',
             f'tellraw @a "[{NS}] GO(无相机)。灯随脉冲流动点亮。"'])
 wf('play_cam', [f'execute if score PLAY {NS} matches 1 run return 0', 'gamemode spectator @a',
