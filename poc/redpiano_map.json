@@ -327,5 +327,300 @@
    "sound": "qzpno:pno_a5_f",
    "vol": 2.0
   }
+ },
+ "instruments": {
+  "bass": {
+   "kind": "pitched",
+   "bands": [
+    28,
+    31,
+    34,
+    37,
+    40,
+    43,
+    46,
+    49,
+    52
+   ],
+   "layers": [
+    "mf"
+   ],
+   "map": {
+    "28_mf": {
+     "block": "minecraft:white_glazed_terracotta",
+     "sound": "qzpno:bass_e1_mf",
+     "vol": 2.2
+    },
+    "31_mf": {
+     "block": "minecraft:orange_glazed_terracotta",
+     "sound": "qzpno:bass_g1_mf",
+     "vol": 2.2
+    },
+    "34_mf": {
+     "block": "minecraft:magenta_glazed_terracotta",
+     "sound": "qzpno:bass_as1_mf",
+     "vol": 2.2
+    },
+    "37_mf": {
+     "block": "minecraft:light_blue_glazed_terracotta",
+     "sound": "qzpno:bass_cs2_mf",
+     "vol": 2.2
+    },
+    "40_mf": {
+     "block": "minecraft:yellow_glazed_terracotta",
+     "sound": "qzpno:bass_e2_mf",
+     "vol": 2.2
+    },
+    "43_mf": {
+     "block": "minecraft:lime_glazed_terracotta",
+     "sound": "qzpno:bass_g2_mf",
+     "vol": 2.2
+    },
+    "46_mf": {
+     "block": "minecraft:pink_glazed_terracotta",
+     "sound": "qzpno:bass_as2_mf",
+     "vol": 2.2
+    },
+    "49_mf": {
+     "block": "minecraft:gray_glazed_terracotta",
+     "sound": "qzpno:bass_cs3_mf",
+     "vol": 2.2
+    },
+    "52_mf": {
+     "block": "minecraft:light_gray_glazed_terracotta",
+     "sound": "qzpno:bass_e3_mf",
+     "vol": 2.2
+    }
+   }
+  },
+  "lead": {
+   "kind": "pitched",
+   "bands": [
+    48,
+    51,
+    54,
+    57,
+    60,
+    63,
+    66,
+    69,
+    72,
+    75,
+    78,
+    81,
+    84
+   ],
+   "layers": [
+    "mf"
+   ],
+   "map": {
+    "48_mf": {
+     "block": "minecraft:cyan_glazed_terracotta",
+     "sound": "qzpno:lead_c3_mf",
+     "vol": 1.9
+    },
+    "51_mf": {
+     "block": "minecraft:purple_glazed_terracotta",
+     "sound": "qzpno:lead_ds3_mf",
+     "vol": 1.9
+    },
+    "54_mf": {
+     "block": "minecraft:blue_glazed_terracotta",
+     "sound": "qzpno:lead_fs3_mf",
+     "vol": 1.9
+    },
+    "57_mf": {
+     "block": "minecraft:brown_glazed_terracotta",
+     "sound": "qzpno:lead_a3_mf",
+     "vol": 1.9
+    },
+    "60_mf": {
+     "block": "minecraft:green_glazed_terracotta",
+     "sound": "qzpno:lead_c4_mf",
+     "vol": 1.9
+    },
+    "63_mf": {
+     "block": "minecraft:red_glazed_terracotta",
+     "sound": "qzpno:lead_ds4_mf",
+     "vol": 1.9
+    },
+    "66_mf": {
+     "block": "minecraft:black_glazed_terracotta",
+     "sound": "qzpno:lead_fs4_mf",
+     "vol": 1.9
+    },
+    "69_mf": {
+     "block": "minecraft:oak_planks",
+     "sound": "qzpno:lead_a4_mf",
+     "vol": 1.9
+    },
+    "72_mf": {
+     "block": "minecraft:spruce_planks",
+     "sound": "qzpno:lead_c5_mf",
+     "vol": 1.9
+    },
+    "75_mf": {
+     "block": "minecraft:birch_planks",
+     "sound": "qzpno:lead_ds5_mf",
+     "vol": 1.9
+    },
+    "78_mf": {
+     "block": "minecraft:jungle_planks",
+     "sound": "qzpno:lead_fs5_mf",
+     "vol": 1.9
+    },
+    "81_mf": {
+     "block": "minecraft:acacia_planks",
+     "sound": "qzpno:lead_a5_mf",
+     "vol": 1.9
+    },
+    "84_mf": {
+     "block": "minecraft:dark_oak_planks",
+     "sound": "qzpno:lead_c6_mf",
+     "vol": 1.9
+    }
+   }
+  },
+  "pad": {
+   "kind": "pitched",
+   "bands": [
+    36,
+    39,
+    42,
+    45,
+    48,
+    51,
+    54,
+    57,
+    60,
+    63,
+    66,
+    69,
+    72,
+    75,
+    78,
+    81
+   ],
+   "layers": [
+    "mf"
+   ],
+   "map": {
+    "36_mf": {
+     "block": "minecraft:mangrove_planks",
+     "sound": "qzpno:pad_c2_mf",
+     "vol": 1.5
+    },
+    "39_mf": {
+     "block": "minecraft:cherry_planks",
+     "sound": "qzpno:pad_ds2_mf",
+     "vol": 1.5
+    },
+    "42_mf": {
+     "block": "minecraft:bamboo_planks",
+     "sound": "qzpno:pad_fs2_mf",
+     "vol": 1.5
+    },
+    "45_mf": {
+     "block": "minecraft:crimson_planks",
+     "sound": "qzpno:pad_a2_mf",
+     "vol": 1.5
+    },
+    "48_mf": {
+     "block": "minecraft:warped_planks",
+     "sound": "qzpno:pad_c3_mf",
+     "vol": 1.5
+    },
+    "51_mf": {
+     "block": "minecraft:cobblestone",
+     "sound": "qzpno:pad_ds3_mf",
+     "vol": 1.5
+    },
+    "54_mf": {
+     "block": "minecraft:mossy_cobblestone",
+     "sound": "qzpno:pad_fs3_mf",
+     "vol": 1.5
+    },
+    "57_mf": {
+     "block": "minecraft:stone_bricks",
+     "sound": "qzpno:pad_a3_mf",
+     "vol": 1.5
+    },
+    "60_mf": {
+     "block": "minecraft:mossy_stone_bricks",
+     "sound": "qzpno:pad_c4_mf",
+     "vol": 1.5
+    },
+    "63_mf": {
+     "block": "minecraft:cracked_stone_bricks",
+     "sound": "qzpno:pad_ds4_mf",
+     "vol": 1.5
+    },
+    "66_mf": {
+     "block": "minecraft:chiseled_stone_bricks",
+     "sound": "qzpno:pad_fs4_mf",
+     "vol": 1.5
+    },
+    "69_mf": {
+     "block": "minecraft:polished_granite",
+     "sound": "qzpno:pad_a4_mf",
+     "vol": 1.5
+    },
+    "72_mf": {
+     "block": "minecraft:polished_diorite",
+     "sound": "qzpno:pad_c5_mf",
+     "vol": 1.5
+    },
+    "75_mf": {
+     "block": "minecraft:polished_andesite",
+     "sound": "qzpno:pad_ds5_mf",
+     "vol": 1.5
+    },
+    "78_mf": {
+     "block": "minecraft:polished_deepslate",
+     "sound": "qzpno:pad_fs5_mf",
+     "vol": 1.5
+    },
+    "81_mf": {
+     "block": "minecraft:deepslate_bricks",
+     "sound": "qzpno:pad_a5_mf",
+     "vol": 1.5
+    }
+   }
+  },
+  "drums": {
+   "kind": "perc",
+   "keys": {
+    "36": {
+     "block": "minecraft:deepslate_tiles",
+     "sound": "qzpno:drum_kick_x",
+     "vol": 2.6,
+     "name": "kick"
+    },
+    "38": {
+     "block": "minecraft:cobbled_deepslate",
+     "sound": "qzpno:drum_snare_x",
+     "vol": 2.6,
+     "name": "snare"
+    },
+    "42": {
+     "block": "minecraft:blackstone",
+     "sound": "qzpno:drum_hihat_closed_x",
+     "vol": 2.6,
+     "name": "hihat_closed"
+    },
+    "45": {
+     "block": "minecraft:polished_blackstone",
+     "sound": "qzpno:drum_tom_x",
+     "vol": 2.6,
+     "name": "tom"
+    },
+    "49": {
+     "block": "minecraft:polished_blackstone_bricks",
+     "sound": "qzpno:drum_crash_x",
+     "vol": 2.6,
+     "name": "crash"
+    }
+   }
+  }
  }
 }
