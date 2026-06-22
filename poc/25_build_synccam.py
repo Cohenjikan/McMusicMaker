@@ -196,17 +196,18 @@ wf('play_cam', [f'execute if score PLAY {NS} matches 1 run return 0', 'gamemode 
                 f'tellraw @a "[{NS}] GO(相机跟随)。红石驱动 tp, 永远跟着脉冲。"'])
 # 平滑巡游: 不骑实体(实体挂载在 MC 里太挑), 直接每刻把玩家 +X 滑行一小段(保留自由转视角);
 # 声音已绑玩家本人 -> 任意移速都不断不糊, 故无需骑实体。先把玩家放到起点+初始朝向, 再逐刻滑。
-wf('play_ride', [f'execute if score PLAY {NS} matches 1 run return 0',
+wf('play_ride', [f'execute if score PLAY {NS} matches 1 run return 0', 'gamemode spectator @a',
                  f'tp @a {OX} {RIDEY} {CAMZ} -90 22', f'scoreboard players set RIDE {NS} 1',
                  f'scoreboard players set CAM {NS} 0',
                  f'schedule function {NS}:ridestop {MUSIC_TICKS + 60}t', f'function {NS}:playcore',
-                 f'tellraw @a "[{NS}] GO(平滑巡游)。每刻自动 +X 滑行, 鼠标可自由转视角; 声音绑你本人=移动不断不糊。"'])
-wf('ridestop', [f'scoreboard players set RIDE {NS} 0', f'tellraw @a "[{NS}] (巡游结束, 可自由飞)"'])
+                 f'tellraw @a "[{NS}] GO(平滑巡游)。spectator 滑行(无重力不卡顿), 鼠标自由转视角; 声音绑你本人=不断不糊。"'])
+wf('ridestop', [f'scoreboard players set RIDE {NS} 0', 'gamemode creative @a', f'tellraw @a "[{NS}] (巡游结束)"'])
 wf('fire', flbuild + [f'setblock {sx} {Y} {sz} minecraft:redstone_block' for sx, sz in src_pts]
    + [f'schedule function {NS}:firestop {PULSE}t', f'schedule function {NS}:done {END_TICKS}t'])
 wf('firestop', TRIG_CLEAR)
 wf('done', [f'scoreboard players set PLAY {NS} 0',
             f'execute if score CAM {NS} matches 1 run gamemode creative @a',
+            f'execute if score RIDE {NS} matches 1 run gamemode creative @a',
             f'scoreboard players set CAM {NS} 0', f'scoreboard players set RIDE {NS} 0', 'forceload remove all',
             f'tellraw @a "[{NS}] (end) replay: /function {NS}:setup; cleanup: /function {NS}:cleanup."'])
 SEG = 200
@@ -220,8 +221,9 @@ cs += [f'execute if score CLR {NS} matches {clr_segs} run function {NS}:cleardon
        f'execute if score CLR {NS} matches 0..{clr_segs} run scoreboard players add CLR {NS} 1']
 wf('clearstep', cs)
 wf('cleanup', ['gamerule commandModificationBlockLimit 2147483647', f'scoreboard players set PLAY {NS} 0',
-               f'execute if score CAM {NS} matches 1 run gamemode creative @a', f'scoreboard players set CAM {NS} 0',
-               f'scoreboard players set RIDE {NS} 0',
+               f'execute if score CAM {NS} matches 1 run gamemode creative @a',
+               f'execute if score RIDE {NS} matches 1 run gamemode creative @a',
+               f'scoreboard players set CAM {NS} 0', f'scoreboard players set RIDE {NS} 0',
                'stopsound @a master', f'scoreboard players set BLD {NS} -1'] + SCHED_CLEAR + TRIG_CLEAR
    + [f'scoreboard players set CLR {NS} 0', f'tellraw @a "[{NS}] tearing down..."'])
 
