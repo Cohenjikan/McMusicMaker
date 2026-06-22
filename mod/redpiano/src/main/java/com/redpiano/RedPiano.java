@@ -53,8 +53,9 @@ public class RedPiano implements ModInitializer {
                 vol   *= (float) (1.0 + (r.nextDouble() * 2 - 1) * 0.02);                  // ±2% 音量抖
             }
             for (ServerPlayer p : players) {
-                p.level().playSeededSound(null, p.getX(), p.getY(), p.getZ(),
-                        q.sound(), SoundSource.RECORDS, vol, pitch, 0L);
+                // 实体绑定: 声音跟随玩家(而非锚定在发声瞬间的世界坐标), 故任意移速都在声音球中心
+                // -> 移动/跟随时也永不被剪、不掉音质(站着不动时与之前等价)。
+                p.level().playSeededSound(null, p, q.sound(), SoundSource.RECORDS, vol, pitch, 0L);
             }
         }
         QUEUE.clear();

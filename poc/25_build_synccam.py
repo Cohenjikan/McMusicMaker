@@ -122,20 +122,20 @@ for L in range(NLANES):
 for X in cam_x:
     tp = f"execute if score CAM {NS} matches 1 run tp @a {X-CAM_TRAIL} {Y+CAMY_OFF} {CAMZ} {CYAW} {CPITCH}"
     build.append(f'setblock {X} {Y} {OZ-1} minecraft:command_block[facing=up,conditional=false]{{Command:"{tp}",auto:0b}}')
+# 带标签的按钮(每个命令方块南侧立一块木牌写用途, 防越来越多记不住)
+def labeled_button(bx, cmd, lines):
+    msgs = ','.join('\'{"text":"%s"}\'' % t for t in (list(lines) + ['', '', '', ''])[:4])
+    return [f'setblock {bx} {Y-1} {OZ} {LAMP}',
+            f'setblock {bx} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"{cmd}",auto:0b}}',
+            f'setblock {bx} {Y+1} {OZ} minecraft:stone_button[face=floor]',
+            f'setblock {bx} {Y-1} {OZ-1} {LAMP}',
+            'setblock %d %d %d minecraft:oak_sign[rotation=0]{front_text:{messages:[%s]}}' % (bx, Y, OZ - 1, msgs)]
 PBX = OX - 3
-build += [f'setblock {PBX} {Y-1} {OZ} {LAMP}',
-          f'setblock {PBX} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:play",auto:0b}}',
-          f'setblock {PBX} {Y+1} {OZ} minecraft:stone_button[face=floor]',
-          f'setblock {PBX-2} {Y-1} {OZ} {LAMP}',
-          f'setblock {PBX-2} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:play_cam",auto:0b}}',
-          f'setblock {PBX-2} {Y+1} {OZ} minecraft:stone_button[face=floor]',
-          # 命令方块开关: 复音增益 / 微抖动(切 rpcfg 记分板, mod 读取)
-          f'setblock {PBX-4} {Y-1} {OZ} {LAMP}',
-          f'setblock {PBX-4} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:cfg/polytoggle",auto:0b}}',
-          f'setblock {PBX-4} {Y+1} {OZ} minecraft:stone_button[face=floor]',
-          f'setblock {PBX-6} {Y-1} {OZ} {LAMP}',
-          f'setblock {PBX-6} {Y} {OZ} minecraft:command_block[facing=up,conditional=false]{{Command:"function {NS}:cfg/humantoggle",auto:0b}}',
-          f'setblock {PBX-6} {Y+1} {OZ} minecraft:stone_button[face=floor]']
+build += labeled_button(PBX,   f'function {NS}:play',           ['[直接播放]', '站着或自由飞', '都听全曲'])
+build += labeled_button(PBX-2, f'function {NS}:play_cam',       ['[相机播放]', '红石驱动tp', 'spectator跟随'])
+build += labeled_button(PBX-4, f'function {NS}:play_ride',      ['[骑行播放]', '骑隐形实体', '平滑巡游'])
+build += labeled_button(PBX-6, f'function {NS}:cfg/polytoggle', ['[复音增益开关]', '大和弦降幅', '防糊/削顶'])
+build += labeled_button(PBX-8, f'function {NS}:cfg/humantoggle',['[微抖动开关]', '+-3音分/2%', '去复印感'])
 batches = [build[i:i + BATCH] for i in range(0, len(build), BATCH)]
 LEN = endx - OX
 WX0, WZ0, WX1, WZ1 = OX - 6, OZ - 2, endx + 2, OZ + (NLANES - 1) * LANE_DZ + 2
@@ -149,12 +149,15 @@ while cx <= WX1:
 
 src_pts = [(OX - 1, OZ + L * LANE_DZ) for L in range(NLANES)]
 TRIG_CLEAR = [f'setblock {sx} {Y} {sz} minecraft:air' for sx, sz in src_pts]
-SCHED_CLEAR = [f'schedule clear {NS}:{f}' for f in ('done', 'fire', 'firestop', 'startbuild')]
+SCHED_CLEAR = [f'schedule clear {NS}:{f}' for f in ('done', 'fire', 'firestop', 'startbuild', 'ridestop')]
 END_TICKS = (MAXTICK + OFFSET) * 2 + 200
+MUSIC_TICKS = (MAXTICK + OFFSET) * 2                       # 全曲游戏刻(脉冲跑完全机的时长)
+RIDEY = Y + 3                                              # 骑行载体高度(在 lane 群上方)
+RIDE_SPEED = round(LEN / max(1, MUSIC_TICKS), 4)          # 骑行恒速: 每刻 +X 这么多格, 全机≈全曲时长
 
 wf('load', [f'scoreboard objectives add {NS} dummy', f'scoreboard players set BLD {NS} -1',
             f'scoreboard players set CLR {NS} -1', f'scoreboard players set PLAY {NS} 0',
-            f'scoreboard players set CAM {NS} 0', 'forceload remove all',
+            f'scoreboard players set CAM {NS} 0', f'scoreboard players set RIDE {NS} 0', 'forceload remove all',
             'scoreboard objectives add rpcfg dummy',                          # mod 读此目标做复音增益/微抖开关
             'scoreboard players set poly rpcfg 1', 'scoreboard players set human rpcfg 1']
    + SCHED_CLEAR + TRIG_CLEAR
@@ -165,7 +168,8 @@ wf('setup', [f'scoreboard players set PLAY {NS} 0', 'stopsound @a master', f'sco
       f'tellraw @a "[{NS}] reset + forceloading; building... (等 BUILT)"'])
 wf('startbuild', f'scoreboard players set BLD {NS} 0\ntellraw @a "[{NS}] building ({NLANES} lanes x {NCELLS}格 + {len(cam_x)}相机锚点)..."')
 wf('tick', f'execute if score BLD {NS} matches 0.. run function {NS}:buildstep\n'
-           f'execute if score CLR {NS} matches 0.. run function {NS}:clearstep')
+           f'execute if score CLR {NS} matches 0.. run function {NS}:clearstep\n'
+           f'execute if score RIDE {NS} matches 1 as @e[tag=rpride,limit=1] at @s run tp @s ~{RIDE_SPEED} ~ ~')
 bs = [f'execute if score BLD {NS} matches {k} run function {NS}:bld/b{k}' for k in range(len(batches))]
 bs += [f'execute if score BLD {NS} matches {len(batches)} run function {NS}:builddone',
        f'execute if score BLD {NS} matches 0..{len(batches)} run scoreboard players add BLD {NS} 1']
@@ -190,12 +194,23 @@ wf('play', [f'scoreboard players set CAM {NS} 0', f'function {NS}:playcore',
 wf('play_cam', [f'execute if score PLAY {NS} matches 1 run return 0', 'gamemode spectator @a',
                 f'scoreboard players set CAM {NS} 1', f'function {NS}:playcore',
                 f'tellraw @a "[{NS}] GO(相机跟随)。红石驱动 tp, 永远跟着脉冲。"'])
+# 骑行播放: 骑隐形 armor_stand 平滑巡游(tick 里恒速 +X 推进); 声音绑玩家本人 -> 移动不断不糊
+wf('play_ride', [f'execute if score PLAY {NS} matches 1 run return 0', 'kill @e[tag=rpride]',
+                 f'summon armor_stand {OX} {RIDEY} {CAMZ} {{Invisible:1b,NoGravity:1b,Tags:["rpride"],Rotation:[-90f,12f]}}',
+                 f'ride @a mount @e[tag=rpride,limit=1]', f'scoreboard players set RIDE {NS} 1',
+                 f'scoreboard players set CAM {NS} 0',
+                 f'schedule function {NS}:ridestop {MUSIC_TICKS + 60}t', f'function {NS}:playcore',
+                 f'tellraw @a "[{NS}] GO(骑行巡游)。声音绑定你本人, 任意移速都不断不糊。Shift 下马自由飞也行。"'])
+wf('ridestop', [f'scoreboard players set RIDE {NS} 0', 'ride @a dismount', 'kill @e[tag=rpride]',
+                f'tellraw @a "[{NS}] (骑行巡游结束)"'])
 wf('fire', flbuild + [f'setblock {sx} {Y} {sz} minecraft:redstone_block' for sx, sz in src_pts]
    + [f'schedule function {NS}:firestop {PULSE}t', f'schedule function {NS}:done {END_TICKS}t'])
 wf('firestop', TRIG_CLEAR)
 wf('done', [f'scoreboard players set PLAY {NS} 0',
             f'execute if score CAM {NS} matches 1 run gamemode creative @a',
-            f'scoreboard players set CAM {NS} 0', 'forceload remove all',
+            f'scoreboard players set CAM {NS} 0',
+            f'execute if score RIDE {NS} matches 1 run ride @a dismount', 'kill @e[tag=rpride]',
+            f'scoreboard players set RIDE {NS} 0', 'forceload remove all',
             f'tellraw @a "[{NS}] (end) replay: /function {NS}:setup; cleanup: /function {NS}:cleanup."'])
 SEG = 200
 clr_segs = (LEN + 12) // SEG + 1
@@ -209,6 +224,7 @@ cs += [f'execute if score CLR {NS} matches {clr_segs} run function {NS}:cleardon
 wf('clearstep', cs)
 wf('cleanup', ['gamerule commandModificationBlockLimit 2147483647', f'scoreboard players set PLAY {NS} 0',
                f'execute if score CAM {NS} matches 1 run gamemode creative @a', f'scoreboard players set CAM {NS} 0',
+               'ride @a dismount', 'kill @e[tag=rpride]', f'scoreboard players set RIDE {NS} 0',
                'stopsound @a master', f'scoreboard players set BLD {NS} -1'] + SCHED_CLEAR + TRIG_CLEAR
    + [f'scoreboard players set CLR {NS} 0', f'tellraw @a "[{NS}] tearing down..."'])
 
