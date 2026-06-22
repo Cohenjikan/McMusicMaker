@@ -19,3 +19,12 @@ poc/_work/
 **/__pycache__/
 *.zip
 *.pyc
+# 衍生音符数据(由版权 MIDI 生成, 不入公开仓库)
+notes_*.json
+# 游戏内部署副本(含 ogg 采样, 体积大, 可重生成)
+deployed/
+# Fabric 模组构建产物 / gradle 缓存(只入源码)
+mod/redpiano/.gradle/
+mod/redpiano/build/
+mod/redpiano/run/
+mod/redpiano/bin/

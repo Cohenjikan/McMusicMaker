@@ -1,4 +1,4 @@
-"""隔离测试 — 单条轨、与正曲同长(1246格)、每格都触发一个固定节拍音(原版音效,无需资源包)。
+"""隔离测试 — 单条轨、短机器(MAXCELL=120≈26s,非正曲全长)、每格都触发一个固定节拍音(原版音效,无需资源包)。
 目的:判定"周期性断音"是否来自红石长脉冲本身(单轨就能复现 -> 是脉冲/距离问题;单轨干净 -> 是7轨并行问题)。
 同样用 tick rate 18.1 + 全程 forceload + 瞬时脉冲,保证与正曲机器机制一致。
 Run: <venv-demucs python> 08_test_pulse.py
@@ -22,6 +22,7 @@ def wf(n, b): w(f'data/{NS}/function/{n}.mcfunction', b if isinstance(b, str) el
 json.dump({"pack": {"pack_format": 81, "description": "qztest pulse isolation"}},
           open(os.path.join(DP, 'pack.mcmeta'), 'w', encoding='utf-8'), indent=2)
 w('data/minecraft/tags/function/load.json', json.dumps({"values": [f"{NS}:load"]}))
+w('data/minecraft/tags/function/tick.json', json.dumps({"values": [f"{NS}:tick"]}))  # 缺这条则 buildstep 永不自动跑(GPT 指出)
 
 SZ = OZ
 cmd = f'execute as @a at @s run playsound {CLICK} master @s ~ ~ ~ 1 1 1'

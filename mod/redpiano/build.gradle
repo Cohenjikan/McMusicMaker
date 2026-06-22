@@ -1,0 +1,40 @@
+plugins {
+    id 'fabric-loom' version '1.10.5'
+    id 'java'
+}
+
+version = '1.0.0'
+group = 'com.redpiano'
+
+base {
+    archivesName = 'redpiano'
+}
+
+repositories {
+    maven { url = "https://maven.fabricmc.net/" }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:1.21.8"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:0.17.3"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.136.1+1.21.8"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = "UTF-8"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.redpiano.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "NoteBlockMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "redpiano",
+  "version": "${version}",
+  "name": "RedPiano",
+  "description": "Redstone-triggered speaker block: plays any custom sound at exact pitch/volume. For redstone music machines.",
+  "authors": ["Cohen"],
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.redpiano.RedPiano"]
+  },
+  "mixins": [
+    "redpiano.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.8",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

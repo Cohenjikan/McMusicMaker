@@ -8,7 +8,7 @@ import os, sys, json, zipfile, shutil
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILE = r'C:\Minecraft\ModrinthApp\profiles\Fabric 1.21.8'
 WORLD = '新的世界'
-NS = sys.argv[1] if len(sys.argv) > 1 else 'qzgtr'
+NS = sys.argv[1] if len(sys.argv) > 1 else 'qzpno'   # 默认当前曲(qzpno),避免误装旧 qzgtr
 RP_SRC = os.path.join(HERE, 'build', f'{NS}_mv')
 DP_SRC = os.path.join(HERE, 'build', f'{NS}_redstone')
 assert os.path.isdir(RP_SRC) and os.path.isdir(DP_SRC), 'run 03_build_pack.py first'
@@ -52,4 +52,5 @@ if changed:
 else:
     print(f'[3] options.txt: "{entry}" 已在列表中,未改动')
 
-print('\nDONE。重启 MC -> 进《新的世界》-> /reload -> /function qzgtr:setup -> 等 built -> /function qzgtr:play')
+print(f'\nDONE(部署 namespace = {NS})。重启 MC -> 进《新的世界》-> /reload -> '
+      f'/tick rate 18.1 -> /function {NS}:setup -> 等 built -> /function {NS}:play')
