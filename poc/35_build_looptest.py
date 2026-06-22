@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NS, OX, OZ, Y = 'qzlp', 207000, 0, 255
 D = 4                                  # 每格延迟(红石刻); tick80 下 0.1s/格
 PAD = 'minecraft:cyan_terracotta'      # -> qzpno:pno_c3_mf
-WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界/datapacks"
+WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界 (1)/datapacks"
 
 # 直音带: 0=rep 1=rep 2=trig(0) 3=rep 4=trig(12) 5=rep 6=trig(24); 出口在 OX+7
 cells = [('rep', D), ('rep', D), ('trig', 0), ('rep', D), ('trig', 12), ('rep', D), ('trig', 24)]
@@ -80,6 +80,7 @@ w(f'data/{NS}/function/injoff.mcfunction', f'setblock {OX-2} {Y} {OZ} minecraft:
 w(f'data/{NS}/function/stop.mcfunction',
   [f'setblock {OX-1} {Y} {OZ-1} minecraft:air',                     # 切断门 G -> 环死
    f'setblock {OX-2} {Y} {OZ} minecraft:air',
+   'stopsound @a',                                                  # ★ 模组在 RECORDS 类别, 不带源才停得掉
    f'tellraw @a {{"text":"[{NS}] 停止(切断反馈环)。","color":"yellow"}}'])
 w(f'data/{NS}/function/cleanup.mcfunction',
   [f'fill {FX0} {Y-1} {FZ0} {FX1} {Y+2} {FZ1} air', f'forceload remove {FX0} {FZ0} {FX1} {FZ1}', f'tellraw @a "[{NS}] 已清理。"'])

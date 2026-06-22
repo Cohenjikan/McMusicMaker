@@ -22,10 +22,11 @@ ROWLEN = int(sys.argv[4]) if len(sys.argv) > 4 else 160
 OZ, Y = 0, 255
 ROW_DZ = 6
 RFACE = {1: 'west', -1: 'east'}
+SSTOP = 'stopsound @a'                  # ★ 模组发声在 RECORDS 类别; stopsound 不带源=停全部(master 停不掉它=旧停不下来bug)
 LAMP, PASS, BATCH = 'minecraft:redstone_lamp', 'minecraft:stone', 2000
 VOICES, TPS, PULSE = 6, 80, 4
 U = 2 / TPS
-WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界/datapacks"
+WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界 (1)/datapacks"
 
 notes = json.load(open(os.path.join(HERE, NOTES), encoding='utf-8'))['notes']
 rp = json.load(open(os.path.join(HERE, 'redpiano_map.json'), encoding='utf-8'))
@@ -154,19 +155,20 @@ ctl += labeled_button(PBX-2, f'function {NS}:loop',     ['[循环播放]', '本�
 ctl += labeled_button(PBX-4, f'function {NS}:stop',     ['[停止]', '停+不再循环'])
 ctl += labeled_button(PBX-6, f'function {NS}:view',     ['[全景俯视]', '看紧凑方阵'])
 
-RESET = [f'scoreboard players set PLAY {NS} 0', f'scoreboard players set LOOP {NS} 0']
+RESET = [f'scoreboard players set PLAY {NS} 0', f'scoreboard players set LOOP {NS} 0', f'scoreboard players set SIL {NS} 0']
 wf('load', [f'scoreboard objectives add {NS} dummy', f'scoreboard players set BLD {NS} -1',
             f'scoreboard players set CLR {NS} -1'] + RESET + ['forceload remove all',
             'scoreboard objectives add rpcfg dummy', 'scoreboard players set poly rpcfg 1', 'scoreboard players set human rpcfg 1']
    + SCHED_CLEAR + TRIG_CLEAR
    + [f'tellraw @a ["",{{"text":"[{NS}] 我泪 本地红石循环播放器 loaded. ","color":"aqua"}},{{"text":"需RedPiano模组+qzpno包. /tick rate 80 -> /function {NS}:setup"}}]'])
-wf('setup', RESET + ['gamemode creative @a', 'stopsound @a master', f'scoreboard players set CLR {NS} -1']
+wf('setup', RESET + ['gamemode creative @a', SSTOP, f'scoreboard players set CLR {NS} -1']
    + SCHED_CLEAR + TRIG_CLEAR + flbuild
    + [f'tp @a {PBX} {Y+3} {OZ}', f'schedule function {NS}:startbuild 100t',
       f'tellraw @a "[{NS}] reset + forceloading; building... (等 BUILT)"'])
 wf('startbuild', f'scoreboard players set BLD {NS} 0\ntellraw @a "[{NS}] building (折叠双轨 {NCELLS}格 {NROWS}行)..."')
 wf('tick', f'execute if score BLD {NS} matches 0.. run function {NS}:buildstep\n'
-           f'execute if score CLR {NS} matches 0.. run function {NS}:clearstep')
+           f'execute if score CLR {NS} matches 0.. run function {NS}:clearstep\n'
+           f'execute if score SIL {NS} matches 1 run {SSTOP}')   # 停止后持续静默(脉冲滑出期间)
 bs = [f'execute if score BLD {NS} matches {k} run function {NS}:bld/b{k}' for k in range(len(batches))]
 bs += [f'execute if score BLD {NS} matches {len(batches)} run function {NS}:builddone',
        f'execute if score BLD {NS} matches 0..{len(batches)} run scoreboard players add BLD {NS} 1']
@@ -177,7 +179,7 @@ wf('placectl', ctlfn)
 wf('builddone', f'scoreboard players set BLD {NS} -1\nfunction {NS}:placectl\n'
    f'tellraw @a ["",{{"text":"[{NS}] built. ","color":"green"}},{{"text":"本地播放器 X长~{LEN_X}格. 按[播放]/[循环播放]/[停止]"}}]')
 # 点火核心(纯红石扫描) + 数据包循环
-wf('playcore', [f'scoreboard players set PLAY {NS} 1', 'stopsound @a master'] + TRIG_CLEAR + [f'schedule function {NS}:fire 2t'])
+wf('playcore', [f'scoreboard players set PLAY {NS} 1', f'scoreboard players set SIL {NS} 0', SSTOP] + TRIG_CLEAR + [f'schedule function {NS}:fire 2t'])
 wf('fire', flbuild + [f'setblock {sx} {Y} {sz} minecraft:redstone_block' for sx, sz in src_pts]
    + [f'schedule function {NS}:firestop {PULSE}t', f'schedule function {NS}:done {END_TICKS}t'])
 wf('firestop', TRIG_CLEAR)
@@ -191,8 +193,10 @@ wf('loop', [f'execute if score PLAY {NS} matches 1 run scoreboard players set LO
             f'execute if score PLAY {NS} matches 1 run return run tellraw @a "[{NS}] 已转为循环。"',
             f'scoreboard players set LOOP {NS} 1', f'function {NS}:playcore',
             f'tellraw @a "[{NS}] 循环播放(本地jukebox): 放完自动重放, 直到按[停止]。"'])
-wf('stop', RESET + ['gamemode creative @a', 'stopsound @a master'] + SCHED_CLEAR + TRIG_CLEAR
-   + [f'tp @a {PBX} {Y+3} {OZ}', f'tellraw @a "[{NS}] 已停止(并取消循环)。"'])
+wf('stop', RESET + ['gamemode creative @a', SSTOP, f'scoreboard players set SIL {NS} 1',
+                    f'schedule function {NS}:unsil {END_TICKS}t'] + SCHED_CLEAR + TRIG_CLEAR
+   + [f'tp @a {PBX} {Y+3} {OZ}', f'tellraw @a "[{NS}] 已停止(声音立即消失; 残余脉冲静默滑出)。"'])
+wf('unsil', f'scoreboard players set SIL {NS} 0')
 wf('view', ['gamemode spectator @a', f'tp @a {CAMX} {Y+40} {CAMZ} 0 90',
             f'tellraw @a "[{NS}] 俯视紧凑方阵。再按[播放]听; [停止]退出。"'])
 SEG = 200
@@ -205,7 +209,7 @@ cs = [f'execute if score CLR {NS} matches {k} run function {NS}:clr/c{k}' for k 
 cs += [f'execute if score CLR {NS} matches {clr_segs} run function {NS}:cleardone',
        f'execute if score CLR {NS} matches 0..{clr_segs} run scoreboard players add CLR {NS} 1']
 wf('clearstep', cs)
-wf('cleanup', ['gamerule commandModificationBlockLimit 2147483647'] + RESET + ['gamemode creative @a', 'stopsound @a master',
+wf('cleanup', ['gamerule commandModificationBlockLimit 2147483647'] + RESET + ['gamemode creative @a', SSTOP,
                f'scoreboard players set BLD {NS} -1'] + SCHED_CLEAR + TRIG_CLEAR
    + [f'scoreboard players set CLR {NS} 0', f'tellraw @a "[{NS}] tearing down..."'])
 

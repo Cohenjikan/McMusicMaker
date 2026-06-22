@@ -16,7 +16,7 @@ NS, OX, OZ, Y = 'qzdf', 209000, 0, 255
 D, ROWLEN, ROW_DZ = 2, 6, 6
 PAD = 'minecraft:cyan_terracotta'
 RFACE = {1: 'west', -1: 'east'}
-WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界/datapacks"
+WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界 (1)/datapacks"
 NCELLS = 22                                  # 22 格 -> ~3 行 -> 3 个 U 弯
 
 # cells: 每 3 格一个升音 trig(0延迟), 其余 rep(delay D)
