@@ -139,7 +139,7 @@ wf('load', [f'scoreboard objectives add {NS} dummy', f'scoreboard players set BL
    + ['scoreboard objectives add rpcfg dummy', 'scoreboard players set poly rpcfg 1', 'scoreboard players set human rpcfg 1',
       'forceload remove all', f'schedule clear {NS}:done']
    + [f'tellraw @a ["",{{"text":"[{NS}] 我泪 原地命令播放器 loaded. ","color":"aqua"}},{{"text":"需模组+qzpno. /tick rate 80 -> /function {NS}:setup"}}]'])
-wf('setup', RESET + ['gamemode creative @a', SSTOP] + flbuild + [f'tp @a {PBX} {Y+3} {OZ}',
+wf('setup', RESET + ['gamemode creative @a', SSTOP, 'forceload remove all'] + flbuild + [f'tp @a {PBX} {Y+3} {OZ}',
    f'scoreboard players set BLD {NS} 0', f'tellraw @a "[{NS}] forceload+building (原地阵 {NC}列x{maxv}声部, {COLS}宽{NROWS}行)..."'])
 bs = [f'execute if score BLD {NS} matches {k} run function {NS}:bld/b{k}' for k in range(len(batches))]
 bs += [f'execute if score BLD {NS} matches {len(batches)} run function {NS}:builddone',

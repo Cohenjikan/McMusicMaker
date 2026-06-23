@@ -129,7 +129,7 @@ allx = [k[0] for k in occ]; allz = [k[2] for k in occ]
 WX0, WZ0, WX1, WZ1 = min(allx) - 2, min(allz) - 2, max(allx) + 2, max(allz) + 2
 zc = (WZ1 // 16) - (WZ0 // 16) + 1
 xstep = max(1, 240 // max(1, zc))
-flbuild, cx = [], WX0
+flbuild, cx = ['forceload remove all'], WX0
 while cx <= WX1:
     cxe = min(WX1, cx + xstep * 16 - 1)
     flbuild.append(f'forceload add {cx} {WZ0} {cxe} {WZ1}'); cx = cxe + 1
