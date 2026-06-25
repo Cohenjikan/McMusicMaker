@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>红石音乐 走线设计器 — 直线/曲折直线(S波浪)· 任务7</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;
+        --acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;
+        --spine:#58a6ff;--noteA:#3fb950;--noteB:#bc8cff;--turn:#f0883e;--grid:#21262d;}
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.5 ui-monospace,"Cascadia Code",Consolas,monospace;background:var(--bg);color:var(--fg)}
+  header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .sub{color:var(--mut);font-size:12px}
+  .wrap{display:flex;min-height:calc(100vh - 46px)}
+  .left{flex:1;min-width:0;padding:12px;position:relative}
+  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:crosshair}
+  .legend{position:absolute;top:20px;left:24px;background:rgba(13,17,23,.82);border:1px solid var(--line);
+          border-radius:6px;padding:7px 10px;font-size:11px;color:var(--mut);pointer-events:none}
+  .legend b{color:var(--fg);font-weight:600}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .right{width:386px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 46px)}
+  .grp{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .grp h2{font-size:12px;margin:0 0 8px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
+  label.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+  label.row span.k{width:130px;color:var(--mut);flex:none}
+  input[type=range]{flex:1;min-width:0;accent-color:var(--acc)}
+  input[type=number]{width:62px;background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 5px;font:inherit}
+  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:4px 0}
+  .seg button{flex:1;background:#0d1117;border:0;color:var(--mut);padding:7px;cursor:pointer;font:inherit;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--acc);color:#0d1117;font-weight:600}
+  .metric{display:flex;justify-content:space-between;margin:3px 0}
+  .metric .v{font-weight:600}
+  .verdict{padding:8px 10px;border-radius:6px;margin:4px 0;font-size:12px}
+  .verdict.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:#7ee787}
+  .verdict.bad{background:rgba(248,81,73,.12);border:1px solid var(--bad);color:#ffa198}
+  .verdict.warn{background:rgba(210,153,34,.12);border:1px solid var(--warn);color:#e3b341}
+  pre#params{background:#010409;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;
+             white-space:pre-wrap;word-break:break-word;color:#c9d1d9;max-height:none;margin:6px 0}
+  .btn{background:var(--acc);color:#0d1117;border:0;border-radius:6px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+  .btn.sec{background:#21262d;color:var(--fg);border:1px solid var(--line)}
+  .hint{color:var(--mut);font-size:11px;margin-top:6px}
+  .big{font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>红石音乐 · 走线设计器</h1>
+  <span class="sub">直线 / 曲折直线(S波浪)· 自由调尺寸 + 自定义走线 · 含线宽与空格 · 任务7</span>
+  <span class="sub" id="songtag" style="margin-left:auto"></span>
+</header>
+<div class="wrap">
+  <div class="left">
+    <canvas id="cv" width="1200" height="760"></canvas>
+    <div class="legend">
+      <div><span class="sw" style="background:var(--spine)"></span><b>主链脊柱</b>(中继器时间轴,1格=1 cell)</div>
+      <div><span class="sw" style="background:var(--noteA)"></span>轨A音符列 &nbsp;<span class="sw" style="background:var(--noteB)"></span>轨B(中轴镜像)</div>
+      <div><span class="sw" style="background:var(--turn)"></span>拐点(红石粉0延迟桥)</div>
+      <div style="margin-top:3px;color:var(--mut)">X→ 时间前进 &nbsp; Z↓ 折叠摆动 &nbsp;|&nbsp; 自定义:点击加点·拖动·右键删</div>
+    </div>
+  </div>
+  <div class="right">
+    <div class="grp">
+      <h2>① 曲目预算</h2>
+      <label class="row"><span class="k">骨架 cell 数</span><input type="number" id="cells" value="3347"><span class="hint">七里香</span></label>
+      <label class="row"><span class="k">发声 cell(列)</span><input type="number" id="sound" value="767"></label>
+      <div class="hint">cell = 共享时间轴的最小格(中继器骨架并集)。机器路径必须能容纳全部 cell,顺序即时间顺序——折叠只改空间不改音乐。</div>
+    </div>
+    <div class="grp">
+      <h2>② 走线形式</h2>
+      <div class="seg" id="form">
+        <button data-f="straight">直线</button>
+        <button data-f="swave" class="on">S 波浪</button>
+        <button data-f="custom">自定义</button>
+      </div>
+      <div id="swaveCtl">
+        <label class="row"><span class="k">每折 X 长 XRUN</span><input type="range" id="xrun" min="2" max="30" value="6"><input type="number" id="xrunN" value="6"></label>
+        <label class="row"><span class="k">Z 振幅 ZMAX</span><input type="range" id="zmax" min="2" max="40" value="10"><input type="number" id="zmaxN" value="10"></label>
+        <div class="hint">XRUN 小 / ZMAX 大 → X 更短(压缩更高)、Z 更宽。两者只改形状,不改节奏。</div>
+      </div>
+      <div id="customCtl" style="display:none">
+        <div class="hint">在画布上 <b>点击</b> 添加路点、<b>拖动</b> 调整、<b>右键</b> 删除。路径按 X→Z 直角连线(红石可走),cell 沿路径顺序铺。</div>
+        <button class="btn sec" id="resetWp" style="margin-top:6px">重置路点为 S 波浪</button>
+      </div>
+    </div>
+    <div class="grp">
+      <h2>③ 线宽 与 空格</h2>
+      <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
+      <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
+      <label class="row"><span class="k">双轨(中轴镜像)</span><input type="checkbox" id="dual" checked></label>
+      <label class="row"><span class="k">双轨间距 SEP</span><input type="range" id="sep" min="2" max="20" value="3"><input type="number" id="sepN" value="3"></label>
+      <div class="hint">线宽=每条发声列向两侧伸的音符盒数(和弦声部)。gap=相邻折之间额外留空,防音符列重叠/红石串扰。</div>
+    </div>
+    <div class="grp">
+      <h2>④ 实测(估算)</h2>
+      <div class="metric"><span>X 跨度(长)</span><span class="v" id="mX">–</span></div>
+      <div class="metric"><span>Z 总宽(宽)</span><span class="v" id="mZ">–</span></div>
+      <div class="metric"><span>压缩比(直线/X)</span><span class="v" id="mC">–</span></div>
+      <div class="metric"><span>拐点数</span><span class="v" id="mT">–</span></div>
+      <div class="metric"><span>占地块数 ≈</span><span class="v" id="mA">–</span></div>
+      <div class="metric"><span>forceload 区块 ≈</span><span class="v" id="mF">–</span></div>
+      <div id="verdict"></div>
+    </div>
+    <div class="grp">
+      <h2>⑤ 参数(截图给我即可)</h2>
+      <pre id="params"></pre>
+      <button class="btn" id="copy">复制参数 JSON</button>
+      <button class="btn sec" id="png">下载预览 PNG</button>
+      <div class="hint">截图把右侧参数 + 左侧形状一起拍给我,我就按这些数字生成对应的七里香红石机器。</div>
+    </div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'), ctx=cv.getContext('2d');
+let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347, sound:767};
+let waypoints=null;           // custom mode, in cell coords
+let drag=null;
+
+// ---------- spine builders (cell coords; matches 43_build_swave_balance geometry) ----------
+function spineStraight(n){const o=[];for(let i=0;i<n;i++)o.push({x:i,z:0,d:[1,0],turn:false});return o;}
+function spineSwave(n,XRUN,ZMAX){
+  const DIRS=[[1,0],[0,1],[1,0],[0,-1]], SEG=[XRUN,ZMAX-1,XRUN,ZMAX-1];
+  let x=0,z=0,ph=0,seg=0; const o=[{x,z,d:DIRS[0],turn:false}];
+  for(let i=1;i<n;i++){
+    const d=DIRS[ph]; let ready;
+    if(ph===0||ph===2) ready=seg+1>=SEG[ph];
+    else if(ph===1) ready=z>=ZMAX; else ready=z<=0;
+    if(ready){const nd=DIRS[(ph+1)%4]; x+=d[0]+nd[0]; z+=d[1]+nd[1]; ph=(ph+1)%4; seg=0; o.push({x,z,d:nd,turn:true});}
+    else {x+=d[0]; z+=d[1]; seg++; o.push({x,z,d,turn:false});}
+  }
+  return o;
+}
+function spineCustom(n,wps){
+  // axis-aligned (X then Z) polyline through waypoints, 1 cell per unit step
+  const pts=[]; const push=(x,z,d,turn)=>pts.push({x,z,d,turn});
+  if(!wps.length){return spineSwave(n,S.xrun,S.zmax);}
+  let cx=wps[0].x, cz=wps[0].z; push(cx,cz,[1,0],false);
+  for(let k=1;k<wps.length;k++){
+    let tx=wps[k].x, tz=wps[k].z;
+    while(cx!==tx){const s=Math.sign(tx-cx); cx+=s; push(cx,cz,[s,0],false);}
+    while(cz!==tz){const s=Math.sign(tz-cz); cz+=s; push(cx,cz,[0,s],pts.length&&cx!==(pts[pts.length-2]?.x));}
+  }
+  // mark turns where direction changes
+  for(let i=1;i<pts.length-1;i++){const a=pts[i-1].d,b=pts[i+1]?.d||pts[i].d; if(a[0]!==pts[i].d[0]||a[1]!==pts[i].d[1]) pts[i].turn=true;}
+  if(pts.length<n){pts._short=n-pts.length;}
+  return pts.slice(0,n);
+}
+function spine(){
+  const n=S.cells;
+  if(S.form==='straight')return spineStraight(n);
+  if(S.form==='custom')return spineCustom(n, waypoints||[]);
+  return spineSwave(n,S.xrun,S.zmax);
+}
+
+// ---------- metrics ----------
+function metrics(sp){
+  let xmin=1e9,xmax=-1e9,zmin=1e9,zmax=-1e9,turns=0;
+  for(const c of sp){xmin=Math.min(xmin,c.x);xmax=Math.max(xmax,c.x);zmin=Math.min(zmin,c.z);zmax=Math.max(zmax,c.z); if(c.turn)turns++;}
+  const Zband=zmax-zmin+1, XspanCore=xmax-xmin+1;
+  const Xspan=XspanCore+2*S.rad;                          // 竖向段向 ±X 伸音符列
+  const bandW=Zband+2*S.rad;                              // 单轨含线宽
+  const Zwidth=S.dual? bandW*2+S.sep : bandW;
+  const comp=Xspan>0? S.cells/Xspan : 0;
+  const area=Xspan*Zwidth;
+  const fl=(Math.floor(Xspan/16)+1)*(Math.floor(Zwidth/16)+1);
+  return {xmin,xmax,zmin,zmax,Zband,Xspan,Zwidth,comp,turns,area,fl,short:sp._short||0};
+}
+function verdict(m){
+  const out=[];
+  if(S.form!=='straight'){
+    const need=S.rad*2+S.gap+1;
+    if(S.zmax<need && S.form==='swave') out.push(['bad',`ZMAX=${S.zmax} 太小:相邻折间距 < 线宽×2+gap+1 = ${need} → 音符列会重叠/串扰(破坏音乐)`]);
+  }
+  if(m.short) out.push(['bad',`自定义路径太短,缺 ${m.short} 个 cell 放不下整曲 → 加路点拉长路径`]);
+  if(S.dual && S.sep < S.rad*2+1) out.push(['warn',`双轨间距 SEP=${S.sep} 偏小,两轨音符列可能贴太近`]);
+  if(m.fl>360) out.push(['warn',`forceload ≈ ${m.fl} 区块,偏大可能过载;紧凑机(≤~210)更稳`]);
+  if(!out.length) out.push(['ok','✓ 形状合法:容得下整曲、折间距足够、不破坏音乐']);
+  return out;
+}
+
+// ---------- render ----------
+let view={s:1,ox:0,oy:0};
+function fit(sp,m){
+  const pad=40, W=cv.width, H=cv.height;
+  const x0=m.xmin-S.rad, x1=m.xmax+S.rad;
+  const z0=m.zmin-S.rad, z1=(m.zmin)+ (S.dual?(m.Zband+2*S.rad)*2+S.sep:(m.Zband+2*S.rad)) ;
+  const w=(x1-x0+1), h=(z1-z0+1);
+  view.s=Math.min((W-2*pad)/w,(H-2*pad)/h);
+  view.ox=pad - x0*view.s; view.oy=pad - (z0)*view.s;
+}
+const PX=(x)=>view.ox+x*view.s, PZ=(z)=>view.oy+z*view.s;
+function render(){
+  const sp=spine(), m=metrics(sp); fit(sp,m);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const s=view.s, bandW=m.Zband+2*S.rad;
+  // each track drawn as: wide translucent band (= line width/音符列) + thin spine stroke
+  const drawTrack=(zoff,mirror,noteCol)=>{
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath();
+    for(let i=0;i<sp.length;i++){const c=sp[i];const lz=c.z-m.zmin;const zz=zoff+(mirror?(m.Zband-1-lz):lz);
+      const X=PX(c.x),Z=PZ(zz); i?ctx.lineTo(X,Z):ctx.moveTo(X,Z);}
+    ctx.strokeStyle=noteCol; ctx.globalAlpha=.42; ctx.lineWidth=Math.max(2,(2*S.rad+1)*s); ctx.stroke();   // 线宽band
+    ctx.strokeStyle='#58a6ff'; ctx.globalAlpha=1; ctx.lineWidth=Math.max(1,s*0.85); ctx.stroke();          // 脊柱
+    ctx.globalAlpha=1;
+  };
+  drawTrack(S.rad, false, '#3fb950');
+  if(S.dual) drawTrack(S.rad + bandW + S.sep, true, '#bc8cff');
+  // turns (橙点, 仅 track A)
+  ctx.fillStyle='#f0883e';
+  for(let i=0;i<sp.length;i++){if(sp[i].turn){const zz=S.rad+(sp[i].z-m.zmin);ctx.beginPath();ctx.arc(PX(sp[i].x),PZ(zz),Math.max(1.5,s*0.55),0,7);ctx.fill();}}
+  // waypoints handles
+  if(S.form==='custom' && waypoints){
+    for(const w of waypoints){const zz=S.rad+(w.z-m.zmin); ctx.fillStyle='#f0883e';ctx.beginPath();ctx.arc(PX(w.x),PZ(zz),5,0,7);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.stroke();}
+  }
+  // axes labels
+  ctx.fillStyle='#8b949e';ctx.font='11px monospace';
+  ctx.fillText(`X 跨度 ${m.Xspan}  (时间→)`, 46, cv.height-12);
+  ctx.save();ctx.translate(14,46);ctx.rotate(Math.PI/2);ctx.fillText(`Z 总宽 ${m.Zwidth}  (折叠↓)`,0,0);ctx.restore();
+  updateUI(m);
+}
+function updateUI(m){
+  $('mX').textContent=m.Xspan+' 块';
+  $('mZ').textContent=m.Zwidth+' 块';
+  $('mC').textContent=m.comp.toFixed(2)+'×';
+  $('mT').textContent=m.turns;
+  $('mA').textContent=m.area.toLocaleString();
+  $('mF').textContent='~'+m.fl;
+  const vs=verdict(m);
+  $('verdict').innerHTML=vs.map(([c,t])=>`<div class="verdict ${c}">${t}</div>`).join('');
+  const P={
+    song:'七里香', form:S.form, cells:S.cells, sounding:S.sound,
+    XRUN:S.xrun, ZMAX:S.zmax, line_width_radiate:S.rad, fold_gap:S.gap,
+    dual_track_mirror:S.dual, track_sep:S.sep,
+    result:{X_span:m.Xspan, Z_width:m.Zwidth, compression:+m.comp.toFixed(2), turns:m.turns, forceload_chunks:m.fl},
+    bbox_cells:{x:[m.xmin,m.xmax], z:[m.zmin,m.zmax]},
+    waypoints: (S.form==='custom'&&waypoints)? waypoints.map(w=>[w.x,w.z]) : null
+  };
+  $('params').textContent='// 截图把这段连同左侧形状发给我\n'+JSON.stringify(P,null,1);
+  window._P=P;
+}
+
+// ---------- controls ----------
+function bindRange(r,n,key,after){
+  const set=v=>{S[key]=+v; r.value=v; n.value=v; (after||render)();};
+  r.oninput=()=>set(r.value); n.oninput=()=>set(n.value);
+}
+bindRange($('xrun'),$('xrunN'),'xrun'); bindRange($('zmax'),$('zmaxN'),'zmax');
+bindRange($('rad'),$('radN'),'rad'); bindRange($('gap'),$('gapN'),'gap'); bindRange($('sep'),$('sepN'),'sep');
+$('dual').onchange=e=>{S.dual=e.target.checked;render();};
+$('cells').oninput=e=>{S.cells=Math.max(2,+e.target.value||2);render();};
+$('sound').oninput=e=>{S.sound=+e.target.value||0;render();};
+document.querySelectorAll('#form button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#form button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); S.form=b.dataset.f;
+  $('swaveCtl').style.display=S.form==='swave'?'':'none';
+  $('customCtl').style.display=S.form==='custom'?'':'none';
+  if(S.form==='custom'&&!waypoints) resetWaypoints();
+  render();
+});
+function resetWaypoints(){
+  const sp=spineSwave(S.cells,S.xrun,S.zmax); waypoints=[];
+  for(let i=0;i<sp.length;i+=Math.max(1,Math.floor(sp.length/14))) waypoints.push({x:sp[i].x,z:sp[i].z});
+  waypoints.push({x:sp[sp.length-1].x,z:sp[sp.length-1].z});
+}
+$('resetWp').onclick=()=>{resetWaypoints();render();};
+
+// canvas interaction (custom waypoints)
+function toCell(ev){const r=cv.getBoundingClientRect();const px=(ev.clientX-r.left)*cv.width/r.width, py=(ev.clientY-r.top)*cv.height/r.height;
+  const sp=spine(),m=metrics(sp); return {x:Math.round((px-view.ox)/view.s), z:Math.round((py-view.oy)/view.s)+m.zmin-S.rad};}
+cv.addEventListener('mousedown',ev=>{
+  if(S.form!=='custom')return; if(ev.button===2)return;
+  const c=toCell(ev); let near=-1,bd=99;
+  waypoints.forEach((w,i)=>{const d=Math.hypot(w.x-c.x,w.z-c.z);if(d<bd){bd=d;near=i;}});
+  if(bd<3){drag=near;} else {waypoints.push(c);render();}
+});
+cv.addEventListener('mousemove',ev=>{if(drag==null)return;const c=toCell(ev);waypoints[drag]={x:c.x,z:c.z};render();});
+window.addEventListener('mouseup',()=>drag=null);
+cv.addEventListener('contextmenu',ev=>{ev.preventDefault();if(S.form!=='custom')return;const c=toCell(ev);
+  let near=-1,bd=99;waypoints.forEach((w,i)=>{const d=Math.hypot(w.x-c.x,w.z-c.z);if(d<bd){bd=d;near=i;}});
+  if(bd<3&&waypoints.length>2){waypoints.splice(near,1);render();}});
+
+$('copy').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(window._P,null,1));$('copy').textContent='已复制 ✓';setTimeout(()=>$('copy').textContent='复制参数 JSON',1200);};
+$('png').onclick=()=>{const a=document.createElement('a');a.download='qlx_layout.png';a.href=cv.toDataURL();a.click();};
+$('songtag').textContent='当前曲目:七里香 · 3347 cell(767 发声)';
+render();
+</script>
+</body>
+</html>
