@@ -14,10 +14,12 @@
   header h1{font-size:15px;margin:0;font-weight:600}
   header .sub{color:var(--mut);font-size:12px}
   .wrap{display:flex;min-height:calc(100vh - 46px)}
-  .left{flex:1;min-width:0;padding:12px;position:relative}
-  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:crosshair}
-  .legend{position:absolute;top:20px;left:24px;background:rgba(13,17,23,.82);border:1px solid var(--line);
-          border-radius:6px;padding:7px 10px;font-size:11px;color:var(--mut);pointer-events:none}
+  .left{flex:1;min-width:0;padding:12px;position:relative;display:flex;flex-direction:column}
+  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block}
+  canvas.custom{cursor:grab}
+  .legend{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+          padding:8px 12px;font-size:11px;color:var(--mut);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+  .legend>div{white-space:nowrap}
   .legend b{color:var(--fg);font-weight:600}
   .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
   .right{width:386px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 46px)}
@@ -58,7 +60,8 @@
       <div><span class="sw" style="background:var(--spine)"></span><b>主链脊柱</b>(中继器时间轴,1格=1 cell)</div>
       <div><span class="sw" style="background:var(--noteA)"></span>轨A音符列 &nbsp;<span class="sw" style="background:var(--noteB)"></span>轨B(中轴镜像)</div>
       <div><span class="sw" style="background:var(--turn)"></span>拐点(红石粉0延迟桥)</div>
-      <div style="margin-top:3px;color:var(--mut)">X→ 时间前进 &nbsp; Z↓ 折叠摆动 &nbsp;|&nbsp; 自定义:点击加点·拖动·右键删</div>
+      <div>X→ 时间前进 &nbsp; Z↓ 折叠摆动</div>
+      <div>自定义:<b>拖动</b>节点调整 · <b>右键</b>删 · 加点/撤销用右栏按钮</div>
     </div>
   </div>
   <div class="right">
@@ -81,8 +84,14 @@
         <div class="hint">XRUN 小 / ZMAX 大 → X 更短(压缩更高)、Z 更宽。两者只改形状,不改节奏。</div>
       </div>
       <div id="customCtl" style="display:none">
-        <div class="hint">在画布上 <b>点击</b> 添加路点、<b>拖动</b> 调整、<b>右键</b> 删除。路径按 X→Z 直角连线(红石可走),cell 沿路径顺序铺。</div>
-        <button class="btn sec" id="resetWp" style="margin-top:6px">重置路点为 S 波浪</button>
+        <div class="hint"><b>拖动</b>节点调整位置(画布上不会误加点);<b>右键</b>节点删除。新增节点用下面按钮。路径按 X→Z 直角连线(红石可走),cell 沿路径顺序铺 = 时间不变。</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn sec" id="addWp">➕ 在选中后加点</button>
+          <button class="btn sec" id="delWp">🗑 删除选中</button>
+          <button class="btn sec" id="undo" disabled>↶ 撤销 Ctrl+Z</button>
+          <button class="btn sec" id="resetWp">重置为 S 波浪</button>
+        </div>
+        <div class="hint" id="selInfo" style="margin-top:6px">选中节点:无</div>
       </div>
     </div>
     <div class="grp">
@@ -117,7 +126,7 @@ const $=id=>document.getElementById(id);
 const cv=$('cv'), ctx=cv.getContext('2d');
 let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347, sound:767};
 let waypoints=null;           // custom mode, in cell coords
-let drag=null;
+let drag=null, selWp=null, history=[], dragSnap=null;
 
 // ---------- spine builders (cell coords; matches 43_build_swave_balance geometry) ----------
 function spineStraight(n){const o=[];for(let i=0;i<n;i++)o.push({x:i,z:0,d:[1,0],turn:false});return o;}
@@ -211,10 +220,12 @@ function render(){
   // turns (橙点, 仅 track A)
   ctx.fillStyle='#f0883e';
   for(let i=0;i<sp.length;i++){if(sp[i].turn){const zz=S.rad+(sp[i].z-m.zmin);ctx.beginPath();ctx.arc(PX(sp[i].x),PZ(zz),Math.max(1.5,s*0.55),0,7);ctx.fill();}}
-  // waypoints handles
+  // waypoints handles (selected = larger/orange ring)
   if(S.form==='custom' && waypoints){
-    for(const w of waypoints){const zz=S.rad+(w.z-m.zmin); ctx.fillStyle='#f0883e';ctx.beginPath();ctx.arc(PX(w.x),PZ(zz),5,0,7);ctx.fill();
-      ctx.strokeStyle='#fff';ctx.stroke();}
+    waypoints.forEach((w,i)=>{const zz=S.rad+(w.z-m.zmin); const sel=i===selWp;
+      ctx.beginPath();ctx.arc(PX(w.x),PZ(zz),sel?7.5:5,0,7);
+      ctx.fillStyle=sel?'#f0883e':'#d29922';ctx.fill();
+      ctx.lineWidth=sel?2.5:1.5;ctx.strokeStyle='#fff';ctx.stroke();});
   }
   // axes labels
   ctx.fillStyle='#8b949e';ctx.font='11px monospace';
@@ -241,6 +252,10 @@ function updateUI(m){
   };
   $('params').textContent='// 截图把这段连同左侧形状发给我\n'+JSON.stringify(P,null,1);
   window._P=P;
+  const si=$('selInfo');
+  if(si) si.textContent=(S.form==='custom'&&selWp!=null&&waypoints&&waypoints[selWp])
+    ? `选中 #${selWp+1}/${waypoints.length} · cell(x=${waypoints[selWp].x}, z=${waypoints[selWp].z})`
+    : `选中节点:无${waypoints?` (共 ${waypoints.length} 点)`:''}`;
 }
 
 // ---------- controls ----------
@@ -258,7 +273,8 @@ document.querySelectorAll('#form button').forEach(b=>b.onclick=()=>{
   b.classList.add('on'); S.form=b.dataset.f;
   $('swaveCtl').style.display=S.form==='swave'?'':'none';
   $('customCtl').style.display=S.form==='custom'?'':'none';
-  if(S.form==='custom'&&!waypoints) resetWaypoints();
+  cv.classList.toggle('custom', S.form==='custom');
+  if(S.form==='custom'&&!waypoints){ resetWaypoints(); history=[]; selWp=null; $('undo').disabled=true; }
   render();
 });
 function resetWaypoints(){
@@ -266,22 +282,41 @@ function resetWaypoints(){
   for(let i=0;i<sp.length;i+=Math.max(1,Math.floor(sp.length/14))) waypoints.push({x:sp[i].x,z:sp[i].z});
   waypoints.push({x:sp[sp.length-1].x,z:sp[sp.length-1].z});
 }
-$('resetWp').onclick=()=>{resetWaypoints();render();};
+// ---------- custom waypoint editing: drag-priority, button-add, undo ----------
+const GRAB=28;   // px: 抓取节点的半径; 比这远的点击只选不拖, 绝不新增
+function clone(a){return a.map(p=>({x:p.x,z:p.z}));}
+function commit(snap){ if(JSON.stringify(snap)!==JSON.stringify(waypoints)){ history.push(snap); if(history.length>60)history.shift(); $('undo').disabled=false; } }
+function pushHist(){ history.push(clone(waypoints)); if(history.length>60)history.shift(); $('undo').disabled=false; }
+function undo(){ if(!history.length)return; waypoints=history.pop(); if(selWp!=null&&selWp>=waypoints.length)selWp=waypoints.length-1; $('undo').disabled=!history.length; render(); }
+function evPx(ev){const r=cv.getBoundingClientRect();return {px:(ev.clientX-r.left)*cv.width/r.width, py:(ev.clientY-r.top)*cv.height/r.height};}
+function wpPx(i){const sp=spine(),m=metrics(sp),w=waypoints[i];return {px:PX(w.x),py:PZ(S.rad+(w.z-m.zmin))};}
+function nearestWp(px,py){let bi=-1,bd=1e9;for(let i=0;i<waypoints.length;i++){const s=wpPx(i),d=Math.hypot(s.px-px,s.py-py);if(d<bd){bd=d;bi=i;}}return {i:bi,d:bd};}
+function toCellXY(px,py){const sp=spine(),m=metrics(sp);return {x:Math.round((px-view.ox)/view.s), z:Math.round((py-view.oy)/view.s)+m.zmin-S.rad};}
 
-// canvas interaction (custom waypoints)
-function toCell(ev){const r=cv.getBoundingClientRect();const px=(ev.clientX-r.left)*cv.width/r.width, py=(ev.clientY-r.top)*cv.height/r.height;
-  const sp=spine(),m=metrics(sp); return {x:Math.round((px-view.ox)/view.s), z:Math.round((py-view.oy)/view.s)+m.zmin-S.rad};}
 cv.addEventListener('mousedown',ev=>{
-  if(S.form!=='custom')return; if(ev.button===2)return;
-  const c=toCell(ev); let near=-1,bd=99;
-  waypoints.forEach((w,i)=>{const d=Math.hypot(w.x-c.x,w.z-c.z);if(d<bd){bd=d;near=i;}});
-  if(bd<3){drag=near;} else {waypoints.push(c);render();}
+  if(S.form!=='custom'||ev.button!==0||!waypoints)return;
+  const {px,py}=evPx(ev), n=nearestWp(px,py);
+  if(n.i<0)return;
+  selWp=n.i;                                   // 选中最近节点(优先调整)
+  if(n.d<=GRAB){ drag=n.i; dragSnap=clone(waypoints); cv.style.cursor='grabbing'; }  // 够近才拖, 永不新增
+  render();
 });
-cv.addEventListener('mousemove',ev=>{if(drag==null)return;const c=toCell(ev);waypoints[drag]={x:c.x,z:c.z};render();});
-window.addEventListener('mouseup',()=>drag=null);
-cv.addEventListener('contextmenu',ev=>{ev.preventDefault();if(S.form!=='custom')return;const c=toCell(ev);
-  let near=-1,bd=99;waypoints.forEach((w,i)=>{const d=Math.hypot(w.x-c.x,w.z-c.z);if(d<bd){bd=d;near=i;}});
-  if(bd<3&&waypoints.length>2){waypoints.splice(near,1);render();}});
+cv.addEventListener('mousemove',ev=>{ if(drag==null)return; const {px,py}=evPx(ev),c=toCellXY(px,py); waypoints[drag]={x:c.x,z:c.z}; render(); });
+window.addEventListener('mouseup',()=>{ if(drag!=null&&dragSnap)commit(dragSnap); drag=null; dragSnap=null; cv.style.cursor=''; });
+cv.addEventListener('contextmenu',ev=>{ ev.preventDefault(); if(S.form!=='custom'||!waypoints)return;
+  const {px,py}=evPx(ev), n=nearestWp(px,py);
+  if(n.i>=0&&n.d<=GRAB&&waypoints.length>2){ pushHist(); waypoints.splice(n.i,1); selWp=Math.min(selWp??0,waypoints.length-1); render(); } });
+
+$('addWp').onclick=()=>{ if(!waypoints)return; pushHist();
+  const at=(selWp!=null&&selWp<waypoints.length)?selWp:waypoints.length-1;
+  const a=waypoints[at], b=waypoints[Math.min(at+1,waypoints.length-1)];
+  let nw={x:Math.round((a.x+b.x)/2), z:Math.round((a.z+b.z)/2)};
+  if(nw.x===a.x&&nw.z===a.z)nw={x:a.x+6,z:a.z};      // 末点之后: 沿 +X 接一段
+  waypoints.splice(at+1,0,nw); selWp=at+1; render(); };
+$('delWp').onclick=()=>{ if(selWp==null||!waypoints||waypoints.length<=2)return; pushHist(); waypoints.splice(selWp,1); selWp=Math.min(selWp,waypoints.length-1); render(); };
+$('undo').onclick=undo;
+$('resetWp').onclick=()=>{ if(waypoints)pushHist(); resetWaypoints(); selWp=null; render(); };
+window.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&S.form==='custom'){e.preventDefault();undo();} });
 
 $('copy').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(window._P,null,1));$('copy').textContent='已复制 ✓';setTimeout(()=>$('copy').textContent='复制参数 JSON',1200);};
 $('png').onclick=()=>{const a=document.createElement('a');a.download='qlx_layout.png';a.href=cv.toDataURL();a.click();};
