@@ -47,6 +47,83 @@
 
 ---
 
+## ★ 各红石音乐形式 — 所需安装包(玩家端 / 生成端)·2026-06-25
+
+> 两大家族, 玩家端要装的东西不同;**切家族必换 tick rate(A=80 / B=20)**。设计器 `layout_designer.html` 只是浏览器打开的设计工具, 不算安装包。
+
+### 家族 A — 真音符盒重演(RedPiano)
+覆盖形式: 原地调色板(`45`/`46`)、曲折直线S波(`42`/`43`/`48`)、自定义走线(`47`)、多轨分布(`49`)。**用真音符盒, 程序化定产钢琴/多乐器音色。**
+| 装什么 | 哪里 | 说明 |
+|---|---|---|
+| MC Java **1.21.8** + **Fabric Loader ≥0.16** + **Fabric API** + **Java ≥21** | — | 模组运行环境(`fabric.mod.json` depends) |
+| **RedPiano 模组** `redpiano-1.0.0.jar` | profile 的 `mods/` | 源在 `mod/redpiano/`, gradle 构建出 jar(jar 被 gitignore, 可重建)。**改 jar 必重启 MC**, 见 [[redpiano-mod-build-command]] |
+| **qzpno_mv 资源包** `qzpno_mv.zip` | profile 的 `resourcepacks/` | 103块/5乐器采样, **pack_format=64**(1.21.8), **选项→资源包手动启用**(MC 会因格式错自动禁包→静音) |
+| 生成的**数据包** `<NS>` | `world/datapacks/<NS>/` | 生成器自动部署 |
+| 游戏内 **`/tick rate 80`** | 手动 | 真实曲速所需(默认20会慢4倍); 见时序数学一节 |
+
+### 家族 B — 命令方块切片(mc-noteblock-demo)
+覆盖形式: 切片回放(设计器 method=slice; 如 `dyfi`)。**放原曲音频颗粒, 100%原音色+天然多乐器。**
+| 装什么 | 哪里 | 说明 |
+|---|---|---|
+| MC Java **1.21.8** | — | **不需要模组、不需要 Fabric**(纯命令方块 + `/playsound`) |
+| **<曲名>_mv 资源包** `<ns>_mv.zip` | profile 的 `resourcepacks/` | **每首歌一个**, 含切片 ogg, **pack_format=64**, 手动启用 |
+| 生成的**数据包** `<ns>_redstone` | `world/datapacks/` | 切片管线自动部署 |
+| 游戏内 **`/tick rate 20`** | 默认值 | 切片按 200ms/格设计(DELAY=2); 残留 80 会快4倍 |
+| (生成端, 非玩家端) Demucs venv + ffmpeg | `C:\mc-noteblock-demo\venv-demucs\` | 跑 `add_song.py <audio> <name>` 出资源包+数据包 |
+
+### 一句话
+- **A** = 模组 + 1 个通用资源包(qzpno_mv) + tick80, 一次装好所有歌通用。
+- **B** = 无模组 + 每歌一个资源包 + tick20, 换歌要换资源包。
+
+---
+
+## ★★★ 第5代 agent 进展:行进脉冲旋律截断 + S波多乐器(START HERE · 2026-06-25)
+
+> 本轮(第5代 Claude)接 P0「完整化首推形态」: 把 46 已验证的旋律延音截断**移植到行进脉冲形态**, 并把首推的曲折直线S波**升级为多乐器**。**生成层面已逐项验证(下), 待用户游戏实听确认主旋律是否清楚。**
+
+### 做了什么(2 个新/改脚本)
+| 脚本 | 是什么 | 产物 / NS | 验证 |
+|---|---|---|---|
+| **`48_build_swave_multi.py`**(新建) | = 43 的 S波几何/双轨镜像/贪心均衡 ⊕ 46 的多乐器映射+旋律截断。读 .mid。**首推曲折直线形态的多乐器规范生成器**。43 原样保留作单钢琴回退。 | 七里香 `qlxs`@370000 | ✅ 生成验证 |
+| **`47_build_custom.py`**(改) | 自定义走线加旋律截断; `map_note_multi` 补返回 sound 事件、notes 补 dur; **修掉 DUAL 静默丢音陷阱**(单路径几何只支持3声部, DUAL 改为明确警告而非静默丢 3-5 声部)。 | 七里香 `qlxc`@360000 | ✅ 生成验证 |
+
+### 行进脉冲截断算法(比 DEVLOG 原设计简单, 已落地)
+**不需要原设计的 420 个 `mcut/m{i}` 独立函数。** 直接复用 46 的单个 `cutmel`(stopsound 所有 cut 事件) + `schedule ... append`:
+- 在 `fire` 里, 对每个旋律刻 `schedule function <NS>:cutmel <abs_gt>t append`, 其中 `abs_gt = (T0+OFFSET)*2 + min(dur*80, MELCAP*80, 到下一旋律刻*2-1)`(相对 fire 的**绝对游戏刻**, fire 一次性排完)。
+- `stop/cleanup/playcore` 加 `schedule clear <NS>:cutmel`。
+- 七里香: 48 截 420 音、47 截 419 音, 截延迟中位 **0.35s**(与 46 实测一致); cutmel=7 个 pad 事件; fire 调度单调递增 1244..19032(<曲长19888); 纯钢琴曲(我落泪)退化为无截断(已验)。
+
+### 验收边界 / 待办
+- **✅ 生成验证全过**: 48(pno1640+pad420, dropped=1, A/B=1030/1030 均衡, 时间轴✓碰撞✓) / 47(419截断, dropped=263单轨限制, per-path 252区块) / py_compile 双过。
+- **⏳ 待用户游戏实听**: `/reload`→`/tick rate 80`→`/function qlxs:setup`(首推S波多乐器)或 `/function qlxc:setup`(自定义走线)→[直接播放]。**重点听: 主旋律(pad)是否一颗颗清楚不糊。**
+- **★假设(待实听)**: 脉冲到达 = `(T0+OFFSET)*2` 游戏刻(与 onset 同时间轴, wllsym 已验 onset 正确)。若截早/截晚, 调一个常量偏移即可。
+- **未做(诚实记录)**: 47 自定义【单路径】的双轨6声部 = 需镜像整条自定义路径(几何活, 非一行), 列为后续; 首推 S波(48)已用双轨6声部(dropped=1)覆盖了复音需求。skill 封装(P1)/任务6粒子/任务8鲁棒性 见下方原 roadmap。
+
+---
+
+## ★★★ 第5代 agent:走线设计器大升级(任务6雏形 + 多agent · 2026-06-25)
+
+> 用户要的 5 项, 全在 `poc/layout_designer.html`(纯前端单文件)实装并浏览器验证。新增依赖文件 `poc/midiengine.js`(零依赖 UMD: MIDI 解析 + Web Audio 合成)。**用 3-agent 工作流做了"写引擎+实测解析 / 历史多轨模型调研+侧视设计 / 信号轨道+起点方向+schema 设计", 我再按序集成。**
+
+### 5 项功能(都已浏览器验证: 控制台无错 + 像素采样/状态断言; 注: 本环境 preview_screenshot 工具超时, 改用 canvas getImageData 像素采样验证)
+1. **实时播放目标 MIDI + 路线光标**: `<input type=file>` 载入任意 .mid → `MidiEngine.parse`(JS 解析, 与 mido **逐音一致**: 七里香 2061 音) → Web Audio 合成播放; ▶/⏸/⏹ + 进度条。**关键**: JS `buildTimeline()` 重建 Python 的 cells[] 骨架(rep 变延迟+trig), 七里香得 **3347 cell / 767 发声(与生成器完全一致)**; 播放时 `cellAtTime(sec)` 二分 → 蓝色光标沿路线**实时移到脉冲位置**(rAF 驱动, 可见标签页才动)。
+2. **起点 + 播放方向**: 起点 X/Z/Y + 方向 +X/-X/+Z/-Z。导出 `start_x/start_z/start_y/start_dir`。**预览用起点绿点+方向读数表示, 不旋转几何**(避免破坏自定义节点拖拽的命中测试); 真正的旋转/平移由生成器按导出应用。
+3. **同步信号轨道(粒子用)**: 平行跟随主脉冲的中继器链(无音符盒), 相对脊柱 (dx,dz) 偏移, 供玩家旁边摆命令方块做粒子。UI 加/删 + 黄色虚线预览。导出 `signal_tracks:[{dx,dz,name}]`。
+4. **关多和弦合并 → 旧版多轨分布式和弦**: `chord_mode='radiate'(当前辐射)|'multilane'(每声部一轨, 旧24/30)`。多轨模式画 N 条平行 lane(默认7, `max_poly`/`lane_dz` 可调)。导出 `chord_mode/max_poly/lane_dz/lane_offsets`。
+5. **侧视图调相对位**: 多轨模式下 `📐 侧视编辑器` → 第二个 canvas 画 Z-Y 横截面, **拖每条 lane 的方块调相对 Z(横)/Y(纵)**, 实时写回 `lane_offsets[i]` 并导出。
+
+### 导出 schema(已统一, 向后兼容)
+旧字段全留 + 新增 `start_x/start_z/start_y/start_dir/signal_tracks/chord_mode(/max_poly/lane_dz/lane_offsets)`。`song` 现随载入的 MIDI 名变。`result/bbox_cells` 仍是**仅供截图阅读的估算**, 生成器应忽略并自行重算。
+
+### 已做的生成器消费 + 设计器二轮(2026-06-25 续)
+- **✅ `49_build_multilane.py` 已建**: 消费 `start_x/z/y`(平移)+`chord_mode=multilane`+`lane_offsets[{z,y}]`(侧视拖出的每轨相对位)+`signal_tracks`(纯中继器链拷贝, 无音符盒)+`base_block`。用户实测建出 `olkml`@2660000(OLK 7轨arch+1信号轨, 截图确认几何对)。几何=48 的中继器→强充导体→音符盒链, 每声部一条。**地板/导体统一用 base_block(不再红石灯, 用户要求)**。⚠ 直线长曲 forceload 634>360 易过载, 解药=设计器换S波折叠。start_dir 仅 +X 实装(其它方向留待)。
+- **✅ 设计器加 method 选择器**: `redpiano`(真音符盒, MIDI) | `slice`(命令方块切片, MP3/WAV, 无模组, 100%原音色)。slice 模式文件选 audio, 用 `<audio>` 实时回放驱动光标; 导出含 `method`+`audio_file`+`tick_rate:20`+`slice_note`(告诉 Claude 跑 mc-noteblock-demo 管线)。
+- **✅ 信号轨可侧视拖**: signal_tracks 加 `dy`; 侧视(Z-Y横截面)里黄色虚框可拖调 dz/dy; 侧视开关在多轨控件+信号组都有。
+- **切片管线命令(family B, 收到 method=slice 的 JSON 时跑)**: `"C:\\Users\\Cohen\\mc-noteblock-demo\\venv-demucs\\Scripts\\python.exe" add_song.py <audio> <name> [ox oz] [--dir +x|-x|+z|-z] [--lanes a,b,c]` → Demucs htdemucs_6s 6轨 → librosa onset → ffmpeg 逐音切原曲(20ms交叉淡入) → 资源包(pack_format **64**)+数据包(81), 部署到 `C:\\Users\\Cohen\\nbviz\\{resourcepacks,datapacks}`。**tick 20 / DELAY=2/cell / 无模组**。布局(form/多轨/侧视/基底/信号轨)是设计器新加、切片生成器(build_qingtian_v7)目前只做线性, 要按导出布局需扩生成器。
+- ⏳ 仍待: 47/48 读 start_dir 旋转 RFACE; 49 加 S波折叠分支(解长直线过载); slice 生成器按导出布局扩展。都用 `P.get(k,默认)` 安全读。
+
+---
+
 ## ★★★ 交接给新 agent(START HERE · 2026-06-25 收尾 · Claude)
 
 > 本轮(Claude)完成 **任务4** + **任务5 原地多乐器** + **任务7 走线设计器 + 自定义走线机器**。下面是接手所需的全部:能力清单、★必做修复、待办、测试。详细过程见下方各「任务X」节;产品愿景见顶部「路线图」。

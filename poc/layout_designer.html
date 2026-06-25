@@ -68,13 +68,38 @@
       <div>X→ 时间前进 · Z↓ 折叠摆动</div>
       <div>自定义:<b>拖动</b>节点 · <b>右键</b>删 · 加点/撤销见右栏</div>
     </div>
+    <div id="sidePanel" style="display:none;margin-top:10px">
+      <div class="toolbar"><span>📐 侧视(沿 +X 时间轴看横截面)· 拖每条轨调<b>相对 Z(横)/ Y(纵)</b>位</span></div>
+      <canvas id="cvSide" width="1200" height="240" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:grab"></canvas>
+    </div>
   </div>
   <div class="right">
+    <div class="grp">
+      <h2>⓪ 播放方法 · 媒体 · 实时回放</h2>
+      <div class="seg" id="method">
+        <button data-method="redpiano" class="on">🎹 真音符盒(MIDI)</button>
+        <button data-method="slice">🎵 命令方块切片(MP3)</button>
+      </div>
+      <div id="midiCtl">
+        <label class="row"><span class="k">MIDI 文件</span><input type="file" id="midiFile" accept=".mid,.midi"></label>
+        <div class="hint" id="midiInfo">未载入 MIDI(可手填下方 cell 数预览)。载入后播放,光标沿路线<b>实时移到脉冲位置</b>。</div>
+      </div>
+      <div id="sliceCtl" style="display:none">
+        <label class="row"><span class="k">音频 MP3/WAV</span><input type="file" id="audioFile" accept=".mp3,.wav,.ogg,.flac"></label>
+        <div class="hint" id="audioInfo">未载入。切片法=原曲音频分轨(Demucs)+逐音切片回放, <b>100%原音色、多乐器、无需模组</b>(tick20)。cell 数由切片管线决定;预览光标按音频进度推进。</div>
+      </div>
+      <div class="seg" style="margin-top:4px">
+        <button id="btnPlay">▶ 播放</button>
+        <button id="btnPause">⏸ 暂停</button>
+        <button id="btnStop">⏹ 停止</button>
+      </div>
+      <label class="row"><span class="k">进度</span><input type="range" id="seek" min="0" max="1000" value="0" step="1"><span class="hint" id="tpos" style="width:74px;text-align:right">0:00 / 0:00</span></label>
+    </div>
     <div class="grp">
       <h2>① 曲目预算</h2>
       <label class="row"><span class="k">骨架 cell 数</span><input type="number" id="cells" value="3347"><span class="hint">七里香</span></label>
       <label class="row"><span class="k">发声 cell(列)</span><input type="number" id="sound" value="767"></label>
-      <div class="hint">cell=共享时间轴最小格;机器路径必须容纳全部 cell,顺序=时间顺序。折叠只改空间不改音乐。</div>
+      <div class="hint">cell=共享时间轴最小格;机器路径必须容纳全部 cell,顺序=时间顺序。折叠只改空间不改音乐。载入 MIDI 会自动填这两个数。</div>
     </div>
     <div class="grp">
       <h2>② 走线 / 播放形式</h2>
@@ -106,8 +131,35 @@
         <div class="hint">原地播放=不铺线,只摆<b>调色板音符盒</b>(用到的不同音各一个),数据包按节奏在<b>方块侧面</b>点红石块反复触发。调整主体=方块本身/网格。</div>
       </div>
     </div>
+    <div class="grp" id="modeGrp">
+      <h2>③ 和弦模式</h2>
+      <div class="seg" id="chordMode">
+        <button data-m="radiate" class="on">合并和弦(辐射)</button>
+        <button data-m="multilane">多轨分布(每声部一轨)</button>
+      </div>
+      <div id="multiLaneCtl" style="display:none">
+        <label class="row"><span class="k">最大复调 MAXPOLY</span><input type="range" id="maxPoly" min="1" max="12" value="7"><input type="number" id="maxPolyN" value="7"></label>
+        <label class="row"><span class="k">轨间距 LANE_DZ</span><input type="range" id="laneDz" min="1" max="6" value="2"><input type="number" id="laneDzN" value="2"></label>
+        <button class="btn sec" id="toggleSide" style="margin-top:4px">📐 侧视编辑器(拖轨调相对位)</button>
+        <div class="hint">多轨分布=每条声部单独一轨、共享唯一延迟骨架(绝对同步+列对齐, 旧版24/30)。轨间距防红石串扰。侧视里拖每条轨调相对 Z 位。</div>
+      </div>
+      <div class="hint" id="radiateHint">合并辐射=一个导体同刻向上+左右辐射 ≤3 音(紧凑, 当前 48/43)。关掉它=改用左边多轨分布。</div>
+    </div>
+    <div class="grp">
+      <h2>④ 起点 与 播放方向</h2>
+      <label class="row"><span class="k">起点 X (OX)</span><input type="number" id="startX" value="0"></label>
+      <label class="row"><span class="k">起点 Z (OZ)</span><input type="number" id="startZ" value="0"></label>
+      <label class="row"><span class="k">起点 Y (高度)</span><input type="number" id="startY" value="255"></label>
+      <div class="seg" id="startDir">
+        <button data-d="+X" class="on">→ +X</button>
+        <button data-d="-X">← -X</button>
+        <button data-d="+Z">↓ +Z</button>
+        <button data-d="-Z">↑ -Z</button>
+      </div>
+      <div class="hint">脉冲从起点沿此方向推进(中继器朝向随之)。预览用起点标记+方向读数表示;生成器按此摆放/朝向机器。</div>
+    </div>
     <div class="grp" id="lineGrp">
-      <h2>③ 线宽 与 空格</h2>
+      <h2>⑤ 线宽 与 空格</h2>
       <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
       <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
       <label class="row"><span class="k">双轨(中轴镜像)</span><input type="checkbox" id="dual" checked></label>
@@ -115,13 +167,27 @@
       <div class="hint">线宽=发声列向脊柱两侧伸的音符盒数。gap=相邻折额外留空,防音符列重叠/红石串扰。</div>
     </div>
     <div class="grp">
-      <h2>④ 信号基底方块</h2>
+      <h2>⑥ 信号基底方块</h2>
       <input type="text" id="blkSearch" placeholder="搜索可导红石的方块… 如 concrete / 石英 / deepslate">
       <div id="blkList" class="blklist"></div>
       <div class="hint">仅列<b>能承载红石信号</b>的实心不透明方块(已自动滤掉 玻璃/台阶/楼梯/树叶/荧石 等不导通方块)。当前:<b id="blkCur">minecraft:stone</b></div>
     </div>
     <div class="grp">
-      <h2>⑤ 实测(估算)</h2>
+      <h2>⑦ 信号轨道(粒子同步)</h2>
+      <div class="hint">平行跟随主脉冲的<b>中继器链</b>(与音乐完全同步, 无音符盒), 供玩家在旁摆命令方块触发粒子。相对脊柱偏移 (dx, dz)。</div>
+      <label class="row"><span class="k">轨道名</span><input type="text" id="sigName" placeholder="如 粒子轨1"></label>
+      <label class="row"><span class="k">X 偏移 dx</span><input type="number" id="sigDx" value="0"></label>
+      <label class="row"><span class="k">Z 偏移 dz</span><input type="number" id="sigDz" value="6"></label>
+      <label class="row"><span class="k">Y 偏移 dy</span><input type="number" id="sigDy" value="0"></label>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn sec" id="addSig">➕ 加轨道</button>
+        <button class="btn sec" id="delSig" disabled>🗑 删最后</button>
+        <button class="btn sec" id="toggleSide2">📐 侧视调位</button>
+      </div>
+      <div id="sigList" class="blklist" style="max-height:110px"></div>
+    </div>
+    <div class="grp">
+      <h2>⑧ 实测(估算)</h2>
       <div class="metric"><span>X 跨度(长)</span><span class="v" id="mX">–</span></div>
       <div class="metric"><span>Z 总宽(宽)</span><span class="v" id="mZ">–</span></div>
       <div class="metric"><span id="mCk">压缩比</span><span class="v" id="mC">–</span></div>
@@ -131,7 +197,7 @@
       <div id="verdict"></div>
     </div>
     <div class="grp">
-      <h2>⑥ 参数(截图给我即可)</h2>
+      <h2>⑨ 参数(截图给我即可)</h2>
       <pre id="params"></pre>
       <button class="btn" id="copy">复制参数 JSON</button>
       <button class="btn sec" id="png">下载预览 PNG</button>
@@ -139,13 +205,23 @@
     </div>
   </div>
 </div>
+<script src="midiengine.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const cv=$('cv'), ctx=cv.getContext('2d');
 let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347, sound:767,
-       pal:47, pcols:16, rowgap:3, base:'minecraft:stone'};
+       pal:47, pcols:16, rowgap:3, base:'minecraft:stone',
+       // ③ 起点与播放方向(导出给生成器; 预览用箭头+原点读数表示, 不旋转几何以保自定义编辑稳定)
+       start_x:0, start_z:0, start_y:255, start_dir:'+X',
+       // ④b 同步信号轨道(供玩家摆命令方块做粒子): [{dx,dz,name}]
+       signal_tracks:[],
+       // 和弦模式: 'radiate'(合并辐射, 当前) | 'multilane'(每声部一轨, 旧版24/30)
+       chord_mode:'radiate', max_poly:7, lane_dz:2, lane_offsets:null, side_view:false,
+       // 播放方法: 'redpiano'(真音符盒重演, 需MIDI+模组) | 'slice'(命令方块切片, 需MP3, 无模组)
+       method:'redpiano', audio_file:null, audio_duration:0};
 let waypoints=null, drag=null, selWp=null, history=[], dragSnap=null, pan=null, viewInit=false;
 let view={s:1,ox:0,oy:0};
+let synth=null, midiTimeline=null, playCell=null, songName='七里香';   // ⓪ MIDI 实时播放 + 路线光标
 const PX=x=>view.ox+x*view.s, PZ=z=>view.oy+z*view.s;
 const evPx=ev=>{const r=cv.getBoundingClientRect();return {px:(ev.clientX-r.left)*cv.width/r.width, py:(ev.clientY-r.top)*cv.height/r.height};};
 
@@ -192,13 +268,34 @@ function inplaceMetrics(g){const Xspan=g.cols+2,Zwidth=(g.rows-1)*g.gap+3;
 function bbox(){
   if(S.form==='inplace'){const g=inplaceGrid();return {x0:-1,x1:g.cols+1,z0:-2,z1:(g.rows-1)*g.gap+2};}
   const m=lineMetrics(spine());const bandW=m.Zband+2*S.rad;
+  if(S.chord_mode==='multilane'){const lz=laneOffsetsArr().map(l=>l.z);
+    return {x0:m.xmin-S.rad,x1:m.xmax+S.rad,z0:-1,z1:m.Zband+(Math.max(...lz,0)-Math.min(...lz,0))+2*S.rad+1};}
   return {x0:m.xmin-S.rad,x1:m.xmax+S.rad,z0:-1,z1:(S.dual?bandW*2+S.sep:bandW)};}
 function setFit(){const b=bbox(),pad=44,w=b.x1-b.x0+1,h=b.z1-b.z0+1;
   view.s=Math.max(.02,Math.min(40,Math.min((cv.width-2*pad)/w,(cv.height-2*pad)/h)));
   view.ox=pad-b.x0*view.s;view.oy=pad-b.z0*view.s;}
 
 // ---------- draw ----------
+function laneOffsetsArr(){
+  if(S.lane_offsets&&S.lane_offsets.length===S.max_poly)return S.lane_offsets;
+  const a=[];for(let i=0;i<S.max_poly;i++)a.push({z:i*S.lane_dz,y:0});return a;}
+const LANE_COLS=['#3fb950','#bc8cff','#58a6ff','#f0883e','#d29922','#7ee787','#a371f7','#ff7b72','#79c0ff','#d2a8ff','#56d364','#e3b341'];
+function drawLineMultilane(){            // ③ 多轨分布: 每声部一轨, 共享骨架, 沿 Z 平行展开
+  const sp=spine(),m=lineMetrics(sp),lanes=laneOffsetsArr();
+  for(let li=0;li<lanes.length;li++){const oz=lanes[li].z,col=LANE_COLS[li%LANE_COLS.length];
+    ctx.beginPath();
+    for(let i=0;i<sp.length;i++){const c=sp[i],zz=S.rad+(c.z-m.zmin)+oz,X=PX(c.x),Z=PZ(zz);i?ctx.lineTo(X,Z):ctx.moveTo(X,Z);}
+    ctx.strokeStyle=col;ctx.globalAlpha=.72;ctx.lineWidth=Math.max(1.5,view.s*.8);ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();ctx.globalAlpha=1;
+    if(sp.length){const c=sp[0];ctx.fillStyle=col;ctx.font='10px monospace';ctx.fillText('L'+li,PX(c.x)-4,PZ(S.rad+(c.z-m.zmin)+oz)+4);}}
+  ctx.fillStyle='#f0883e';for(const c of sp)if(c.turn){ctx.beginPath();ctx.arc(PX(c.x),PZ(S.rad+(c.z-m.zmin)),Math.max(1.4,view.s*.55),0,7);ctx.fill();}
+  const lz=lanes.map(l=>l.z),laneSpread=(Math.max(...lz,0)-Math.min(...lz,0));
+  const mm=Object.assign({},m,{Zwidth:m.Zband+laneSpread+2*S.rad,multilane:true,lanes:lanes.length});
+  ctx.fillStyle='#8b949e';ctx.font='11px monospace';
+  ctx.fillText(`多轨分布 ${lanes.length}轨 · 轨距 ${S.lane_dz} · 每声部独立(共享骨架=绝对同步) · 基底 ${S.base.replace('minecraft:','')}`,46,cv.height-12);
+  drawSignals(sp,m);drawStartInfo(sp,m);drawPlayhead(sp,m);
+  return mm;}
 function drawLine(){
+  if(S.chord_mode==='multilane')return drawLineMultilane();
   const sp=spine(),m=lineMetrics(sp),s=view.s,bandW=m.Zband+2*S.rad;
   const track=(zoff,mir,col)=>{ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
     for(let i=0;i<sp.length;i++){const c=sp[i],lz=c.z-m.zmin,zz=zoff+(mir?(m.Zband-1-lz):lz);
@@ -213,7 +310,27 @@ function drawLine(){
     ctx.lineWidth=sel?2.5:1.5;ctx.strokeStyle='#fff';ctx.stroke();});
   ctx.fillStyle='#8b949e';ctx.font='11px monospace';
   ctx.fillText(`X 跨度 ${m.Xspan} (时间→) · 基底 ${S.base.replace('minecraft:','')}`,46,cv.height-12);
+  drawSignals(sp,m);
+  drawStartInfo(sp,m);
+  drawPlayhead(sp,m);
   return m;}
+function drawSignals(sp,m){              // ⑦ 信号轨道: 平行虚线跟随主路线, 偏移(dx,dz)
+  if(!S.signal_tracks||!S.signal_tracks.length)return;
+  for(const sig of S.signal_tracks){
+    ctx.beginPath();
+    for(let i=0;i<sp.length;i++){const c=sp[i],zz=S.rad+(c.z-m.zmin)+sig.dz,X=PX(c.x+sig.dx),Z=PZ(zz);i?ctx.lineTo(X,Z):ctx.moveTo(X,Z);}
+    ctx.strokeStyle='#e3b341';ctx.globalAlpha=.6;ctx.setLineDash([5,3]);ctx.lineWidth=Math.max(1,view.s*.6);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+    if(sp.length){const c=sp[0];ctx.fillStyle='#e3b341';ctx.font='10px monospace';ctx.fillText('⚡'+sig.name,PX(c.x+sig.dx)+3,PZ(S.rad+(c.z-m.zmin)+sig.dz)-4);}
+  }
+}
+function drawStartInfo(sp,m){            // ④ 起点标记 + 方向读数(几何不旋转, 由生成器应用)
+  if(!sp.length)return;const c=sp[0],zz=S.rad+(c.z-m.zmin),X=PX(c.x),Z=PZ(zz);
+  ctx.beginPath();ctx.arc(X,Z,Math.max(3,view.s*.8),0,7);ctx.fillStyle='#3fb950';ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();
+  const arrows={'+X':'→','-X':'←','+Z':'↓','-Z':'↑'};
+  ctx.fillStyle='#7ee787';ctx.font='bold 12px monospace';
+  ctx.fillText(`起点(${S.start_x},${S.start_z},Y${S.start_y}) 方向 ${arrows[S.start_dir]||''} ${S.start_dir}`,46,cv.height-28);
+}
 function drawInplace(){
   const g=inplaceGrid(),m=inplaceMetrics(g),s=view.s;
   for(const b of g.blocks){const X=PX(b.x),Z=PZ(b.z);
@@ -228,11 +345,17 @@ function render(){
   if(!viewInit){setFit();viewInit=true;}
   ctx.clearRect(0,0,cv.width,cv.height);
   const m=S.form==='inplace'?drawInplace():drawLine();
-  updateUI(m);}
+  updateUI(m);
+  if(S.side_view&&(S.chord_mode==='multilane'||(S.signal_tracks&&S.signal_tracks.length)))renderSideView();}
 
 // ---------- UI sync ----------
 function verdict(m){const out=[];
   if(m.form==='inplace'){out.push(['ok','✓ 原地播放:占地极小、零中继器、不过载(保底播放方案)']);return out;}
+  if(S.chord_mode==='multilane'){
+    out.push(['ok',`✓ 多轨分布: ${laneOffsetsArr().length}轨/每声部一轨, 共享唯一骨架 → 绝对同步+列对齐(旧版24/30, 不合并和弦)`]);
+    if(S.lane_dz<2)out.push(['warn','轨间距 LANE_DZ <2: 红石易串扰, 建议 ≥2']);
+    if(m.fl>360)out.push(['warn',`forceload ≈ ${m.fl} 区块偏大可能过载;减轨数/紧凑些更稳`]);
+    return out;}
   if(S.form==='swave'){const need=S.rad*2+S.gap+1;
     if(S.zmax<need)out.push(['bad',`ZMAX=${S.zmax} 太小:折间距 < 线宽×2+gap+1=${need} → 音符列重叠/串扰(破坏音乐)`]);}
   if(m.short)out.push(['bad',`自定义路径太短,缺 ${m.short} 个 cell → 加路点拉长路径`]);
@@ -247,11 +370,18 @@ function updateUI(m){
   $('mTk').textContent=inp?'网格':'拐点数';$('mT').textContent=inp?`${m.cols}×${m.rows}`:m.turns;
   $('mA').textContent=m.area.toLocaleString();$('mF').textContent='~'+m.fl;
   $('verdict').innerHTML=verdict(m).map(([c,t])=>`<div class="verdict ${c}">${t}</div>`).join('');
+  const sig=S.signal_tracks.length?S.signal_tracks:null;
+  const ml=S.chord_mode==='multilane'?{max_poly:S.max_poly,lane_dz:S.lane_dz,lane_offsets:S.lane_offsets||null}:{};
+  const aud=S.method==='slice'?{audio_file:S.audio_file,audio_duration:+(S.audio_duration||0).toFixed(1),tick_rate:20,
+            slice_note:"method=slice: 跑 mc-noteblock-demo 切片管线(Demucs分轨+逐音切片), cells/sounding 为占位, 真切片数由管线定; 布局(form/多轨/侧视/基底/信号轨/起点方向)按下方应用"}:{};
   let P;
-  if(inp)P={song:'七里香',form:'inplace',palette_noteblocks:S.pal,PCOLS:S.pcols,ROWGAP:S.rowgap,
-            base_block:S.base,result:{X_span:m.Xspan,Z_width:m.Zwidth,grid:`${m.cols}x${m.rows}`,forceload_chunks:m.fl}};
-  else P={song:'七里香',form:S.form,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
+  if(inp)P={song:songName,form:'inplace',method:S.method,palette_noteblocks:S.pal,PCOLS:S.pcols,ROWGAP:S.rowgap,base_block:S.base,
+            start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,signal_tracks:sig,...aud,
+            result:{X_span:m.Xspan,Z_width:m.Zwidth,grid:`${m.cols}x${m.rows}`,forceload_chunks:m.fl}};
+  else P={song:songName,form:S.form,method:S.method,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
           line_width_radiate:S.rad,fold_gap:S.gap,dual_track_mirror:S.dual,track_sep:S.sep,base_block:S.base,
+          start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,
+          chord_mode:S.chord_mode,...ml,signal_tracks:sig,...aud,
           result:{X_span:m.Xspan,Z_width:m.Zwidth,compression:+m.comp.toFixed(2),turns:m.turns,forceload_chunks:m.fl},
           bbox_cells:{x:[m.xmin,m.xmax],z:[m.zmin,m.zmax]},
           waypoints:(S.form==='custom'&&waypoints)?waypoints.map(w=>[w.x,w.z]):null};
@@ -328,9 +458,172 @@ function renderBlkList(q){q=(q||'').trim().toLowerCase();
   $('blkList').querySelectorAll('.blkitem[data-id]').forEach(el=>el.onclick=()=>{S.base=el.dataset.id;$('blkCur').textContent=S.base;renderBlkList(q);render();});}
 $('blkSearch').oninput=e=>renderBlkList(e.target.value);
 
+// ========== ③ 和弦模式 / ④ 起点·方向 / ⑦ 信号轨道 控制 ==========
+[['startX','start_x'],['startZ','start_z'],['startY','start_y']].forEach(([id,key])=>{
+  $(id).oninput=e=>{S[key]=+e.target.value||0;render();};});
+document.querySelectorAll('#startDir button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#startDir button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  S.start_dir=b.dataset.d;render();});
+function initLaneOffsets(){S.lane_offsets=[];for(let i=0;i<S.max_poly;i++)S.lane_offsets.push({z:i*S.lane_dz,y:0});}
+document.querySelectorAll('#chordMode button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#chordMode button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  S.chord_mode=b.dataset.m;
+  $('multiLaneCtl').style.display=S.chord_mode==='multilane'?'':'none';
+  $('radiateHint').style.display=S.chord_mode==='multilane'?'none':'';
+  if(S.chord_mode==='multilane')initLaneOffsets();
+  setFit();render();});
+bindRange($('maxPoly'),$('maxPolyN'),'max_poly');
+bindRange($('laneDz'),$('laneDzN'),'lane_dz');
+// max_poly/lane_dz 变了 -> 重置 lane_offsets(让侧视与轨数一致)
+['maxPoly','maxPolyN','laneDz','laneDzN'].forEach(id=>{const prev=$(id).oninput;
+  $(id).oninput=e=>{prev&&prev(e);if(S.chord_mode==='multilane'){initLaneOffsets();renderSideView&&renderSideView();}};});
+
+function renderSigList(){
+  $('sigList').innerHTML=S.signal_tracks.map(s=>`<div class="blkitem"><span>⚡${s.name}</span><span class="id">dx=${s.dx} dz=${s.dz} dy=${s.dy||0}</span></div>`).join('')||'<div class="blkitem">无信号轨</div>';
+  $('delSig').disabled=!S.signal_tracks.length;}
+$('addSig').onclick=()=>{const name=($('sigName').value||'').trim()||`轨${S.signal_tracks.length+1}`;
+  S.signal_tracks.push({dx:+$('sigDx').value||0,dz:+$('sigDz').value||0,dy:+$('sigDy').value||0,name});
+  $('sigName').value='';renderSigList();render();};
+$('delSig').onclick=()=>{S.signal_tracks.pop();renderSigList();render();};
+renderSigList();
+
+// ========== ③ 多轨 侧视编辑器(拖轨调相对 Z/Y) ==========
+const cvSide=$('cvSide'),ctxSide=cvSide?cvSide.getContext('2d'):null;
+let sideDrag=null;
+const SV={ozx:70,scaleZ:14,oyy:120,scaleY:11};
+function svPos(l){return {px:SV.ozx+l.z*SV.scaleZ,py:SV.oyy-l.y*SV.scaleY};}
+function svEvPx(ev){const r=cvSide.getBoundingClientRect();return {px:(ev.clientX-r.left)*cvSide.width/r.width,py:(ev.clientY-r.top)*cvSide.height/r.height};}
+function renderSideView(){
+  if(!ctxSide)return;
+  ctxSide.clearRect(0,0,cvSide.width,cvSide.height);
+  ctxSide.fillStyle='#0d1117';ctxSide.fillRect(0,0,cvSide.width,cvSide.height);
+  ctxSide.strokeStyle='#30363d';ctxSide.lineWidth=1;
+  ctxSide.beginPath();ctxSide.moveTo(40,SV.oyy);ctxSide.lineTo(cvSide.width-10,SV.oyy);ctxSide.stroke();
+  ctxSide.fillStyle='#8b949e';ctxSide.font='11px monospace';
+  ctxSide.fillText('Y↑',14,28);ctxSide.fillText('Z (轨间相对位) →',cvSide.width-170,SV.oyy+18);
+  ctxSide.fillText('沿 +X 时间轴看机器横截面;拖方块调每条轨的相对 Z(横)/Y(纵)',46,20);
+  if(S.chord_mode==='multilane'){const lanes=laneOffsetsArr();
+    for(let i=0;i<lanes.length;i++){const p=svPos(lanes[i]),col=LANE_COLS[i%LANE_COLS.length];
+      ctxSide.strokeStyle=col;ctxSide.globalAlpha=.22;ctxSide.beginPath();ctxSide.moveTo(p.px,26);ctxSide.lineTo(p.px,cvSide.height-12);ctxSide.stroke();ctxSide.globalAlpha=1;
+      ctxSide.fillStyle=col;ctxSide.fillRect(p.px-15,p.py-13,30,26);
+      ctxSide.fillStyle='#0d1117';ctxSide.font='bold 12px monospace';ctxSide.fillText('L'+i,p.px-(i>9?10:6),p.py+4);
+      ctxSide.fillStyle='#8b949e';ctxSide.font='9px monospace';ctxSide.fillText(`z${lanes[i].z} y${lanes[i].y}`,p.px-15,p.py+24);}}
+  for(let i=0;i<(S.signal_tracks||[]).length;i++){const sig=S.signal_tracks[i];if(sig.dy==null)sig.dy=0;   // 信号轨(黄色虚框, 可拖)
+    const p=svPos({z:sig.dz,y:sig.dy});
+    ctxSide.setLineDash([4,3]);ctxSide.strokeStyle='#e3b341';ctxSide.lineWidth=2;ctxSide.strokeRect(p.px-15,p.py-12,30,24);ctxSide.setLineDash([]);
+    ctxSide.fillStyle='#e3b341';ctxSide.font='bold 13px monospace';ctxSide.fillText('⚡',p.px-6,p.py+4);
+    ctxSide.fillStyle='#8b949e';ctxSide.font='9px monospace';ctxSide.fillText(`z${sig.dz} y${sig.dy}`,p.px-15,p.py+22);}
+  if(S.chord_mode!=='multilane'&&!(S.signal_tracks&&S.signal_tracks.length)){
+    ctxSide.fillStyle='#8b949e';ctxSide.font='12px monospace';ctxSide.fillText('(无可调对象: 开多轨分布 或 加信号轨)',46,SV.oyy+40);}
+}
+if(cvSide){
+  cvSide.addEventListener('mousedown',ev=>{const {px,py}=svEvPx(ev);
+    if(S.chord_mode==='multilane'){const lanes=laneOffsetsArr();
+      for(let i=0;i<lanes.length;i++){const p=svPos(lanes[i]);if(Math.abs(px-p.px)<=17&&Math.abs(py-p.py)<=17){
+        if(!S.lane_offsets||S.lane_offsets.length!==S.max_poly)initLaneOffsets();sideDrag={t:'lane',i};cvSide.style.cursor='grabbing';return;}}}
+    for(let i=0;i<(S.signal_tracks||[]).length;i++){const sig=S.signal_tracks[i];if(sig.dy==null)sig.dy=0;
+      const p=svPos({z:sig.dz,y:sig.dy});if(Math.abs(px-p.px)<=17&&Math.abs(py-p.py)<=15){sideDrag={t:'signal',i};cvSide.style.cursor='grabbing';return;}}});
+  cvSide.addEventListener('mousemove',ev=>{if(!sideDrag)return;const {px,py}=svEvPx(ev);
+    const z=Math.max(0,Math.round((px-SV.ozx)/SV.scaleZ)),y=Math.round((SV.oyy-py)/SV.scaleY);
+    if(sideDrag.t==='lane'){S.lane_offsets[sideDrag.i].z=z;S.lane_offsets[sideDrag.i].y=y;}
+    else{S.signal_tracks[sideDrag.i].dz=z;S.signal_tracks[sideDrag.i].dy=y;renderSigList();}
+    renderSideView();render();});
+  window.addEventListener('mouseup',()=>{if(sideDrag){sideDrag=null;cvSide.style.cursor='grab';}});
+}
+function toggleSideView(){S.side_view=!S.side_view;$('sidePanel').style.display=S.side_view?'':'none';
+  const t=S.side_view?'📐 收起侧视':'📐 侧视编辑器';if($('toggleSide'))$('toggleSide').textContent=t;
+  if(S.side_view){if(S.chord_mode==='multilane'&&(!S.lane_offsets||S.lane_offsets.length!==S.max_poly))initLaneOffsets();renderSideView();}}
+$('toggleSide').onclick=toggleSideView;
+if($('toggleSide2'))$('toggleSide2').onclick=toggleSideView;
+
 $('copy').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(window._P,null,1));$('copy').textContent='已复制 ✓';setTimeout(()=>$('copy').textContent='复制参数 JSON',1200);};
 $('png').onclick=()=>{const a=document.createElement('a');a.download='qlx_layout.png';a.href=cv.toDataURL();a.click();};
-$('songtag').textContent='当前曲目:七里香 · 直线3347cell/原地47音符盒';
+// ========== ⓪ MIDI 实时播放 + 路线光标(playhead) ==========
+const U_SEC=2/80;                       // 1 music-tick = 0.025s (与 Python U=2/TPS 一致)
+function buildTimeline(notes){          // 重建 Python 的 cells[] 骨架(rep 变延迟 + trig), 得每个 cell 的到达刻
+  const ticks=[...new Set(notes.filter(n=>n.vel>=0.04).map(n=>Math.round(n.t/U_SEC)))].sort((a,b)=>a-b);
+  if(!ticks.length)return null;
+  const OFFSET=ticks[0]===0?1:0;
+  const arrival=[];let prev=0,cum=0;
+  for(const T0 of ticks){
+    const T=T0+OFFSET,G=T-prev;
+    let reps=[];for(let k=0;k<Math.floor(G/4);k++)reps.push(4);if(G%4)reps.push(G%4);
+    if(!reps.length)reps=[1];
+    for(const d of reps){cum+=d;arrival.push(cum);}      // rep cell 到达刻
+    arrival.push(cum);                                    // trig cell 到达刻(== T0+OFFSET)
+    prev=T;
+  }
+  return {arrival,ncells:arrival.length,firstTick:ticks[0],lastTick:ticks[ticks.length-1],ntrig:ticks.length};
+}
+function cellAtTime(sec){                // 二分: 播放秒 -> 路线 cell 索引(脉冲此刻所在)
+  if(!midiTimeline)return null;
+  const target=sec/U_SEC,a=midiTimeline.arrival;
+  let lo=0,hi=a.length-1;
+  while(lo<hi){const mid=(lo+hi)>>1;if(a[mid]<target)lo=mid+1;else hi=mid;}
+  return Math.min(lo,a.length-1);
+}
+function fmtT(s){s=Math.max(0,s|0);return `${(s/60)|0}:${String(s%60).padStart(2,'0')}`;}
+function drawPlayhead(sp,m){             // 在路线上画脉冲光标
+  if(playCell==null||!sp||!sp.length)return;
+  const idx=Math.max(0,Math.min(sp.length-1,playCell)),c=sp[idx];
+  const zz=S.rad+(c.z-m.zmin),X=PX(c.x),Z=PZ(zz),r=Math.max(4,view.s*0.9);
+  ctx.beginPath();ctx.arc(X,Z,r,0,7);ctx.fillStyle='#58a6ff';ctx.globalAlpha=.9;ctx.fill();ctx.globalAlpha=1;
+  ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();
+  ctx.beginPath();ctx.arc(X,Z,r*2.1,0,7);ctx.strokeStyle='#58a6ff';ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;
+}
+function onMidiLoaded(m,fname){
+  songName=fname.replace(/\.(mid|midi)$/i,'');
+  midiTimeline=buildTimeline(m.notes);
+  if(midiTimeline){
+    S.cells=Math.max(2,midiTimeline.ncells);S.sound=midiTimeline.ntrig;
+    $('cells').value=S.cells;$('sound').value=S.sound;
+    if(waypoints){resetWaypoints();history=[];selWp=null;$('undo').disabled=true;}
+  }
+  const byi={};for(const n of m.notes)byi[n.instr]=(byi[n.instr]||0)+1;
+  $('midiInfo').innerHTML=`已载入 <b>${fname}</b> · ${m.notes.length} 音 · ${m.duration.toFixed(1)}s · 声部 ${JSON.stringify(byi)} · 骨架 ${S.cells} cell。按 ▶ 播放,光标沿路线移动。`;
+  $('songtag').textContent=`当前曲目:${fname} · ${m.notes.length}音/${S.cells}cell`;
+  $('seek').max=Math.max(1,Math.round(m.duration));
+  $('tpos').textContent=`0:00 / ${fmtT(m.duration)}`;
+  synth=synth||new MidiEngine.Synth();synth.loadNotes(m.notes);
+  synth.onProgress(sec=>{playCell=cellAtTime(sec);$('seek').value=Math.round(sec);$('tpos').textContent=`${fmtT(sec)} / ${fmtT(synth.duration)}`;render();});
+  synth.onEnded(()=>{playCell=null;$('seek').value=0;render();});
+  setFit();render();
+}
+$('midiFile').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  f.arrayBuffer().then(ab=>{try{const m=MidiEngine.parse(ab);window._MID=m;onMidiLoaded(m,f.name);}catch(err){$('midiInfo').textContent='解析失败: '+err.message;}});};
+// ---- 媒体: redpiano(MIDI synth) vs slice(音频元素) ----
+const audioEl=new Audio(); let audioTimer=null;
+function curDur(){return S.method==='slice'?S.audio_duration:(synth?synth.duration:0);}
+function sliceCell(){return S.audio_duration>0?Math.round(audioEl.currentTime/S.audio_duration*(S.cells-1)):null;}
+document.querySelectorAll('#method button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#method button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  S.method=b.dataset.method;
+  $('midiCtl').style.display=S.method==='redpiano'?'':'none';
+  $('sliceCtl').style.display=S.method==='slice'?'':'none';
+  if(synth)synth.stop(); audioEl.pause(); playCell=null;
+  $('seek').value=0;$('tpos').textContent=`0:00 / ${fmtT(curDur())}`;render();});
+$('audioFile').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  audioEl.src=URL.createObjectURL(f);
+  audioEl.onloadedmetadata=()=>{S.audio_file=f.name;S.audio_duration=audioEl.duration;songName=f.name.replace(/\.[^.]+$/,'');
+    S.cells=Math.max(2,Math.round(audioEl.duration*5));$('cells').value=S.cells;          // 占位预览(真cell数由切片管线定)
+    $('audioInfo').innerHTML=`已载入 <b>${f.name}</b> · ${audioEl.duration.toFixed(1)}s · 占位 ${S.cells} cell(真切片数由 Demucs+onset 管线决定)`;
+    $('songtag').textContent=`当前:${f.name} · 切片法(MP3)`;
+    $('seek').max=Math.max(1,Math.round(audioEl.duration));$('tpos').textContent=`0:00 / ${fmtT(audioEl.duration)}`;
+    if(waypoints){resetWaypoints();history=[];selWp=null;$('undo').disabled=true;}
+    setFit();render();};};
+audioEl.onplay=()=>{audioTimer=setInterval(()=>{playCell=sliceCell();$('seek').value=Math.round(audioEl.currentTime);
+    $('tpos').textContent=`${fmtT(audioEl.currentTime)} / ${fmtT(S.audio_duration)}`;render();},60);};
+audioEl.onpause=()=>{if(audioTimer)clearInterval(audioTimer);};
+audioEl.onended=()=>{if(audioTimer)clearInterval(audioTimer);playCell=null;$('seek').value=0;render();};
+$('btnPlay').onclick=()=>{if(S.method==='slice')audioEl.play();else if(synth)synth.play(+$('seek').value||0);};
+$('btnPause').onclick=()=>{if(S.method==='slice')audioEl.pause();else if(synth)synth.pause();};
+$('btnStop').onclick=()=>{if(S.method==='slice'){audioEl.pause();audioEl.currentTime=0;}else if(synth)synth.stop();
+  playCell=null;$('seek').value=0;$('tpos').textContent=`0:00 / ${fmtT(curDur())}`;render();};
+$('seek').oninput=e=>{const v=+e.target.value;
+  if(S.method==='slice'){if(S.audio_duration){audioEl.currentTime=v;playCell=sliceCell();render();}}
+  else if(synth){synth.seek(v);playCell=cellAtTime(v);render();}};
+
+$('songtag').textContent='当前曲目:未载入 · 直线3347cell/原地47音符盒';
 renderBlkList('');render();
 </script>
 </body>

@@ -27,6 +27,9 @@ OZ, Y  = 0, 255
 TPS, PULSE, BATCH = 80, 4, 2000
 U = 2 / TPS
 SSTOP = "stopsound @a"
+CUT_INSTR = {"pad", "lead", "bass"}   # 持续型非钢琴(易拖尾) -> 截延音; 钢琴/鼓不截
+MIN_CUT_GT = 4                        # 截断延迟下限(游戏刻)
+MELCAP_S = 1.2                        # 旋律延音上限(秒)
 WORLD_DP = r"C:/Minecraft/ModrinthApp/profiles/Fabric 1.21.8/saves/新的世界 (1)/datapacks"
 RFACE = {(1, 0): "west", (-1, 0): "east", (0, 1): "north", (0, -1): "south"}
 
@@ -34,7 +37,10 @@ P = json.load(open(os.path.join(HERE, PARAMS), encoding="utf-8"))
 WPS = [tuple(w) for w in P["waypoints"]]
 BASE = P.get("base_block", "minecraft:stone")
 DUAL = P.get("dual_track_mirror", False)
-VPC = 6 if DUAL else 3                                    # 单轨 3 声部(43 验证几何)
+VPC = 3                                                   # 单路径几何只支持每格3声部(上+左右各1)
+if DUAL:
+    print("[警告] 自定义【单路径】暂不支持双轨6声部(chord 仅摆3, 旧版会静默丢3-5声部)。"
+          "已按单轨3声部生成; 要6声部双轨镜像请用 48_build_swave_multi.py 的曲折直线S波形态。")
 
 # ---- 多乐器映射(46 号同源)----
 MM = json.load(open(os.path.join(HERE, "redpiano_map_multi.json"), encoding="utf-8"))
@@ -47,13 +53,14 @@ def map_note_multi(midi, vel, instr):
     if not inst["pitched"]:
         dt = GD.get(midi, "snare")
         if dt not in inst["types"]: dt = next(iter(inst["types"]))
-        return inst["types"][dt], 12
+        return inst["types"][dt], 12, inst["sound"][f"drum:{dt}"]
     bands = inst["bands"]; band = min(bands, key=lambda b: abs(b - midi)); raw = 12 + (midi - band)
     nv = max(0, min(24, raw))
     if not (0 <= raw <= 24): clamped[0] += 1
     layer = ("p" if vel < 0.40 else ("mf" if vel < 0.72 else "f")) if instr == "pno" else "mf"
     if layer not in inst["layers"]: layer = "mf" if "mf" in inst["layers"] else inst["layers"][0]
-    return inst["block"][f"{band}_{layer}"], nv
+    key = f"{band}_{layer}"
+    return inst["block"][key], nv, inst["sound"][key]
 
 # ---- 解析七里香(带乐器标签)----
 mf = mido.MidiFile(MID); cur = defaultdict(int); active = {}; t = 0.0; notes = []
@@ -66,7 +73,8 @@ for msg in mf:
         if k in active:
             st, v = active.pop(k); ch = msg.channel
             instr = "drum" if ch == 9 else FAM.get(cur[ch] // 8, "pno")
-            notes.append({"t": round(st, 3), "midi": int(msg.note), "vel": round(v / 127.0, 3), "instr": instr})
+            notes.append({"t": round(st, 3), "midi": int(msg.note), "vel": round(v / 127.0, 3),
+                          "dur": round(max(t - st, 0.02), 3), "instr": instr})
 
 # ---- 量化 + 单轨声部分配 ----
 bycell = defaultdict(list)
@@ -74,10 +82,18 @@ for n in notes:
     if n["vel"] >= 0.04: bycell[round(n["t"] / U)].append(n)
 trig = sorted(bycell)
 voices = {}; dropped = 0
+cut_events = set(); meldur = {}; instr_count = defaultdict(int)   # 旋律截断数据
 for tk in trig:
     g = sorted(bycell[tk], key=lambda x: -x["midi"])[:VPC]
     dropped += max(0, len(bycell[tk]) - VPC)
-    voices[tk] = [map_note_multi(n["midi"], n["vel"], n["instr"]) for n in g]
+    vl = []
+    for n in g:
+        block, nv, sound = map_note_multi(n["midi"], n["vel"], n["instr"])
+        vl.append((block, nv)); instr_count[n["instr"]] += 1
+        if n["instr"] in CUT_INSTR:
+            cut_events.add(sound)
+            meldur[tk] = n["dur"] if tk not in meldur else max(meldur[tk], n["dur"])
+    voices[tk] = vl
 
 # ---- cells[] 时间骨架(rep 变延迟 + trig)----
 OFFSET = 1 if trig and trig[0] == 0 else 0
@@ -94,7 +110,21 @@ for kind, v in cells:
     else: assert cum == v + OFFSET, f"时序错位 @{v}"
 if LIMIT > 0: cells = cells[:LIMIT]
 used_trig = [v for k, v in cells if k == "trig"]
+used_trig_set = set(used_trig)
 MAXTICK = max(used_trig) if used_trig else 0
+
+# ---- 旋律延音截断: 每个含旋律的刻算 release 游戏刻(相对 fire), 在 fire 里 schedule cutmel ----
+# 脉冲到达 trig 刻 T0 的游戏刻 = (T0+OFFSET)*2 (与 cells[] 时间轴同源); release = 该刻 + 截断延迟。
+mel_ticks = sorted(tk for tk in meldur if tk in used_trig_set)
+CAP_GT = round(MELCAP_S * 80)
+cut_sched = {}; cut_delays = []
+for j, tk in enumerate(mel_ticks):
+    d = min(round(meldur[tk] * 80), CAP_GT)                 # MIDI 时值 -> 游戏刻, 封顶
+    if j + 1 < len(mel_ticks):
+        d = min(d, (mel_ticks[j + 1] - tk) * 2 - 1)         # 不越过下一旋律刻
+    d = max(MIN_CUT_GT, d); cut_delays.append(d)
+    cut_sched[tk] = (tk + OFFSET) * 2 + d                   # 相对 fire 的绝对游戏刻
+cut_events = sorted(cut_events)
 
 # ---- 自定义路点 -> 路径(X 后 Z 直角, 拐点插红石粉, 单轨)----
 def layout_custom(wps, ncells):
@@ -186,7 +216,7 @@ ctl += lbtn(PBX-6, f"function {NS}:cfg/polytoggle", ["[复音增益]", "大和�
 ctl += lbtn(PBX-8, f"function {NS}:cfg/humantoggle", ["[微抖动]", "去复印感"])
 
 RESET = [f"scoreboard players set PLAY {NS} 0", f"scoreboard players set SIL {NS} 0"]
-SCHED_CLEAR = [f"schedule clear {NS}:{f}" for f in ("done", "fire", "firestop", "startbuild")]
+SCHED_CLEAR = [f"schedule clear {NS}:{f}" for f in ("done", "fire", "firestop", "startbuild", "cutmel")]
 TRIG_CLEAR = [f"setblock {SRC[0]} {Y} {SRC[1]} minecraft:air"]
 wf("load", [f"scoreboard objectives add {NS} dummy", f"scoreboard players set BLD {NS} -1"] + RESET
    + ["forceload remove all", "scoreboard objectives add rpcfg dummy", "scoreboard players set poly rpcfg 1", "scoreboard players set human rpcfg 1"]
@@ -205,15 +235,18 @@ for k, b in enumerate(batches): wf(f"bld/b{k}", b)
 wf("placectl", ctl)
 wf("builddone", f"scoreboard players set BLD {NS} -1\nfunction {NS}:placectl\n"
    f'tellraw @a ["",{{"text":"[{NS}] built. ","color":"green"}},{{"text":"自定义走线; 按[直接播放]/[全景俯视]"}}]')
-wf("playcore", [f"scoreboard players set PLAY {NS} 1", f"scoreboard players set SIL {NS} 0", SSTOP] + TRIG_CLEAR + [f"schedule function {NS}:fire 2t"])
+wf("cutmel", [f"stopsound @a record {ev}" for ev in cut_events] or [f"# {NS}: 无旋律截断事件(纯钢琴/鼓)"])
+wf("playcore", [f"scoreboard players set PLAY {NS} 1", f"scoreboard players set SIL {NS} 0", SSTOP, f"schedule clear {NS}:cutmel"] + TRIG_CLEAR + [f"schedule function {NS}:fire 2t"])
 wf("play", [f'execute if score PLAY {NS} matches 1 run return run tellraw @a "[{NS}] 正在播放, 先[停止]"',
             f"function {NS}:playcore", f'tellraw @a "[{NS}] GO。自定义走线, 站着听全曲。"'])
 wf("view", ["gamemode spectator @a", f"tp @a {CAMX} {Y+70} {CAMZ} 0 90", f'tellraw @a "[{NS}] 俯视走线(spectator)。"'])
 wf("stop", RESET + ["gamemode creative @a", SSTOP] + SCHED_CLEAR + TRIG_CLEAR
    + [f"scoreboard players set SIL {NS} 1", f"schedule function {NS}:unsil {END_TICKS}t", f"tp @a {PBX} {Y+3} {OZ}", f'tellraw @a "[{NS}] 已停止。"'])
 wf("unsil", f"scoreboard players set SIL {NS} 0")
-wf("fire", flbuild + [f"setblock {SRC[0]} {Y} {SRC[1]} minecraft:redstone_block",
-                      f"schedule function {NS}:firestop {PULSE}t", f"schedule function {NS}:done {END_TICKS}t"])
+fire_lines = flbuild + [f"setblock {SRC[0]} {Y} {SRC[1]} minecraft:redstone_block"]
+fire_lines += [f"schedule function {NS}:cutmel {cut_sched[tk]}t append" for tk in mel_ticks]
+fire_lines += [f"schedule function {NS}:firestop {PULSE}t", f"schedule function {NS}:done {END_TICKS}t"]
+wf("fire", fire_lines)
 wf("firestop", TRIG_CLEAR)
 wf("done", RESET + ["gamemode creative @a", f'tellraw @a "[{NS}] (end) 重放[直接播放]; 拆 /function {NS}:cleanup。"'])
 wf("cleanup", ["gamerule commandModificationBlockLimit 2147483647"] + RESET + ["gamemode creative @a", SSTOP, f"scoreboard players set BLD {NS} -1"]
@@ -234,6 +267,9 @@ xspan = max(allx) - min(allx) + 1; zspan = max(allz) - min(allz) + 1
 print(f"=== 47 自定义走线 [{NS}] 七里香 ===")
 print(f"参数={PARAMS} 路点={len(WPS)} 单轨={not DUAL}(每格{VPC}声部) LIMIT={LIMIT}")
 print(f"cells={len(cells)} = {nrep}中继器 + {ntrig}发声列; 拐点={len(turns)}; 发声音={nplaced} dropped={dropped} 钳音={clamped[0]}")
+print(f"乐器分布(发声盒)={dict(instr_count)}")
+cut_ds = sorted(cut_delays)
+print(f"★旋律延音截断: {len(mel_ticks)} 个旋律刻, 停 {len(cut_events)} 个事件; 截延迟中位 {cut_ds[len(cut_ds)//2]/80:.2f}s (上限 {MELCAP_S}s)" if mel_ticks else "★旋律延音截断: 无 cut-instr 声部(纯钢琴/鼓), 不截")
 print(f"占地 X[{WX0}..{WX1}]={xspan} Z[{WZ0}..{WZ1}]={zspan}")
 print(f"★per-path forceload = {NCH} 区块 (包围盒会是 {((WX1//16)-(WX0//16)+1)*((WZ1//16)-(WZ0//16)+1)} -> 已避免过载)")
 print(f"批次={len(batches)}; 无碰撞(路径不自交)✓; 部署 -> {dst}")
