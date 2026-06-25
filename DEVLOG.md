@@ -90,6 +90,41 @@
 
 ---
 
+## ★★★ 任务5 起步:多乐器原地播放器(七里香 · 2026-06-25 · Claude)
+
+> **本节由 Claude 添加。任务4 完成后用户给《七里香》(多乐器),问"能否自动识别非钢琴部分"。结论:能;并已实装多乐器原地播放器第一版。用户拍板:① 非钢琴音色 = 按 GM 家族自动映射;② 先做在 form4 原地调色板上。**
+
+### 1) 自动识别钢琴/非钢琴 — `poc/analyze_instruments.py`
+判据:MIDI `program_change` 的 program 号(0-7=钢琴家族, ≥8=非钢琴)+ 通道9=鼓。自带 GM-128 乐器表。
+《七里香》结果:**ch1 program0 = Acoustic Grand Piano(1641 音)= 钢琴伴奏;ch0 program54 = Synth Voice(420 音, 音域 60-77)= ★非钢琴 主旋律/人声线。** 干净分离。
+
+### 2) 多乐器映射就绪
+- 模组 `RedPianoMap.java` 早已 wired **103 块 / 5 乐器**(60 pno + 9 bass + 13 lead + 16 pad + 5 drum)。
+- 新增 `poc/gen_multi_map.py`:解析 `RedPianoMap.java` → `redpiano_map_multi.json`(单一真相, 永不手抄), 含每乐器的 bands/layers/方块 + **GM家族→采样集** 自动表 + GM鼓note→鼓型 表。
+  - 家族表:0/1→pno,2→pad,3→lead,4→bass,5/6→pad,7/8/9→lead,10→lead,11/12→pad,13→lead,14/15→drum;ch9→drum。
+  - 采样集音域:pno 24-81, bass 28-52, lead 48-84, pad 36-81。
+
+### 3) 多乐器原地播放器 — `poc/46_build_inplace_multi.py`(基于 45,机制逐字不变)
+在 45(调色板+侧面触发+反复触发)上,把单一钢琴映射换成 **per-note 多乐器映射**(按通道 program 自动选采样集)。调色板按 `(映射块, note值)` 跨乐器去重。
+
+**《七里香》成品 `qlxm` @ X=350000:**
+| 项 | 值 |
+|---|---|
+| 声部→采样集 | ch1 prog0 → **pno**(钢琴, 1641 音);ch0 prog54 → **pad**(非钢琴人声线, 420 音) |
+| 跨乐器调色板 | **47 音符盒**(36 pno + 11 pad) |
+| 发声刻 / 总触发 | 767 / 2061(dropped=0, 钳音=0) |
+| forceload | **~3 区块 → 不过载** |
+| 时序自检 | 链跨度 19884 游戏刻 /80 = **248.55s = 曲长**;侧槽几何 + 反复触发时序 + 双乐器映射块(36 pno + 11 pad,无未知块)全过 ✓ |
+
+### 状态 / 待办
+- **生成层面全过**(结构 + 双乐器映射块物理正确 + 反复触发时序),已部署。**仍需用户游戏实听**:钢琴+人声两个音色是否都对、混音是否平衡。
+- **音色可调**:`ch0 Synth Voice(Ensemble 家族)→ pad`(持续/合唱感)。若想要更"主音"的 lead,改 `redpiano_map_multi.json` 的 family_map[6]= 'lead' 重跑即可(一行)。
+- 任务5 后续:扩到 form2/form3(直线/曲折直线)多乐器;bass/lead/drum 在有这些声部的歌上验证。
+
+MC 测试:`/reload` → `/tick rate 80` → `/function qlxm:setup` → [播放];收尾 `/function qlxm:cleanup`。
+
+---
+
 ## ★★★ Codex 接管记录:Task2 真正目标与 Claude 误解校正(2026-06-25 · Codex)
 
 > **本节由 Codex 添加,用于接管开发文档和 git 备份。下面结论不是 Claude 原交接,而是本轮与用户复核后的新基准。**
