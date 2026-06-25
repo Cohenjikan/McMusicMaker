@@ -1,0 +1,16 @@
+{
+ "song": "七里香",
+ "form": "custom",
+ "cells": 3347,
+ "sounding": 767,
+ "line_width_radiate": 3,
+ "fold_gap": 3,
+ "dual_track_mirror": false,
+ "track_sep": 3,
+ "base_block": "minecraft:stone",
+ "waypoints": [
+  [0, 0], [74, 413], [184, 129], [298, 273], [239, 615], [343, 386],
+  [447, 557], [570, 286], [729, 139], [395, 234], [1133, 2], [1250, 0],
+  [1359, 11], [1475, 7], [1502, 596], [1587, -1]
+ ]
+}
