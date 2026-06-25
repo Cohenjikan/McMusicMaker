@@ -47,6 +47,53 @@
 
 ---
 
+## ★★★ 交接给新 agent(START HERE · 2026-06-25 收尾 · Claude)
+
+> 本轮(Claude)完成 **任务4** + **任务5 原地多乐器** + **任务7 走线设计器 + 自定义走线机器**。下面是接手所需的全部:能力清单、★必做修复、待办、测试。详细过程见下方各「任务X」节;产品愿景见顶部「路线图」。
+
+### 当前能力清单(脚本 → 产物 → 状态)
+| 脚本 | 形态 | 产物 / NS | 状态 |
+|---|---|---|---|
+| `45_build_inplace_palette.py` | 原地调色板(单乐器, **侧面**红石块反复触发) | `cjzmc`@340000(春娇) | ✅ 用户实测**完美** |
+| `46_build_inplace_multi.py` | 原地调色板 **多乐器** + **旋律延音截断** | `qlxm`@350000(七里香) | ✅ 用户实测**特别好** |
+| `47_build_custom.py` | **自定义走线** 行进脉冲 多乐器 + **per-path forceload** | `qlxc`@360000(整)/`qlxct`@358000(小台)(七里香) | ⚠️ 已建已验证, **缺旋律截断**(见下) |
+| `42` / `43_build_swave*.py` | S波浪 行进脉冲(单钢琴, 双轨镜像) | `qzolks` / `wllsym` | ✅(单钢琴) |
+| `analyze_instruments.py` | GM 乐器识别(钢琴/非钢琴/鼓) | `notes_<x>_instruments.json` | ✅ |
+| `gen_multi_map.py` → `redpiano_map_multi.json` | 从模组 `RedPianoMap.java` 抽 103块/5乐器 + GM家族→采样集 + GM鼓note→鼓型 | — | ✅ |
+| `layout_designer.html` | 走线设计器(直线/S波/自定义/原地 + 自由尺寸 + 线宽/空格 + 信号基底方块 + 手动缩放) | — | ✅ **skill 内成品 HTML** |
+| `38` / `44`(已判废) | 原地(**垫底**触发=无效几何) | — | ❌ 勿用, 见 [[noteblock-trigger-side-not-bottom]] |
+
+### ★★★ 必做修复(用户本轮强调:写进 skill)= 旋律延音截断 覆盖【所有】形态
+**问题**:持续型非钢琴采样(pad/lead/bass)一触发就播完整几秒,盖过主旋律。钢琴(自然衰减)/鼓(短瞬态)**不用截**。
+- **已实现 = 原地形态(46)**:对每个旋律音, 在 `release = onset + min(MIDI时值, MELCAP=1.2s, 到下一旋律音-1tick)` 处 `stopsound @a record <该乐器采样事件>`(按 `record` 源 + 具体事件停, 只截该乐器不动钢琴)。需 `redpiano_map_multi.json` 里每条的 `sound` 事件 ID。
+- **未实现 = 行进脉冲形态(42/43/47:直线/S波/自定义)** ← 用户本轮"主旋律依旧有问题"就是这里。
+- **行进脉冲版实现设计(交给 skill / 下一 agent 直接照做)**:
+  1. 脉冲在 `/tick rate 80` 下到达某 trig 音的 game-tick(相对 `fire`)= `(trig_tick + OFFSET) * 2`。
+  2. 把乐器标签 + MIDI 时值带进 cells/voices(47 当前 `voices` 只存了 `(block,nv)`,要补存 `instr` 和 `dur`)。
+  3. 在 `fire` 函数里,对每个 melody(instr∈{pad,lead,bass})trig 音,`schedule function <NS>:mcut/m{i} <delay>t`,其中 `delay = ((trig_tick+OFFSET) + min(dur_ticks, MELCAP*80, 下一同乐器trig_gap*2-1)) * 1`(game-tick);`mcut/m{i}` 内容 = `stopsound @a record <该音的采样事件>`。约 420 个调度(像 step 链,用独立函数名避免 replace 覆盖)。
+  4. `stop` 里 `schedule clear` 掉所有 `mcut/*`。
+- 验收:整机播放时,主旋律(pad)一颗颗清楚、不被自身拖尾糊住,钢琴仍自然延音。
+
+### 其它待办(按优先级)
+1. **行进脉冲旋律截断**(上面,最高优先,用户点名)。
+2. **单轨掉音**:`47` 单轨(用户 `dual=false`)每格 3 声部 → 七里香掉 263 音。开**双轨镜像**(像 43)= 每格 6 声部,基本不掉;`47` 加 `DUAL` 分支即可。
+3. **任务6(本轮跳过, 待做)**:可绑定 位置+时间 的粒子效果定位(暂定 HTML 标注)。
+4. **任务8**:多版本鲁棒性检测(MC 版本 / pack_format / 命令语法 / forceload 行为 的检测 + 降级提示)。
+5. **封装成 skill**(顶部路线图的总目标):MIDI → `analyze_instruments` 识别 → 多乐器映射 → `layout_designer.html` 选形态/尺寸 → 生成器(45/46/47/43)出 datapack → 测试命令 + 交接文档。把上面这些脚本串成一个 Claude Code skill。
+
+### 测试 / 世界位置(都在 `新的世界 (1)`)
+通式:`/reload` → **`/tick rate 80`(必手动, 数据包自动版失效)** → `/function <NS>:setup`(等绿字 built)→ 牌子 `[播放]`/`[直接播放]`;收尾 `/function <NS>:cleanup`。
+机器:`cjzmc`@340000 · `qlxm`@350000 · `qlxc`@360000(整)/ `qlxct`@358000(小台)。
+依赖:**RedPiano 模组**(`mods/redpiano-1.0.0.jar`,改 jar 需重启 MC)+ **qzpno_mv 资源包**(需在 选项→资源包 手动启用)。
+
+### per-path forceload(本轮关键技术, 让大幅面走线不过载)
+行进脉冲机器必须 forceload 才能让脉冲穿过未加载区块。**别 forceload 包围盒矩形**(自定义走线包围盒可达 1900+ 区块 = 过载断音);改 **只 `forceload add` 路径真正经过的区块**(七里香自定义走线 1920→252,落在安全区 ~210-290)。见 `47_build_custom.py` 的 `chunks`/`flbuild`。
+
+### 关键记忆(`memory/`,每次会话自动载入)
+[[noteblock-trigger-side-not-bottom]](触发=侧面非垫底;调色板反复触发)· [[redpiano-runtime-gotchas]](静音/停不下/曲速/过载)· [[two-redstone-music-machine-families]](三种机型)· [[redstone-music-camera-and-earshot]](以玩家为中心发声)· [[redpiano-mod-build-command]](改 jar 编译)· [[project-pivoting-to-skill]](转向 skill)· [[melody-sustain-cut-all-forms]](本条修复)。
+
+---
+
 ## ★★★ 任务4 实装:本地原地红石音乐播放器(春娇与志明 · 2026-06-25 · Claude)
 
 > **本节由 Claude 添加。本轮用户指令:① 把最新成果 push 到 GitHub(已推 `main` + tag `codex-swave-v1`);② 开发路线图【任务4】"用命令方块红石块直接触发的本地红石音乐播放器",用《春娇与志明》验证。本轮经历了一次【用户游戏实测 → 根本修正】的迭代,如实记录。**
