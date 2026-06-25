@@ -19,9 +19,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 import shutil
 
 argv = sys.argv[1:]
-NAME = None
+NAME = None; MELCAP_S = 1.2
 if '--name' in argv:
     i = argv.index('--name'); NAME = argv[i + 1]; del argv[i:i + 2]
+if '--melcap' in argv:
+    i = argv.index('--melcap'); MELCAP_S = float(argv[i + 1]); del argv[i:i + 2]
+CUT_INSTR = {'pad', 'lead', 'bass'}   # 持续型非钢琴(易拖尾)-> 截断延音让旋律可听; 钢琴(自然衰减)/鼓(短瞬态)不截
+MIN_CUT_GT = 4                        # 截断延迟下限(游戏刻; 80tps -> 0.05s), 防截到attack没声
 SRC   = argv[0] if len(argv) > 0 else 'C:/Users/Cohen/Downloads/七里香 周杰伦_爱给网_aigei_com.mid'
 NS    = argv[1] if len(argv) > 1 else 'qlxm'
 OX    = int(argv[2]) if len(argv) > 2 else 350000
@@ -45,14 +49,15 @@ def map_note_multi(midi, vel, instr):
     if not inst['pitched']:                                   # 鼓: GM note -> 鼓型, 不移调(nv=12 -> pitch 1.0)
         dtype = GDRUM.get(midi, 'snare')
         if dtype not in inst['types']: dtype = next(iter(inst['types']))
-        return inst['types'][dtype], 12
+        return inst['types'][dtype], 12, inst['sound'][f'drum:{dtype}']
     bands = inst['bands']
     band = min(bands, key=lambda b: abs(b - midi)); raw = 12 + (midi - band)
     nv = max(0, min(24, raw))
     if not (0 <= raw <= 24): clamped[0] += 1
     layer = ('p' if vel < 0.40 else ('mf' if vel < 0.72 else 'f')) if instr == 'pno' else 'mf'
     if layer not in inst['layers']: layer = 'mf' if 'mf' in inst['layers'] else inst['layers'][0]
-    return inst['block'][f'{band}_{layer}'], nv
+    key = f'{band}_{layer}'
+    return inst['block'][key], nv, inst['sound'][key]
 
 # 解析 .mid: 跟踪每通道 program, 给每个音符打乐器标签
 mf = mido.MidiFile(SRC); cur_prog = defaultdict(int); active = {}; t = 0.0; notes = []
@@ -68,7 +73,7 @@ for msg in mf:
             st, v = active.pop(k); ch = msg.channel
             instr = 'drum' if ch == 9 else FAMILY.get(cur_prog[ch] // 8, 'pno')
             notes.append({'t': round(st, 3), 'midi': int(msg.note), 'vel': round(v / 127.0, 3),
-                          'instr': instr, 'ch': ch, 'prog': cur_prog[ch]})
+                          'dur': round(max(t - st, 0.02), 3), 'instr': instr, 'ch': ch, 'prog': cur_prog[ch]})
 notes.sort(key=lambda n: n['t'])
 
 # per-part 统计(报告用)
@@ -83,19 +88,38 @@ for n in notes:
     if n['vel'] >= 0.04: bycell[round(n['t'] / U)].append(n)
 ticks = sorted(bycell)
 palette = {}; order = []; beats = []; dropped = 0
-pal_instr = []   # 索引 -> 乐器(报告用)
+pal_instr = []; pal_sound = []          # 索引 -> 乐器 / 音效事件
+beat_mel = []                           # 每beat: 该beat里 cut-instr(旋律)音的 MIDI时值(秒), 无则 None
 for tk in ticks:
     g = sorted(bycell[tk], key=lambda x: -x['midi'])[:VOICES]
     dropped += max(0, len(bycell[tk]) - VOICES)
-    idxs = []
+    idxs = []; meldur = None
     for n in g:
-        block, nv = map_note_multi(n['midi'], n['vel'], n['instr'])
+        block, nv, sound = map_note_multi(n['midi'], n['vel'], n['instr'])
         key = (block, nv)
         if key not in palette:
-            palette[key] = len(order); order.append(key); pal_instr.append(n['instr'])
+            palette[key] = len(order); order.append(key); pal_instr.append(n['instr']); pal_sound.append(sound)
         idxs.append(palette[key])
+        if n['instr'] in CUT_INSTR:
+            meldur = n['dur'] if meldur is None else max(meldur, n['dur'])
     beats.append((tk, sorted(set(idxs))))
+    beat_mel.append(meldur)
 P = len(order); NB = len(beats)
+
+# ── 旋律延音截断算法(任务5 雏形, 后续进 skill)──
+# 持续型非钢琴(pad/lead/bass)采样会拖几秒, 盖过旋律。对每个旋律音, 在
+#   release = onset + min(MIDI时值, MELCAP, 到下一旋律音-1tick)  处 stopsound 掉该乐器的采样,
+# 把延音收回到作曲本意的时值(本曲旋律单声部, 故全局停 pad 即只停当前音)。钢琴/鼓不截。
+mel_beats = [c for c in range(NB) if beat_mel[c] is not None]
+cut_events = sorted(set(pal_sound[i] for i in range(P) if pal_instr[i] in CUT_INSTR))
+CAP_GT = round(MELCAP_S * 80)
+cut_delay = {}
+for j, c in enumerate(mel_beats):
+    tk = beats[c][0]
+    d = min(round(beat_mel[c] * 80), CAP_GT)                    # MIDI 时值 -> 游戏刻(80tps), 封顶
+    if j + 1 < len(mel_beats):
+        d = min(d, (beats[mel_beats[j + 1]][0] - tk) * 2 - 1)   # 不越过下一旋律音(避免截到下一个)
+    cut_delay[c] = max(MIN_CUT_GT, d)
 
 def pal_pos(i):
     col, row = i % PCOLS, i // PCOLS
@@ -139,10 +163,14 @@ w('data/minecraft/tags/function/tick.json', json.dumps({"values": [f"{NS}:tick"]
 
 flbuild = [f'forceload add {WX0} {WZ0} {WX1} {WZ1}']
 wf('offall', [f'setblock {x} {y} {z} minecraft:air' for (x, y, z) in (trig(i) for i in range(P))])
+# cutmel: 停掉旋律(持续型非钢琴)采样 = 收延音; 只停 record 源上的这些事件, 钢琴(也走record但不同事件)不受影响
+wf('cutmel', [f'stopsound @a record {ev}' for ev in cut_events] or [f'# {NS}: 无旋律截断事件'])
 for c, (tk, idxs) in enumerate(beats):
     lines = [f'execute if score PLAY {NS} matches 0 run return 0']
     lines += [f'setblock {x} {y} {z} minecraft:redstone_block' for (x, y, z) in (trig(i) for i in idxs)]
     lines.append(f'execute if score PLAY {NS} matches 1 run schedule function {NS}:offall 1t')
+    if c in cut_delay:                              # 该刻有旋律音 -> 到时截延音
+        lines.append(f'execute if score PLAY {NS} matches 1 run schedule function {NS}:cutmel {cut_delay[c]}t append')
     if c + 1 < NB:
         dt = (beats[c + 1][0] - tk) * 2
         lines.append(f'execute if score PLAY {NS} matches 1 run schedule function {NS}:s/s{c+1} {dt}t')
@@ -180,7 +208,7 @@ for k, b in enumerate(batches): wf(f'bld/b{k}', b)
 wf('placectl', ctl)
 wf('builddone', f'scoreboard players set BLD {NS} -1\nfunction {NS}:placectl\n'
    f'tellraw @a ["",{{"text":"[{NS}] built. ","color":"green"}},{{"text":"多乐器调色板 {P}音符盒(侧面触发,不过载). 按[播放]"}}]')
-wf('playcore', [f'scoreboard players set PLAY {NS} 1', SSTOP, f'function {NS}:offall',
+wf('playcore', [f'scoreboard players set PLAY {NS} 1', SSTOP, f'function {NS}:offall', f'schedule clear {NS}:cutmel',
                 f'schedule function {NS}:s/s0 {max(1,T0)}t'])
 wf('play', [f'execute if score PLAY {NS} matches 1 run return run tellraw @a "[{NS}] 正在播放, 先[停止]"',
             f'scoreboard players set LOOP {NS} 0', f'function {NS}:playcore',
@@ -192,7 +220,7 @@ wf('done', [f'execute if score LOOP {NS} matches 1 run function {NS}:playcore',
             f'execute if score LOOP {NS} matches 0 run scoreboard players set PLAY {NS} 0',
             f'execute if score LOOP {NS} matches 0 run function {NS}:offall',
             f'execute if score LOOP {NS} matches 0 run tellraw @a "[{NS}] (一遍结束)。"'])
-wf('stop', RESET + ['gamemode creative @a', SSTOP, f'schedule clear {NS}:done', f'function {NS}:offall']
+wf('stop', RESET + ['gamemode creative @a', SSTOP, f'schedule clear {NS}:done', f'schedule clear {NS}:cutmel', f'function {NS}:offall']
    + [f'tp @a {PBX} {Y+3} {OZ}', f'tellraw @a "[{NS}] 已停止(立即静音)。"'])
 wf('cfg/polytoggle', ['scoreboard players set rptmp rpcfg 1', 'scoreboard players operation rptmp rpcfg -= poly rpcfg',
                       'scoreboard players operation poly rpcfg = rptmp rpcfg',
@@ -239,6 +267,12 @@ HAND = f"""# {NS} — 多乐器原地调色板播放器(任务5) 交接文档
 | 网格 / 占地 | {PCOLS}宽 x {PROWS}行;X[{WX0}..{WX1}], Z[{WZ0}..{WZ1}] |
 | **forceload** | **~{chunks} 区块 -> 不过载** |
 | 曲长 | ~{song_s:.1f}s @ /tick rate 80 |
+| **旋律延音截断** | {len(cut_delay)} 个旋律音, release=min(MIDI时值, {MELCAP_S}s, 下一旋律音-1tick) 处 `stopsound record` 截断(收回拖尾, 让主旋律可听);钢琴/鼓不截 |
+
+## 旋律延音算法(任务5 雏形, 后续进 skill 做完整版)
+持续型非钢琴采样(pad/lead/bass)会拖几秒盖过旋律。对每个旋律音, 在
+`release = onset + min(MIDI时值, MELCAP={MELCAP_S}s, 到下一旋律音-1tick)` 处 stopsound 掉该乐器采样,
+把延音收回到作曲本意时值。`--melcap <秒>` 可调上限。本曲旋律单声部, 故全局停 pad = 只停当前音。
 
 ## MC 测试命令(需 RedPiano 模组 + qzpno 资源包)
 ```
@@ -252,9 +286,13 @@ HAND = f"""# {NS} — 多乐器原地调色板播放器(任务5) 交接文档
 """
 open(os.path.join(DP, f'{NS}_HANDOFF.md'), 'w', encoding='utf-8', newline='\n').write(HAND)
 
+cut_ds = sorted(cut_delay.values())
+cut_info = (f'{len(cut_delay)} 个旋律音截延音, 延迟中位 {cut_ds[len(cut_ds)//2]/80:.2f}s (上限 {MELCAP_S}s), 停 {len(cut_events)} 个 {"/".join(sorted(set(e.split(":")[1].split("_")[0] for e in cut_events)))} 事件'
+            if cut_delay else '无旋律(cut-instr)声部, 不截延音')
 print(f'=== 46 多乐器原地调色板 [{NAME}] ===')
 for line in parts_lines: print(line.replace('**', '').replace('★', ''))
 print(f'跨乐器调色板={P} 音符盒 {dict(instr_pal)}; 发声刻={NB} 总触发={triggers} dropped={dropped} 钳音={clamped[0]}')
+print(f'★旋律延音截断: {cut_info}')
 print(f'网格 {PCOLS}宽x{PROWS}行; 占地 x[{WX0}..{WX1}] z[{WZ0}..{WZ1}]; forceload ~{chunks} 区块; 曲长 ~{song_s:.1f}s')
 print(f'批次={len(batches)}; 无碰撞✓; 部署 -> {dst}')
 print(f'交接文档 -> build/{NS}/{NS}_HANDOFF.md')

@@ -25,23 +25,24 @@ for blk, sound, vol in pat.findall(txt):
     toks = sound.split('_')
     instr = toks[0]
     d = INST.setdefault(instr, {'pitched': instr != 'drum', 'layers': set(), 'bands': set(),
-                                'block': {}, 'vol': {}, 'types': {}})
+                                'block': {}, 'vol': {}, 'sound': {}, 'types': {}})
+    full = 'qzpno:' + sound                           # 完整音效事件 ID(用于 stopsound 截断延音)
     if instr == 'drum':                              # drum_kick_x / drum_hihat_closed_x
         dtype = '_'.join(toks[1:-1])                 # kick / snare / hihat_closed / tom / crash
-        d['types'][dtype] = block; d['vol'][f'drum:{dtype}'] = vol
+        d['types'][dtype] = block; d['vol'][f'drum:{dtype}'] = vol; d['sound'][f'drum:{dtype}'] = full
     else:                                            # pno_c1_p / bass_e1_mf / lead_c3_mf / pad_c2_mf
         note, layer = toks[1], toks[2]
         band = note_to_midi(note)
         d['layers'].add(layer); d['bands'].add(band)
-        d['block'][f'{band}_{layer}'] = block; d['vol'][f'{band}_{layer}'] = vol
+        d['block'][f'{band}_{layer}'] = block; d['vol'][f'{band}_{layer}'] = vol; d['sound'][f'{band}_{layer}'] = full
 
 out = {'instruments': {}}
 for instr, d in INST.items():
     if instr == 'drum':
-        out['instruments'][instr] = {'pitched': False, 'types': d['types'], 'vol': d['vol']}
+        out['instruments'][instr] = {'pitched': False, 'types': d['types'], 'vol': d['vol'], 'sound': d['sound']}
     else:
         out['instruments'][instr] = {'pitched': True, 'layers': sorted(d['layers']),
-                                     'bands': sorted(d['bands']), 'block': d['block'], 'vol': d['vol']}
+                                     'bands': sorted(d['bands']), 'block': d['block'], 'vol': d['vol'], 'sound': d['sound']}
 
 # GM 乐器家族(program//8, 0..15) -> 采样集(现有: pno/bass/lead/pad/drum); ch9=鼓
 out['family_map'] = {

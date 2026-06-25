@@ -152,6 +152,68 @@
     "81_p": 1.4,
     "81_mf": 1.7,
     "81_f": 2.0
+   },
+   "sound": {
+    "24_p": "qzpno:pno_c1_p",
+    "24_mf": "qzpno:pno_c1_mf",
+    "24_f": "qzpno:pno_c1_f",
+    "27_p": "qzpno:pno_ds1_p",
+    "27_mf": "qzpno:pno_ds1_mf",
+    "27_f": "qzpno:pno_ds1_f",
+    "30_p": "qzpno:pno_fs1_p",
+    "30_mf": "qzpno:pno_fs1_mf",
+    "30_f": "qzpno:pno_fs1_f",
+    "33_p": "qzpno:pno_a1_p",
+    "33_mf": "qzpno:pno_a1_mf",
+    "33_f": "qzpno:pno_a1_f",
+    "36_p": "qzpno:pno_c2_p",
+    "36_mf": "qzpno:pno_c2_mf",
+    "36_f": "qzpno:pno_c2_f",
+    "39_p": "qzpno:pno_ds2_p",
+    "39_mf": "qzpno:pno_ds2_mf",
+    "39_f": "qzpno:pno_ds2_f",
+    "42_p": "qzpno:pno_fs2_p",
+    "42_mf": "qzpno:pno_fs2_mf",
+    "42_f": "qzpno:pno_fs2_f",
+    "45_p": "qzpno:pno_a2_p",
+    "45_mf": "qzpno:pno_a2_mf",
+    "45_f": "qzpno:pno_a2_f",
+    "48_p": "qzpno:pno_c3_p",
+    "48_mf": "qzpno:pno_c3_mf",
+    "48_f": "qzpno:pno_c3_f",
+    "51_p": "qzpno:pno_ds3_p",
+    "51_mf": "qzpno:pno_ds3_mf",
+    "51_f": "qzpno:pno_ds3_f",
+    "54_p": "qzpno:pno_fs3_p",
+    "54_mf": "qzpno:pno_fs3_mf",
+    "54_f": "qzpno:pno_fs3_f",
+    "57_p": "qzpno:pno_a3_p",
+    "57_mf": "qzpno:pno_a3_mf",
+    "57_f": "qzpno:pno_a3_f",
+    "60_p": "qzpno:pno_c4_p",
+    "60_mf": "qzpno:pno_c4_mf",
+    "60_f": "qzpno:pno_c4_f",
+    "63_p": "qzpno:pno_ds4_p",
+    "63_mf": "qzpno:pno_ds4_mf",
+    "63_f": "qzpno:pno_ds4_f",
+    "66_p": "qzpno:pno_fs4_p",
+    "66_mf": "qzpno:pno_fs4_mf",
+    "66_f": "qzpno:pno_fs4_f",
+    "69_p": "qzpno:pno_a4_p",
+    "69_mf": "qzpno:pno_a4_mf",
+    "69_f": "qzpno:pno_a4_f",
+    "72_p": "qzpno:pno_c5_p",
+    "72_mf": "qzpno:pno_c5_mf",
+    "72_f": "qzpno:pno_c5_f",
+    "75_p": "qzpno:pno_ds5_p",
+    "75_mf": "qzpno:pno_ds5_mf",
+    "75_f": "qzpno:pno_ds5_f",
+    "78_p": "qzpno:pno_fs5_p",
+    "78_mf": "qzpno:pno_fs5_mf",
+    "78_f": "qzpno:pno_fs5_f",
+    "81_p": "qzpno:pno_a5_p",
+    "81_mf": "qzpno:pno_a5_mf",
+    "81_f": "qzpno:pno_a5_f"
    }
   },
   "bass": {
@@ -191,6 +253,17 @@
     "46_mf": 2.2,
     "49_mf": 2.2,
     "52_mf": 2.2
+   },
+   "sound": {
+    "28_mf": "qzpno:bass_e1_mf",
+    "31_mf": "qzpno:bass_g1_mf",
+    "34_mf": "qzpno:bass_as1_mf",
+    "37_mf": "qzpno:bass_cs2_mf",
+    "40_mf": "qzpno:bass_e2_mf",
+    "43_mf": "qzpno:bass_g2_mf",
+    "46_mf": "qzpno:bass_as2_mf",
+    "49_mf": "qzpno:bass_cs3_mf",
+    "52_mf": "qzpno:bass_e3_mf"
    }
   },
   "lead": {
@@ -242,6 +315,21 @@
     "78_mf": 1.9,
     "81_mf": 1.9,
     "84_mf": 1.9
+   },
+   "sound": {
+    "48_mf": "qzpno:lead_c3_mf",
+    "51_mf": "qzpno:lead_ds3_mf",
+    "54_mf": "qzpno:lead_fs3_mf",
+    "57_mf": "qzpno:lead_a3_mf",
+    "60_mf": "qzpno:lead_c4_mf",
+    "63_mf": "qzpno:lead_ds4_mf",
+    "66_mf": "qzpno:lead_fs4_mf",
+    "69_mf": "qzpno:lead_a4_mf",
+    "72_mf": "qzpno:lead_c5_mf",
+    "75_mf": "qzpno:lead_ds5_mf",
+    "78_mf": "qzpno:lead_fs5_mf",
+    "81_mf": "qzpno:lead_a5_mf",
+    "84_mf": "qzpno:lead_c6_mf"
    }
   },
   "pad": {
@@ -302,6 +390,24 @@
     "75_mf": 1.5,
     "78_mf": 1.5,
     "81_mf": 1.5
+   },
+   "sound": {
+    "36_mf": "qzpno:pad_c2_mf",
+    "39_mf": "qzpno:pad_ds2_mf",
+    "42_mf": "qzpno:pad_fs2_mf",
+    "45_mf": "qzpno:pad_a2_mf",
+    "48_mf": "qzpno:pad_c3_mf",
+    "51_mf": "qzpno:pad_ds3_mf",
+    "54_mf": "qzpno:pad_fs3_mf",
+    "57_mf": "qzpno:pad_a3_mf",
+    "60_mf": "qzpno:pad_c4_mf",
+    "63_mf": "qzpno:pad_ds4_mf",
+    "66_mf": "qzpno:pad_fs4_mf",
+    "69_mf": "qzpno:pad_a4_mf",
+    "72_mf": "qzpno:pad_c5_mf",
+    "75_mf": "qzpno:pad_ds5_mf",
+    "78_mf": "qzpno:pad_fs5_mf",
+    "81_mf": "qzpno:pad_a5_mf"
    }
   },
   "drum": {
@@ -319,6 +425,13 @@
     "drum:hihat_closed": 2.6,
     "drum:tom": 2.6,
     "drum:crash": 2.6
+   },
+   "sound": {
+    "drum:kick": "qzpno:drum_kick_x",
+    "drum:snare": "qzpno:drum_snare_x",
+    "drum:hihat_closed": "qzpno:drum_hihat_closed_x",
+    "drum:tom": "qzpno:drum_tom_x",
+    "drum:crash": "qzpno:drum_crash_x"
    }
   }
  },
