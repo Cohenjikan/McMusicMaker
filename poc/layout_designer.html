@@ -3,65 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>红石音乐 走线设计器 — 直线/曲折直线(S波浪)· 任务7</title>
+<title>红石音乐 走线设计器 — 直线/曲折直线(S波浪)/原地播放 · 任务7</title>
 <style>
   :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;
-        --acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;
-        --spine:#58a6ff;--noteA:#3fb950;--noteB:#bc8cff;--turn:#f0883e;--grid:#21262d;}
+        --acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--turn:#f0883e;--noteB:#bc8cff;}
   *{box-sizing:border-box}
   body{margin:0;font:13px/1.5 ui-monospace,"Cascadia Code",Consolas,monospace;background:var(--bg);color:var(--fg)}
   header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
   header h1{font-size:15px;margin:0;font-weight:600}
   header .sub{color:var(--mut);font-size:12px}
   .wrap{display:flex;min-height:calc(100vh - 46px)}
-  .left{flex:1;min-width:0;padding:12px;position:relative;display:flex;flex-direction:column}
-  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block}
+  .left{flex:1;min-width:0;padding:12px;display:flex;flex-direction:column}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px;color:var(--mut);font-size:11px}
+  .toolbar .btn{margin-left:auto}
+  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:default}
   canvas.custom{cursor:grab}
   .legend{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
           padding:8px 12px;font-size:11px;color:var(--mut);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
-  .legend>div{white-space:nowrap}
-  .legend b{color:var(--fg);font-weight:600}
+  .legend>div{white-space:nowrap} .legend b{color:var(--fg);font-weight:600}
   .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
-  .right{width:386px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 46px)}
+  .right{width:392px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 46px)}
   .grp{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
   .grp h2{font-size:12px;margin:0 0 8px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
   label.row{display:flex;align-items:center;gap:8px;margin:6px 0}
-  label.row span.k{width:130px;color:var(--mut);flex:none}
+  label.row span.k{width:128px;color:var(--mut);flex:none}
   input[type=range]{flex:1;min-width:0;accent-color:var(--acc)}
   input[type=number]{width:62px;background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 5px;font:inherit}
-  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:4px 0}
-  .seg button{flex:1;background:#0d1117;border:0;color:var(--mut);padding:7px;cursor:pointer;font:inherit;border-right:1px solid var(--line)}
+  input[type=text]{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:5px;padding:6px 8px;font:inherit}
+  .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:4px 0}
+  .seg button{flex:1;background:#0d1117;border:0;color:var(--mut);padding:7px 4px;cursor:pointer;font:inherit;border-right:1px solid var(--line)}
   .seg button:last-child{border-right:0}
   .seg button.on{background:var(--acc);color:#0d1117;font-weight:600}
-  .metric{display:flex;justify-content:space-between;margin:3px 0}
-  .metric .v{font-weight:600}
+  .metric{display:flex;justify-content:space-between;margin:3px 0}.metric .v{font-weight:600}
   .verdict{padding:8px 10px;border-radius:6px;margin:4px 0;font-size:12px}
   .verdict.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:#7ee787}
   .verdict.bad{background:rgba(248,81,73,.12);border:1px solid var(--bad);color:#ffa198}
   .verdict.warn{background:rgba(210,153,34,.12);border:1px solid var(--warn);color:#e3b341}
   pre#params{background:#010409;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;
-             white-space:pre-wrap;word-break:break-word;color:#c9d1d9;max-height:none;margin:6px 0}
-  .btn{background:var(--acc);color:#0d1117;border:0;border-radius:6px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+             white-space:pre-wrap;word-break:break-word;color:#c9d1d9;margin:6px 0}
+  .btn{background:var(--acc);color:#0d1117;border:0;border-radius:6px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}
   .btn.sec{background:#21262d;color:var(--fg);border:1px solid var(--line)}
+  .btn:disabled{opacity:.4;cursor:default}
   .hint{color:var(--mut);font-size:11px;margin-top:6px}
-  .big{font-size:14px}
+  .blklist{max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px}
+  .blkitem{padding:5px 9px;cursor:pointer;display:flex;justify-content:space-between;border-bottom:1px solid #21262d}
+  .blkitem:hover{background:#1f2733}.blkitem.on{background:rgba(88,166,255,.16);color:#cae3ff}
+  .blkitem .id{color:var(--mut);font-size:10.5px}
 </style>
 </head>
 <body>
 <header>
   <h1>红石音乐 · 走线设计器</h1>
-  <span class="sub">直线 / 曲折直线(S波浪)· 自由调尺寸 + 自定义走线 · 含线宽与空格 · 任务7</span>
+  <span class="sub">直线 / 曲折直线(S波浪)/ 原地播放 · 自由尺寸 + 自定义走线 + 信号基底方块 · 任务7</span>
   <span class="sub" id="songtag" style="margin-left:auto"></span>
 </header>
 <div class="wrap">
   <div class="left">
-    <canvas id="cv" width="1200" height="760"></canvas>
+    <div class="toolbar"><span>🖱 滚轮缩放(以光标为中心)· 拖动空白处平移</span><button class="btn sec" id="fit">适应视图</button></div>
+    <canvas id="cv" width="1200" height="720"></canvas>
     <div class="legend">
-      <div><span class="sw" style="background:var(--spine)"></span><b>主链脊柱</b>(中继器时间轴,1格=1 cell)</div>
-      <div><span class="sw" style="background:var(--noteA)"></span>轨A音符列 &nbsp;<span class="sw" style="background:var(--noteB)"></span>轨B(中轴镜像)</div>
-      <div><span class="sw" style="background:var(--turn)"></span>拐点(红石粉0延迟桥)</div>
-      <div>X→ 时间前进 &nbsp; Z↓ 折叠摆动</div>
-      <div>自定义:<b>拖动</b>节点调整 · <b>右键</b>删 · 加点/撤销用右栏按钮</div>
+      <div><span class="sw" style="background:var(--acc)"></span><b>主链脊柱</b>(中继器时间轴)</div>
+      <div><span class="sw" style="background:var(--ok)"></span>轨A音符列<span class="sw" style="background:var(--noteB);margin-left:8px"></span>轨B(镜像)</div>
+      <div><span class="sw" style="background:var(--turn)"></span>拐点 / 侧触发槽</div>
+      <div>X→ 时间前进 · Z↓ 折叠摆动</div>
+      <div>自定义:<b>拖动</b>节点 · <b>右键</b>删 · 加点/撤销见右栏</div>
     </div>
   </div>
   <div class="right">
@@ -69,22 +74,23 @@
       <h2>① 曲目预算</h2>
       <label class="row"><span class="k">骨架 cell 数</span><input type="number" id="cells" value="3347"><span class="hint">七里香</span></label>
       <label class="row"><span class="k">发声 cell(列)</span><input type="number" id="sound" value="767"></label>
-      <div class="hint">cell = 共享时间轴的最小格(中继器骨架并集)。机器路径必须能容纳全部 cell,顺序即时间顺序——折叠只改空间不改音乐。</div>
+      <div class="hint">cell=共享时间轴最小格;机器路径必须容纳全部 cell,顺序=时间顺序。折叠只改空间不改音乐。</div>
     </div>
     <div class="grp">
-      <h2>② 走线形式</h2>
+      <h2>② 走线 / 播放形式</h2>
       <div class="seg" id="form">
         <button data-f="straight">直线</button>
         <button data-f="swave" class="on">S 波浪</button>
         <button data-f="custom">自定义</button>
+        <button data-f="inplace">原地播放</button>
       </div>
       <div id="swaveCtl">
         <label class="row"><span class="k">每折 X 长 XRUN</span><input type="range" id="xrun" min="2" max="30" value="6"><input type="number" id="xrunN" value="6"></label>
         <label class="row"><span class="k">Z 振幅 ZMAX</span><input type="range" id="zmax" min="2" max="40" value="10"><input type="number" id="zmaxN" value="10"></label>
-        <div class="hint">XRUN 小 / ZMAX 大 → X 更短(压缩更高)、Z 更宽。两者只改形状,不改节奏。</div>
+        <div class="hint">XRUN 小 / ZMAX 大 → X 更短(压缩更高)、Z 更宽。只改形状不改节奏。</div>
       </div>
       <div id="customCtl" style="display:none">
-        <div class="hint"><b>拖动</b>节点调整位置(画布上不会误加点);<b>右键</b>节点删除。新增节点用下面按钮。路径按 X→Z 直角连线(红石可走),cell 沿路径顺序铺 = 时间不变。</div>
+        <div class="hint"><b>拖动</b>节点调位(画布不会误加点);<b>右键</b>删。加点/撤销用按钮。路径 X→Z 直角连,cell 顺序铺=时间不变。</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
           <button class="btn sec" id="addWp">➕ 在选中后加点</button>
           <button class="btn sec" id="delWp">🗑 删除选中</button>
@@ -93,235 +99,239 @@
         </div>
         <div class="hint" id="selInfo" style="margin-top:6px">选中节点:无</div>
       </div>
+      <div id="inplaceCtl" style="display:none">
+        <label class="row"><span class="k">调色板音符盒数</span><input type="number" id="pal" value="47"><span class="hint">七里香多乐器</span></label>
+        <label class="row"><span class="k">网格宽 PCOLS</span><input type="range" id="pcols" min="4" max="48" value="16"><input type="number" id="pcolsN" value="16"></label>
+        <label class="row"><span class="k">行距 ROWGAP</span><input type="range" id="rowgap" min="2" max="6" value="3"><input type="number" id="rowgapN" value="3"></label>
+        <div class="hint">原地播放=不铺线,只摆<b>调色板音符盒</b>(用到的不同音各一个),数据包按节奏在<b>方块侧面</b>点红石块反复触发。调整主体=方块本身/网格。</div>
+      </div>
     </div>
-    <div class="grp">
+    <div class="grp" id="lineGrp">
       <h2>③ 线宽 与 空格</h2>
       <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
       <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
       <label class="row"><span class="k">双轨(中轴镜像)</span><input type="checkbox" id="dual" checked></label>
       <label class="row"><span class="k">双轨间距 SEP</span><input type="range" id="sep" min="2" max="20" value="3"><input type="number" id="sepN" value="3"></label>
-      <div class="hint">线宽=每条发声列向两侧伸的音符盒数(和弦声部)。gap=相邻折之间额外留空,防音符列重叠/红石串扰。</div>
+      <div class="hint">线宽=发声列向脊柱两侧伸的音符盒数。gap=相邻折额外留空,防音符列重叠/红石串扰。</div>
     </div>
     <div class="grp">
-      <h2>④ 实测(估算)</h2>
+      <h2>④ 信号基底方块</h2>
+      <input type="text" id="blkSearch" placeholder="搜索可导红石的方块… 如 concrete / 石英 / deepslate">
+      <div id="blkList" class="blklist"></div>
+      <div class="hint">仅列<b>能承载红石信号</b>的实心不透明方块(已自动滤掉 玻璃/台阶/楼梯/树叶/荧石 等不导通方块)。当前:<b id="blkCur">minecraft:stone</b></div>
+    </div>
+    <div class="grp">
+      <h2>⑤ 实测(估算)</h2>
       <div class="metric"><span>X 跨度(长)</span><span class="v" id="mX">–</span></div>
       <div class="metric"><span>Z 总宽(宽)</span><span class="v" id="mZ">–</span></div>
-      <div class="metric"><span>压缩比(直线/X)</span><span class="v" id="mC">–</span></div>
-      <div class="metric"><span>拐点数</span><span class="v" id="mT">–</span></div>
+      <div class="metric"><span id="mCk">压缩比</span><span class="v" id="mC">–</span></div>
+      <div class="metric"><span id="mTk">拐点数</span><span class="v" id="mT">–</span></div>
       <div class="metric"><span>占地块数 ≈</span><span class="v" id="mA">–</span></div>
       <div class="metric"><span>forceload 区块 ≈</span><span class="v" id="mF">–</span></div>
       <div id="verdict"></div>
     </div>
     <div class="grp">
-      <h2>⑤ 参数(截图给我即可)</h2>
+      <h2>⑥ 参数(截图给我即可)</h2>
       <pre id="params"></pre>
       <button class="btn" id="copy">复制参数 JSON</button>
       <button class="btn sec" id="png">下载预览 PNG</button>
-      <div class="hint">截图把右侧参数 + 左侧形状一起拍给我,我就按这些数字生成对应的七里香红石机器。</div>
+      <div class="hint">截图把右侧参数 + 左侧形状一起拍给我,我按这些数字生成对应的七里香红石机器。</div>
     </div>
   </div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 const cv=$('cv'), ctx=cv.getContext('2d');
-let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347, sound:767};
-let waypoints=null;           // custom mode, in cell coords
-let drag=null, selWp=null, history=[], dragSnap=null;
+let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347, sound:767,
+       pal:47, pcols:16, rowgap:3, base:'minecraft:stone'};
+let waypoints=null, drag=null, selWp=null, history=[], dragSnap=null, pan=null, viewInit=false;
+let view={s:1,ox:0,oy:0};
+const PX=x=>view.ox+x*view.s, PZ=z=>view.oy+z*view.s;
+const evPx=ev=>{const r=cv.getBoundingClientRect();return {px:(ev.clientX-r.left)*cv.width/r.width, py:(ev.clientY-r.top)*cv.height/r.height};};
 
-// ---------- spine builders (cell coords; matches 43_build_swave_balance geometry) ----------
+// ---------- spine builders (faithful to 43_build_swave_balance) ----------
 function spineStraight(n){const o=[];for(let i=0;i<n;i++)o.push({x:i,z:0,d:[1,0],turn:false});return o;}
 function spineSwave(n,XRUN,ZMAX){
-  const DIRS=[[1,0],[0,1],[1,0],[0,-1]], SEG=[XRUN,ZMAX-1,XRUN,ZMAX-1];
-  let x=0,z=0,ph=0,seg=0; const o=[{x,z,d:DIRS[0],turn:false}];
-  for(let i=1;i<n;i++){
-    const d=DIRS[ph]; let ready;
-    if(ph===0||ph===2) ready=seg+1>=SEG[ph];
-    else if(ph===1) ready=z>=ZMAX; else ready=z<=0;
-    if(ready){const nd=DIRS[(ph+1)%4]; x+=d[0]+nd[0]; z+=d[1]+nd[1]; ph=(ph+1)%4; seg=0; o.push({x,z,d:nd,turn:true});}
-    else {x+=d[0]; z+=d[1]; seg++; o.push({x,z,d,turn:false});}
-  }
-  return o;
-}
+  const D=[[1,0],[0,1],[1,0],[0,-1]],SEG=[XRUN,ZMAX-1,XRUN,ZMAX-1];
+  let x=0,z=0,ph=0,seg=0;const o=[{x,z,d:D[0],turn:false}];
+  for(let i=1;i<n;i++){const d=D[ph];let r;
+    if(ph===0||ph===2)r=seg+1>=SEG[ph];else if(ph===1)r=z>=ZMAX;else r=z<=0;
+    if(r){const nd=D[(ph+1)%4];x+=d[0]+nd[0];z+=d[1]+nd[1];ph=(ph+1)%4;seg=0;o.push({x,z,d:nd,turn:true});}
+    else{x+=d[0];z+=d[1];seg++;o.push({x,z,d,turn:false});}}
+  return o;}
 function spineCustom(n,wps){
-  // axis-aligned (X then Z) polyline through waypoints, 1 cell per unit step
-  const pts=[]; const push=(x,z,d,turn)=>pts.push({x,z,d,turn});
-  if(!wps.length){return spineSwave(n,S.xrun,S.zmax);}
-  let cx=wps[0].x, cz=wps[0].z; push(cx,cz,[1,0],false);
-  for(let k=1;k<wps.length;k++){
-    let tx=wps[k].x, tz=wps[k].z;
-    while(cx!==tx){const s=Math.sign(tx-cx); cx+=s; push(cx,cz,[s,0],false);}
-    while(cz!==tz){const s=Math.sign(tz-cz); cz+=s; push(cx,cz,[0,s],pts.length&&cx!==(pts[pts.length-2]?.x));}
-  }
-  // mark turns where direction changes
-  for(let i=1;i<pts.length-1;i++){const a=pts[i-1].d,b=pts[i+1]?.d||pts[i].d; if(a[0]!==pts[i].d[0]||a[1]!==pts[i].d[1]) pts[i].turn=true;}
-  if(pts.length<n){pts._short=n-pts.length;}
-  return pts.slice(0,n);
-}
-function spine(){
-  const n=S.cells;
+  if(!wps||!wps.length)return spineSwave(n,S.xrun,S.zmax);
+  const pts=[];let cx=wps[0].x,cz=wps[0].z;pts.push({x:cx,z:cz,d:[1,0],turn:false});
+  for(let k=1;k<wps.length;k++){let tx=wps[k].x,tz=wps[k].z;
+    while(cx!==tx){const s=Math.sign(tx-cx);cx+=s;pts.push({x:cx,z:cz,d:[s,0],turn:false});}
+    while(cz!==tz){const s=Math.sign(tz-cz);cz+=s;pts.push({x:cx,z:cz,d:[0,s],turn:false});}}
+  for(let i=1;i<pts.length-1;i++){const a=pts[i-1].d;if(a[0]!==pts[i].d[0]||a[1]!==pts[i].d[1])pts[i].turn=true;}
+  if(pts.length<n)pts._short=n-pts.length;
+  return pts.slice(0,n);}
+function spine(){const n=S.cells;
   if(S.form==='straight')return spineStraight(n);
-  if(S.form==='custom')return spineCustom(n, waypoints||[]);
-  return spineSwave(n,S.xrun,S.zmax);
-}
+  if(S.form==='custom')return spineCustom(n,waypoints);
+  return spineSwave(n,S.xrun,S.zmax);}
 
 // ---------- metrics ----------
-function metrics(sp){
+function lineMetrics(sp){
   let xmin=1e9,xmax=-1e9,zmin=1e9,zmax=-1e9,turns=0;
-  for(const c of sp){xmin=Math.min(xmin,c.x);xmax=Math.max(xmax,c.x);zmin=Math.min(zmin,c.z);zmax=Math.max(zmax,c.z); if(c.turn)turns++;}
-  const Zband=zmax-zmin+1, XspanCore=xmax-xmin+1;
-  const Xspan=XspanCore+2*S.rad;                          // 竖向段向 ±X 伸音符列
-  const bandW=Zband+2*S.rad;                              // 单轨含线宽
-  const Zwidth=S.dual? bandW*2+S.sep : bandW;
-  const comp=Xspan>0? S.cells/Xspan : 0;
-  const area=Xspan*Zwidth;
+  for(const c of sp){xmin=Math.min(xmin,c.x);xmax=Math.max(xmax,c.x);zmin=Math.min(zmin,c.z);zmax=Math.max(zmax,c.z);if(c.turn)turns++;}
+  const Zband=zmax-zmin+1,Xspan=(xmax-xmin+1)+2*S.rad,bandW=Zband+2*S.rad;
+  const Zwidth=S.dual?bandW*2+S.sep:bandW,comp=Xspan>0?S.cells/Xspan:0;
   const fl=(Math.floor(Xspan/16)+1)*(Math.floor(Zwidth/16)+1);
-  return {xmin,xmax,zmin,zmax,Zband,Xspan,Zwidth,comp,turns,area,fl,short:sp._short||0};
-}
-function verdict(m){
-  const out=[];
-  if(S.form!=='straight'){
-    const need=S.rad*2+S.gap+1;
-    if(S.zmax<need && S.form==='swave') out.push(['bad',`ZMAX=${S.zmax} 太小:相邻折间距 < 线宽×2+gap+1 = ${need} → 音符列会重叠/串扰(破坏音乐)`]);
-  }
-  if(m.short) out.push(['bad',`自定义路径太短,缺 ${m.short} 个 cell 放不下整曲 → 加路点拉长路径`]);
-  if(S.dual && S.sep < S.rad*2+1) out.push(['warn',`双轨间距 SEP=${S.sep} 偏小,两轨音符列可能贴太近`]);
-  if(m.fl>360) out.push(['warn',`forceload ≈ ${m.fl} 区块,偏大可能过载;紧凑机(≤~210)更稳`]);
-  if(!out.length) out.push(['ok','✓ 形状合法:容得下整曲、折间距足够、不破坏音乐']);
-  return out;
-}
+  return {form:'line',xmin,xmax,zmin,zmax,Zband,Xspan,Zwidth,comp,turns,area:Xspan*Zwidth,fl,short:sp._short||0};}
+function inplaceGrid(){const P=S.pal,cols=Math.max(1,S.pcols),gap=S.rowgap,rows=Math.ceil(P/cols);
+  const blocks=[];for(let i=0;i<P;i++)blocks.push({x:i%cols,z:Math.floor(i/cols)*gap});
+  return {blocks,rows,cols,P,gap};}
+function inplaceMetrics(g){const Xspan=g.cols+2,Zwidth=(g.rows-1)*g.gap+3;
+  const fl=(Math.floor(Xspan/16)+1)*(Math.floor(Zwidth/16)+1);
+  return {form:'inplace',Xspan,Zwidth,P:g.P,rows:g.rows,cols:g.cols,gap:g.gap,comp:0,turns:0,area:Xspan*Zwidth,fl,short:0};}
 
-// ---------- render ----------
-let view={s:1,ox:0,oy:0};
-function fit(sp,m){
-  const pad=40, W=cv.width, H=cv.height;
-  const x0=m.xmin-S.rad, x1=m.xmax+S.rad;
-  const z0=m.zmin-S.rad, z1=(m.zmin)+ (S.dual?(m.Zband+2*S.rad)*2+S.sep:(m.Zband+2*S.rad)) ;
-  const w=(x1-x0+1), h=(z1-z0+1);
-  view.s=Math.min((W-2*pad)/w,(H-2*pad)/h);
-  view.ox=pad - x0*view.s; view.oy=pad - (z0)*view.s;
-}
-const PX=(x)=>view.ox+x*view.s, PZ=(z)=>view.oy+z*view.s;
-function render(){
-  const sp=spine(), m=metrics(sp); fit(sp,m);
-  ctx.clearRect(0,0,cv.width,cv.height);
-  const s=view.s, bandW=m.Zband+2*S.rad;
-  // each track drawn as: wide translucent band (= line width/音符列) + thin spine stroke
-  const drawTrack=(zoff,mirror,noteCol)=>{
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    ctx.beginPath();
-    for(let i=0;i<sp.length;i++){const c=sp[i];const lz=c.z-m.zmin;const zz=zoff+(mirror?(m.Zband-1-lz):lz);
-      const X=PX(c.x),Z=PZ(zz); i?ctx.lineTo(X,Z):ctx.moveTo(X,Z);}
-    ctx.strokeStyle=noteCol; ctx.globalAlpha=.42; ctx.lineWidth=Math.max(2,(2*S.rad+1)*s); ctx.stroke();   // 线宽band
-    ctx.strokeStyle='#58a6ff'; ctx.globalAlpha=1; ctx.lineWidth=Math.max(1,s*0.85); ctx.stroke();          // 脊柱
-    ctx.globalAlpha=1;
-  };
-  drawTrack(S.rad, false, '#3fb950');
-  if(S.dual) drawTrack(S.rad + bandW + S.sep, true, '#bc8cff');
-  // turns (橙点, 仅 track A)
+// ---------- view ----------
+function bbox(){
+  if(S.form==='inplace'){const g=inplaceGrid();return {x0:-1,x1:g.cols+1,z0:-2,z1:(g.rows-1)*g.gap+2};}
+  const m=lineMetrics(spine());const bandW=m.Zband+2*S.rad;
+  return {x0:m.xmin-S.rad,x1:m.xmax+S.rad,z0:-1,z1:(S.dual?bandW*2+S.sep:bandW)};}
+function setFit(){const b=bbox(),pad=44,w=b.x1-b.x0+1,h=b.z1-b.z0+1;
+  view.s=Math.max(.02,Math.min(40,Math.min((cv.width-2*pad)/w,(cv.height-2*pad)/h)));
+  view.ox=pad-b.x0*view.s;view.oy=pad-b.z0*view.s;}
+
+// ---------- draw ----------
+function drawLine(){
+  const sp=spine(),m=lineMetrics(sp),s=view.s,bandW=m.Zband+2*S.rad;
+  const track=(zoff,mir,col)=>{ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
+    for(let i=0;i<sp.length;i++){const c=sp[i],lz=c.z-m.zmin,zz=zoff+(mir?(m.Zband-1-lz):lz);
+      const X=PX(c.x),Z=PZ(zz);i?ctx.lineTo(X,Z):ctx.moveTo(X,Z);}
+    ctx.strokeStyle=col;ctx.globalAlpha=.42;ctx.lineWidth=Math.max(2,(2*S.rad+1)*s);ctx.stroke();
+    ctx.strokeStyle='#58a6ff';ctx.globalAlpha=1;ctx.lineWidth=Math.max(1,s*.85);ctx.stroke();ctx.globalAlpha=1;};
+  track(S.rad,false,'#3fb950'); if(S.dual)track(S.rad+bandW+S.sep,true,'#bc8cff');
   ctx.fillStyle='#f0883e';
-  for(let i=0;i<sp.length;i++){if(sp[i].turn){const zz=S.rad+(sp[i].z-m.zmin);ctx.beginPath();ctx.arc(PX(sp[i].x),PZ(zz),Math.max(1.5,s*0.55),0,7);ctx.fill();}}
-  // waypoints handles (selected = larger/orange ring)
-  if(S.form==='custom' && waypoints){
-    waypoints.forEach((w,i)=>{const zz=S.rad+(w.z-m.zmin); const sel=i===selWp;
-      ctx.beginPath();ctx.arc(PX(w.x),PZ(zz),sel?7.5:5,0,7);
-      ctx.fillStyle=sel?'#f0883e':'#d29922';ctx.fill();
-      ctx.lineWidth=sel?2.5:1.5;ctx.strokeStyle='#fff';ctx.stroke();});
-  }
-  // axes labels
+  for(const c of sp)if(c.turn){const zz=S.rad+(c.z-m.zmin);ctx.beginPath();ctx.arc(PX(c.x),PZ(zz),Math.max(1.4,s*.55),0,7);ctx.fill();}
+  if(S.form==='custom'&&waypoints)waypoints.forEach((w,i)=>{const zz=S.rad+(w.z-m.zmin),sel=i===selWp;
+    ctx.beginPath();ctx.arc(PX(w.x),PZ(zz),sel?7.5:5,0,7);ctx.fillStyle=sel?'#f0883e':'#d29922';ctx.fill();
+    ctx.lineWidth=sel?2.5:1.5;ctx.strokeStyle='#fff';ctx.stroke();});
   ctx.fillStyle='#8b949e';ctx.font='11px monospace';
-  ctx.fillText(`X 跨度 ${m.Xspan}  (时间→)`, 46, cv.height-12);
-  ctx.save();ctx.translate(14,46);ctx.rotate(Math.PI/2);ctx.fillText(`Z 总宽 ${m.Zwidth}  (折叠↓)`,0,0);ctx.restore();
-  updateUI(m);
-}
+  ctx.fillText(`X 跨度 ${m.Xspan} (时间→) · 基底 ${S.base.replace('minecraft:','')}`,46,cv.height-12);
+  return m;}
+function drawInplace(){
+  const g=inplaceGrid(),m=inplaceMetrics(g),s=view.s;
+  for(const b of g.blocks){const X=PX(b.x),Z=PZ(b.z);
+    ctx.fillStyle='#f0883e';ctx.globalAlpha=.8;ctx.fillRect(X-s*.42,PZ(b.z-1)-s*.30,s*.84,s*.32);ctx.globalAlpha=1; // 侧触发槽
+    ctx.fillStyle='#58a6ff';ctx.fillRect(X-s*.42,Z-s*.42,s*.84,s*.84);                                            // 音符盒
+    ctx.fillStyle='#0d1117';ctx.fillRect(X-s*.30,Z-s*.30,s*.60,s*.60);
+    ctx.fillStyle='#3fb950';ctx.fillRect(X-s*.18,Z-s*.18,s*.36,s*.36);}                                           // 音色映射块
+  ctx.fillStyle='#8b949e';ctx.font='11px monospace';
+  ctx.fillText(`原地调色板 ${g.cols}宽 × ${g.rows}行 · ${g.P} 音符盒 · 基底 ${S.base.replace('minecraft:','')}`,46,cv.height-12);
+  return m;}
+function render(){
+  if(!viewInit){setFit();viewInit=true;}
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const m=S.form==='inplace'?drawInplace():drawLine();
+  updateUI(m);}
+
+// ---------- UI sync ----------
+function verdict(m){const out=[];
+  if(m.form==='inplace'){out.push(['ok','✓ 原地播放:占地极小、零中继器、不过载(保底播放方案)']);return out;}
+  if(S.form==='swave'){const need=S.rad*2+S.gap+1;
+    if(S.zmax<need)out.push(['bad',`ZMAX=${S.zmax} 太小:折间距 < 线宽×2+gap+1=${need} → 音符列重叠/串扰(破坏音乐)`]);}
+  if(m.short)out.push(['bad',`自定义路径太短,缺 ${m.short} 个 cell → 加路点拉长路径`]);
+  if(S.dual&&S.sep<S.rad*2+1)out.push(['warn',`双轨间距 SEP=${S.sep} 偏小,两轨音符列可能贴太近`]);
+  if(m.fl>360)out.push(['warn',`forceload ≈ ${m.fl} 区块偏大可能过载;紧凑(≤~210)更稳`]);
+  if(!out.length)out.push(['ok','✓ 形状合法:容得下整曲、折间距足够、不破坏音乐']);
+  return out;}
 function updateUI(m){
-  $('mX').textContent=m.Xspan+' 块';
-  $('mZ').textContent=m.Zwidth+' 块';
-  $('mC').textContent=m.comp.toFixed(2)+'×';
-  $('mT').textContent=m.turns;
-  $('mA').textContent=m.area.toLocaleString();
-  $('mF').textContent='~'+m.fl;
-  const vs=verdict(m);
-  $('verdict').innerHTML=vs.map(([c,t])=>`<div class="verdict ${c}">${t}</div>`).join('');
-  const P={
-    song:'七里香', form:S.form, cells:S.cells, sounding:S.sound,
-    XRUN:S.xrun, ZMAX:S.zmax, line_width_radiate:S.rad, fold_gap:S.gap,
-    dual_track_mirror:S.dual, track_sep:S.sep,
-    result:{X_span:m.Xspan, Z_width:m.Zwidth, compression:+m.comp.toFixed(2), turns:m.turns, forceload_chunks:m.fl},
-    bbox_cells:{x:[m.xmin,m.xmax], z:[m.zmin,m.zmax]},
-    waypoints: (S.form==='custom'&&waypoints)? waypoints.map(w=>[w.x,w.z]) : null
-  };
-  $('params').textContent='// 截图把这段连同左侧形状发给我\n'+JSON.stringify(P,null,1);
-  window._P=P;
-  const si=$('selInfo');
-  if(si) si.textContent=(S.form==='custom'&&selWp!=null&&waypoints&&waypoints[selWp])
-    ? `选中 #${selWp+1}/${waypoints.length} · cell(x=${waypoints[selWp].x}, z=${waypoints[selWp].z})`
-    : `选中节点:无${waypoints?` (共 ${waypoints.length} 点)`:''}`;
-}
+  const inp=m.form==='inplace';
+  $('mX').textContent=m.Xspan+' 块';$('mZ').textContent=m.Zwidth+' 块';
+  $('mCk').textContent=inp?'调色板音符盒':'压缩比';$('mC').textContent=inp?m.P:(m.comp.toFixed(2)+'×');
+  $('mTk').textContent=inp?'网格':'拐点数';$('mT').textContent=inp?`${m.cols}×${m.rows}`:m.turns;
+  $('mA').textContent=m.area.toLocaleString();$('mF').textContent='~'+m.fl;
+  $('verdict').innerHTML=verdict(m).map(([c,t])=>`<div class="verdict ${c}">${t}</div>`).join('');
+  let P;
+  if(inp)P={song:'七里香',form:'inplace',palette_noteblocks:S.pal,PCOLS:S.pcols,ROWGAP:S.rowgap,
+            base_block:S.base,result:{X_span:m.Xspan,Z_width:m.Zwidth,grid:`${m.cols}x${m.rows}`,forceload_chunks:m.fl}};
+  else P={song:'七里香',form:S.form,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
+          line_width_radiate:S.rad,fold_gap:S.gap,dual_track_mirror:S.dual,track_sep:S.sep,base_block:S.base,
+          result:{X_span:m.Xspan,Z_width:m.Zwidth,compression:+m.comp.toFixed(2),turns:m.turns,forceload_chunks:m.fl},
+          bbox_cells:{x:[m.xmin,m.xmax],z:[m.zmin,m.zmax]},
+          waypoints:(S.form==='custom'&&waypoints)?waypoints.map(w=>[w.x,w.z]):null};
+  $('params').textContent='// 截图把这段连同左侧形状发给我\n'+JSON.stringify(P,null,1);window._P=P;
+  const si=$('selInfo');if(si)si.textContent=(S.form==='custom'&&selWp!=null&&waypoints&&waypoints[selWp])
+    ?`选中 #${selWp+1}/${waypoints.length} · cell(x=${waypoints[selWp].x}, z=${waypoints[selWp].z})`
+    :`选中节点:无${waypoints?` (共 ${waypoints.length} 点)`:''}`;}
 
 // ---------- controls ----------
-function bindRange(r,n,key,after){
-  const set=v=>{S[key]=+v; r.value=v; n.value=v; (after||render)();};
-  r.oninput=()=>set(r.value); n.oninput=()=>set(n.value);
-}
-bindRange($('xrun'),$('xrunN'),'xrun'); bindRange($('zmax'),$('zmaxN'),'zmax');
-bindRange($('rad'),$('radN'),'rad'); bindRange($('gap'),$('gapN'),'gap'); bindRange($('sep'),$('sepN'),'sep');
+function bindRange(r,n,key){const set=v=>{S[key]=+v;r.value=v;n.value=v;render();};r.oninput=()=>set(r.value);n.oninput=()=>set(n.value);}
+bindRange($('xrun'),$('xrunN'),'xrun');bindRange($('zmax'),$('zmaxN'),'zmax');
+bindRange($('rad'),$('radN'),'rad');bindRange($('gap'),$('gapN'),'gap');bindRange($('sep'),$('sepN'),'sep');
+bindRange($('pcols'),$('pcolsN'),'pcols');bindRange($('rowgap'),$('rowgapN'),'rowgap');
 $('dual').onchange=e=>{S.dual=e.target.checked;render();};
 $('cells').oninput=e=>{S.cells=Math.max(2,+e.target.value||2);render();};
 $('sound').oninput=e=>{S.sound=+e.target.value||0;render();};
+$('pal').oninput=e=>{S.pal=Math.max(1,+e.target.value||1);render();};
+$('fit').onclick=()=>{setFit();render();};
 document.querySelectorAll('#form button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#form button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); S.form=b.dataset.f;
+  document.querySelectorAll('#form button').forEach(x=>x.classList.remove('on'));b.classList.add('on');S.form=b.dataset.f;
   $('swaveCtl').style.display=S.form==='swave'?'':'none';
   $('customCtl').style.display=S.form==='custom'?'':'none';
-  cv.classList.toggle('custom', S.form==='custom');
-  if(S.form==='custom'&&!waypoints){ resetWaypoints(); history=[]; selWp=null; $('undo').disabled=true; }
-  render();
-});
-function resetWaypoints(){
-  const sp=spineSwave(S.cells,S.xrun,S.zmax); waypoints=[];
-  for(let i=0;i<sp.length;i+=Math.max(1,Math.floor(sp.length/14))) waypoints.push({x:sp[i].x,z:sp[i].z});
-  waypoints.push({x:sp[sp.length-1].x,z:sp[sp.length-1].z});
-}
-// ---------- custom waypoint editing: drag-priority, button-add, undo ----------
-const GRAB=28;   // px: 抓取节点的半径; 比这远的点击只选不拖, 绝不新增
-function clone(a){return a.map(p=>({x:p.x,z:p.z}));}
-function commit(snap){ if(JSON.stringify(snap)!==JSON.stringify(waypoints)){ history.push(snap); if(history.length>60)history.shift(); $('undo').disabled=false; } }
-function pushHist(){ history.push(clone(waypoints)); if(history.length>60)history.shift(); $('undo').disabled=false; }
-function undo(){ if(!history.length)return; waypoints=history.pop(); if(selWp!=null&&selWp>=waypoints.length)selWp=waypoints.length-1; $('undo').disabled=!history.length; render(); }
-function evPx(ev){const r=cv.getBoundingClientRect();return {px:(ev.clientX-r.left)*cv.width/r.width, py:(ev.clientY-r.top)*cv.height/r.height};}
-function wpPx(i){const sp=spine(),m=metrics(sp),w=waypoints[i];return {px:PX(w.x),py:PZ(S.rad+(w.z-m.zmin))};}
+  $('inplaceCtl').style.display=S.form==='inplace'?'':'none';
+  $('lineGrp').style.display=S.form==='inplace'?'none':'';
+  cv.classList.toggle('custom',S.form==='custom');
+  if(S.form==='custom'&&!waypoints){resetWaypoints();history=[];selWp=null;$('undo').disabled=true;}
+  setFit();render();});
+function resetWaypoints(){const sp=spineSwave(S.cells,S.xrun,S.zmax);waypoints=[];
+  for(let i=0;i<sp.length;i+=Math.max(1,Math.floor(sp.length/14)))waypoints.push({x:sp[i].x,z:sp[i].z});
+  waypoints.push({x:sp[sp.length-1].x,z:sp[sp.length-1].z});}
+
+// ---------- zoom (cursor-centered) + pan ----------
+cv.addEventListener('wheel',ev=>{ev.preventDefault();const{px,py}=evPx(ev);const f=ev.deltaY<0?1.12:1/1.12;
+  const wx=(px-view.ox)/view.s,wy=(py-view.oy)/view.s;view.s=Math.max(.02,Math.min(40,view.s*f));
+  view.ox=px-wx*view.s;view.oy=py-wy*view.s;render();},{passive:false});
+// ---------- custom node editing (drag-priority) + pan on empty ----------
+const GRAB=28;
+const clone=a=>a.map(p=>({x:p.x,z:p.z}));
+function commit(snap){if(JSON.stringify(snap)!==JSON.stringify(waypoints)){history.push(snap);if(history.length>60)history.shift();$('undo').disabled=false;}}
+function pushHist(){history.push(clone(waypoints));if(history.length>60)history.shift();$('undo').disabled=false;}
+function undo(){if(!history.length)return;waypoints=history.pop();if(selWp!=null&&selWp>=waypoints.length)selWp=waypoints.length-1;$('undo').disabled=!history.length;render();}
+function wpPx(i){const m=lineMetrics(spine()),w=waypoints[i];return {px:PX(w.x),py:PZ(S.rad+(w.z-m.zmin))};}
 function nearestWp(px,py){let bi=-1,bd=1e9;for(let i=0;i<waypoints.length;i++){const s=wpPx(i),d=Math.hypot(s.px-px,s.py-py);if(d<bd){bd=d;bi=i;}}return {i:bi,d:bd};}
-function toCellXY(px,py){const sp=spine(),m=metrics(sp);return {x:Math.round((px-view.ox)/view.s), z:Math.round((py-view.oy)/view.s)+m.zmin-S.rad};}
+function toCellXY(px,py){const m=lineMetrics(spine());return {x:Math.round((px-view.ox)/view.s),z:Math.round((py-view.oy)/view.s)+m.zmin-S.rad};}
+cv.addEventListener('mousedown',ev=>{if(ev.button!==0)return;const{px,py}=evPx(ev);
+  if(S.form==='custom'&&waypoints){const n=nearestWp(px,py);if(n.i>=0){selWp=n.i;
+    if(n.d<=GRAB){drag=n.i;dragSnap=clone(waypoints);cv.style.cursor='grabbing';render();return;}}}
+  pan={sx:px,sy:py,ox:view.ox,oy:view.oy};cv.style.cursor='grabbing';render();});
+cv.addEventListener('mousemove',ev=>{const{px,py}=evPx(ev);
+  if(drag!=null){const c=toCellXY(px,py);waypoints[drag]={x:c.x,z:c.z};render();return;}
+  if(pan){view.ox=pan.ox+(px-pan.sx);view.oy=pan.oy+(py-pan.sy);render();}});
+window.addEventListener('mouseup',()=>{if(drag!=null&&dragSnap)commit(dragSnap);drag=null;dragSnap=null;pan=null;cv.style.cursor=S.form==='custom'?'grab':'default';});
+cv.addEventListener('contextmenu',ev=>{ev.preventDefault();if(S.form!=='custom'||!waypoints)return;
+  const{px,py}=evPx(ev),n=nearestWp(px,py);
+  if(n.i>=0&&n.d<=GRAB&&waypoints.length>2){pushHist();waypoints.splice(n.i,1);selWp=Math.min(selWp??0,waypoints.length-1);render();}});
+$('addWp').onclick=()=>{if(!waypoints)return;pushHist();const at=(selWp!=null&&selWp<waypoints.length)?selWp:waypoints.length-1;
+  const a=waypoints[at],b=waypoints[Math.min(at+1,waypoints.length-1)];let nw={x:Math.round((a.x+b.x)/2),z:Math.round((a.z+b.z)/2)};
+  if(nw.x===a.x&&nw.z===a.z)nw={x:a.x+6,z:a.z};waypoints.splice(at+1,0,nw);selWp=at+1;render();};
+$('delWp').onclick=()=>{if(selWp==null||!waypoints||waypoints.length<=2)return;pushHist();waypoints.splice(selWp,1);selWp=Math.min(selWp,waypoints.length-1);render();};
+$('undo').onclick=undo;$('resetWp').onclick=()=>{if(waypoints)pushHist();resetWaypoints();selWp=null;render();};
+window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&S.form==='custom'){e.preventDefault();undo();}});
 
-cv.addEventListener('mousedown',ev=>{
-  if(S.form!=='custom'||ev.button!==0||!waypoints)return;
-  const {px,py}=evPx(ev), n=nearestWp(px,py);
-  if(n.i<0)return;
-  selWp=n.i;                                   // 选中最近节点(优先调整)
-  if(n.d<=GRAB){ drag=n.i; dragSnap=clone(waypoints); cv.style.cursor='grabbing'; }  // 够近才拖, 永不新增
-  render();
-});
-cv.addEventListener('mousemove',ev=>{ if(drag==null)return; const {px,py}=evPx(ev),c=toCellXY(px,py); waypoints[drag]={x:c.x,z:c.z}; render(); });
-window.addEventListener('mouseup',()=>{ if(drag!=null&&dragSnap)commit(dragSnap); drag=null; dragSnap=null; cv.style.cursor=''; });
-cv.addEventListener('contextmenu',ev=>{ ev.preventDefault(); if(S.form!=='custom'||!waypoints)return;
-  const {px,py}=evPx(ev), n=nearestWp(px,py);
-  if(n.i>=0&&n.d<=GRAB&&waypoints.length>2){ pushHist(); waypoints.splice(n.i,1); selWp=Math.min(selWp??0,waypoints.length-1); render(); } });
-
-$('addWp').onclick=()=>{ if(!waypoints)return; pushHist();
-  const at=(selWp!=null&&selWp<waypoints.length)?selWp:waypoints.length-1;
-  const a=waypoints[at], b=waypoints[Math.min(at+1,waypoints.length-1)];
-  let nw={x:Math.round((a.x+b.x)/2), z:Math.round((a.z+b.z)/2)};
-  if(nw.x===a.x&&nw.z===a.z)nw={x:a.x+6,z:a.z};      // 末点之后: 沿 +X 接一段
-  waypoints.splice(at+1,0,nw); selWp=at+1; render(); };
-$('delWp').onclick=()=>{ if(selWp==null||!waypoints||waypoints.length<=2)return; pushHist(); waypoints.splice(selWp,1); selWp=Math.min(selWp,waypoints.length-1); render(); };
-$('undo').onclick=undo;
-$('resetWp').onclick=()=>{ if(waypoints)pushHist(); resetWaypoints(); selWp=null; render(); };
-window.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&S.form==='custom'){e.preventDefault();undo();} });
+// ---------- base block: search over conductive (signal-carrying) blocks only ----------
+const COL=[['white','白'],['orange','橙'],['magenta','品红'],['light_blue','淡蓝'],['yellow','黄'],['lime','黄绿'],['pink','粉'],['gray','灰'],['light_gray','淡灰'],['cyan','青'],['purple','紫'],['blue','蓝'],['brown','棕'],['green','绿'],['red','红'],['black','黑']];
+const WOOD=[['oak','橡木'],['spruce','云杉'],['birch','白桦'],['jungle','丛林'],['acacia','金合欢'],['dark_oak','深色橡木'],['mangrove','红树'],['cherry','樱花'],['bamboo','竹'],['crimson','绯红'],['warped','诡异']];
+const BLOCKS=[];const addB=(id,name)=>BLOCKS.push({id:'minecraft:'+id,name});
+[['stone','石头'],['granite','花岗岩'],['polished_granite','磨制花岗岩'],['diorite','闪长岩'],['polished_diorite','磨制闪长岩'],['andesite','安山岩'],['polished_andesite','磨制安山岩'],['deepslate','深板岩'],['cobbled_deepslate','深板岩圆石'],['polished_deepslate','磨制深板岩'],['deepslate_bricks','深板岩砖'],['deepslate_tiles','深板岩瓦'],['cobblestone','圆石'],['mossy_cobblestone','苔石'],['stone_bricks','石砖'],['mossy_stone_bricks','苔石砖'],['cracked_stone_bricks','裂纹石砖'],['chiseled_stone_bricks','錾制石砖'],['smooth_stone','平滑石头'],['blackstone','黑石'],['polished_blackstone','磨制黑石'],['polished_blackstone_bricks','磨制黑石砖'],['gilded_blackstone','镶金黑石'],['basalt','玄武岩'],['polished_basalt','磨制玄武岩'],['smooth_basalt','平滑玄武岩'],['tuff','凝灰岩'],['calcite','方解石'],['dripstone_block','滴水石块'],['netherrack','下界岩'],['nether_bricks','下界砖'],['red_nether_bricks','红色下界砖'],['quartz_block','石英块'],['smooth_quartz','平滑石英'],['quartz_bricks','石英砖'],['chiseled_quartz_block','錾制石英块'],['obsidian','黑曜石'],['crying_obsidian','哭泣的黑曜石'],['sandstone','砂岩'],['smooth_sandstone','平滑砂岩'],['cut_sandstone','切制砂岩'],['red_sandstone','红砂岩'],['smooth_red_sandstone','平滑红砂岩'],['bricks','红砖块'],['prismarine','海晶石'],['prismarine_bricks','海晶石砖'],['dark_prismarine','暗海晶石'],['purpur_block','紫珀块'],['purpur_pillar','紫珀柱'],['end_stone','末地石'],['end_stone_bricks','末地石砖'],['bone_block','骨块'],['dried_kelp_block','干海带块'],['terracotta','陶瓦'],['packed_mud','结块的泥'],['mud_bricks','泥砖'],['dirt','泥土'],['coarse_dirt','砂土'],['rooted_dirt','缠根泥土'],['grass_block','草方块'],['podzol','灰化土'],['mycelium','菌丝体'],['clay','黏土'],['gravel','沙砾'],['sand','沙子'],['red_sand','红沙'],['snow_block','雪块'],['moss_block','苔藓块'],['iron_block','铁块'],['gold_block','金块'],['diamond_block','钻石块'],['emerald_block','绿宝石块'],['netherite_block','下界合金块'],['copper_block','铜块'],['lapis_block','青金石块'],['coal_block','煤炭块'],['amethyst_block','紫水晶块'],['raw_iron_block','粗铁块'],['raw_copper_block','粗铜块'],['raw_gold_block','粗金块'],['white_concrete_powder','白色混凝土粉末']].forEach(([i,n])=>addB(i,n));
+COL.forEach(([c,n])=>{addB(c+'_concrete',n+'混凝土');addB(c+'_terracotta',n+'陶瓦');addB(c+'_wool',n+'羊毛');addB(c+'_glazed_terracotta',n+'带釉陶瓦');});
+WOOD.forEach(([w,n])=>addB(w+'_planks',n+'木板'));
+function renderBlkList(q){q=(q||'').trim().toLowerCase();
+  const items=BLOCKS.filter(b=>!q||b.id.includes(q)||b.name.includes(q)).slice(0,60);
+  $('blkList').innerHTML=items.map(b=>`<div class="blkitem${b.id===S.base?' on':''}" data-id="${b.id}"><span>${b.name}</span><span class="id">${b.id.replace('minecraft:','')}</span></div>`).join('')
+    ||'<div class="blkitem">无匹配的可导通方块</div>';
+  $('blkList').querySelectorAll('.blkitem[data-id]').forEach(el=>el.onclick=()=>{S.base=el.dataset.id;$('blkCur').textContent=S.base;renderBlkList(q);render();});}
+$('blkSearch').oninput=e=>renderBlkList(e.target.value);
 
 $('copy').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(window._P,null,1));$('copy').textContent='已复制 ✓';setTimeout(()=>$('copy').textContent='复制参数 JSON',1200);};
 $('png').onclick=()=>{const a=document.createElement('a');a.download='qlx_layout.png';a.href=cv.toDataURL();a.click();};
-$('songtag').textContent='当前曲目:七里香 · 3347 cell(767 发声)';
-render();
+$('songtag').textContent='当前曲目:七里香 · 直线3347cell/原地47音符盒';
+renderBlkList('');render();
 </script>
 </body>
 </html>
