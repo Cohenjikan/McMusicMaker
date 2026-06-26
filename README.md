@@ -1,3 +1,5 @@
+> **⚠️ OUTDATED — 当前产品见 [`skill/`](skill/)(权威能力清单 [`skill/docs/FEATURE_MATRIX.md`](skill/docs/FEATURE_MATRIX.md));本 README 记录的是调研阶段。**
+
 # RedstoneMusic — 音符盒音乐"真实重构"调研
 
 把红石音乐从"切片回放原曲"升级为"分轨 → 转写音高 → 真实乐器取样 → 按节奏 playsound"的**可行性调研 + 落地方案**。引擎 Minecraft Java **1.21.8**。

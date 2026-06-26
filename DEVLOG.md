@@ -1,3 +1,62 @@
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- STATUS BANNER — 2026-06-26 (prepended; body below is preserved history)   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+> ## ⭐ STATUS (2026-06-26) — 读这里先
+>
+> **当前产品 = `skill/`。** 本仓库已从"调研 + 一次性世界内机器"转向把整条
+> MIDI→红石→采样流水线封装成一个 Claude Code skill。代码入口
+> `skill/scripts/build_machine.py`,共享底座 `skill/scripts/redpiano_core.py`,
+> 接口规范 `skill/docs/CONTRACT.md`。
+>
+> **能力的唯一权威来源 = [`skill/docs/FEATURE_MATRIX.md`](skill/docs/FEATURE_MATRIX.md)。**
+> 下面这份 DEVLOG 是按时间堆叠的**历史**(第4/5代 agent 的过程记录),不同小节
+> 之间会出现互相矛盾的快照。**凡是关于"某形态能不能做某事"的判断,以
+> FEATURE_MATRIX.md 为准,本文正文仅作研究史参考。**
+>
+> ### 已解决的矛盾:行进脉冲(swave / 行进脉冲)旋律延音截断
+>
+> 本文同时存在两种说法 —— 上方第5代 START-HERE 节说行进脉冲旋律截断
+> **「已落地 / 生成验证全过」**(见"行进脉冲截断算法"小节),而下方更早的交接节
+> 又把它列为 **「P0 必做 · 未实现」**。**矛盾已解决:旋律延音截断 *已实现*,且已
+> 覆盖所有 v1 形态**(原地多乐器 + S波行进脉冲),统一集中在
+> `skill/scripts/redpiano_core.py` 的 `plan_melody_cuts()`(事件级
+> `stopsound`,inplace 用相对调度、swave 用绝对调度)。「未实现」的说法出自
+> *早于截断移植* 的那一版交接,现已过时。
+>
+> 唯一仍待办的是 swave 形态的**游戏内实听确认**(截断时刻是否听感正确);
+> 原地多乐器形态已被用户实测"特别好"。准确状态见 FEATURE_MATRIX.md。
+>
+> ### 🧭 用户端流程(第6代定稿 · 2026-06-26)
+>
+> 载入 skill 后,agent 按此驱动用户(权威版写在 `skill/SKILL.md` 顶部「用户端流程」节):
+>
+> 1. **收集输入** — 让用户给:① MIDI 文件 `.mid`;② 存档路径(世界的 `datapacks/` 目录);
+>    ③ MC 版本号(须在 VERSION_TABLE 内,默认且支持最好 = `1.21.8`,未知版本**硬失败不猜**)。
+>    · 若用户传的是 **MP3/音频** → 只有**切片(Family B)**能复刻原音色,而它在**外部
+>    `mc-noteblock-demo` 仓库,本 skill 不能直接生成** → 明确告知并索要 MIDI。
+> 2. **选播放形态(用 AskUserQuestion)** — 默认且推荐 = **`swave` S 型曲折直线**(要提醒用户这是默认)。
+>    另一 MIDI 选项 = **`inplace` 原地调色板**(游戏实测最稳的保底,占地极小)。swave 放第一/标 Recommended。
+> 3. **自动备好 mod + 音效包** — 1.21.8:RedPiano jar(`mod/redpiano/`)+ `qzpno_mv` 资源包
+>    (按版本 `rp_format` 用 `poc/02e_build_resourcepack.py` 重打);提醒用户把 jar 放 `mods/`(重启 MC)、
+>    资源包在 选项→资源包 手动启用。其它版本:模组须按 `skill/docs/MOD_ARCHITECTURE.md` 移植清单**重新编译**;
+>    数据包/资源包 pack_format 由版本表自动处理。
+> 4. **生成 + 部署** — `build_machine.py --midi <mid> --form swave --ns <ns> --origin X Y Z
+>    --mc-version <ver> --world-dir <存档>/datapacks`;报告 stats + 游戏内步骤
+>    (`/reload` → `/tick rate 80` → `/function <ns>:setup` → 按 [play] 牌子)。
+> 5. **自定义需求 → 两个 HTML**(用法都是浏览器手动填 → 直接复制或导出 JSON 给 agent):
+>    · `skill/designer/layout_designer.html` = **自定义走线方式** → 导出 layout JSON → `--params`;
+>    · `skill/designer/particle_editor.html` = **自定义关键帧 + 命令方块位置** → 导出 particle_keyframes JSON
+>    → `skill/scripts/build_particles.py`(见 `skill/docs/PARTICLES.md`)。
+>
+> **走查验证(2026-06-26):** 用 `skill/assets/demo.mid` 跑默认 swave(`build_machine.py --form swave`)
+> 端到端通过 —— 86 音→5 声部、旋律截断 16、forceload 12 区块、pack_format 81、输出清晰的安装步骤。
+> 流程逻辑成立;唯一需用户实测的是游戏内实听。
+>
+> <sub>(以下为历史正文,未改动。)</sub>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
 # McMusicMaker — 开发文档 / DEVLOG
 
 > 把一首 **MIDI** 在 **Minecraft Java 1.21.8** 里用**红石机器**演奏出来:数据包驱动红石脉冲,每个音符触发 `/playsound` 播放**真实乐器采样**(资源包)。

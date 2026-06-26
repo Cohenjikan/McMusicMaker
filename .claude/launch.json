@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765", "--directory", "poc"],
       "port": 8765
+    },
+    {
+      "name": "skill-designer",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8766", "--directory", "skill/designer"],
+      "port": 8766
     }
   ]
 }
