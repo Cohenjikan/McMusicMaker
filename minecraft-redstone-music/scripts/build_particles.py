@@ -314,4 +314,12 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # robust unicode stdout for Chinese tellraw echoes + box-drawing summary on a
+    # non-UTF-8 console (cp1252 etc.) — otherwise the post-build print raises
+    # UnicodeEncodeError and a driving agent mis-reads a successful build as failed.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     sys.exit(main())

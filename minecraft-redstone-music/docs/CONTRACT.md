@@ -1,7 +1,7 @@
 # CONTRACT.md — Family A (RedPiano) skill build contract
 
 **Status:** authoritative interface spec written by the FOUNDATION ARCHITECT (WF-1).
-WF-2 (implementer) MUST build `skill/scripts/*` against this document. The proven lab
+WF-2 (implementer) MUST build `scripts/*` against this document. The proven lab
 generators (`poc/45`, `poc/46`, `poc/48`) are the *behavioral oracle*: every function
 below is distilled from verified code in those files. Where this contract and a poc
 disagree, the poc wins for **geometry/timing**, this contract wins for **API shape**.
@@ -13,7 +13,7 @@ Scope: **Family A only** — RedPiano mod, real note blocks, `/tick rate 80`, re
 The skill tree this contract governs:
 
 ```
-skill/scripts/
+scripts/
   build_machine.py          # CLI entry (§4)
   redpiano_core.py          # shared plumbing (§1)  — NO geometry here
   params_schema.py          # schema + validation (§2)
@@ -22,7 +22,7 @@ skill/scripts/
     swave.py                # swave / straight / custom — poc/48 geometry + path spines
     multilane.py            # one parallel lane per voice (poc/49)
     _experimental/          # reference-only lab scripts (42/43/47/49)
-skill/assets/redpiano_map_multi.json   # 103-block map, single source of truth
+assets/redpiano_map_multi.json   # 103-block map, single source of truth
 ```
 
 ---
@@ -313,13 +313,13 @@ implements it** → if SET to a non-default, `load_params` MUST raise (§2.3).
 | `XRUN` | int | optional | `3` (poc/48) / `6` (designer) | swave | X run length per S segment; **≥2** |
 | `ZMAX` | int | optional | `4` (poc/48) / `10` (designer) | swave | Z amplitude of S wave; **≥2** |
 | `line_width_radiate` | int | optional | `3` | none-yet | radiate chord width; poc fixes 3-wide (above+2 sides). **width≠3 unimplemented** |
-| `fold_gap` | int | optional | `1` | none-yet | plane-fold gap; **multilane/fold not wired in swave** |
+| `fold_gap` | int | optional | `1` | none-yet | plane-fold gap; **not wired in swave/straight/custom** |
 | `dual_track_mirror` | bool | optional | `true` | swave | second track mirror (poc/48 always 2-track mirror) |
 | `track_sep` | int | optional | `3` (derived `PATH_ZSPAN+3`) | swave | inter-track Z separation |
-| `chord_mode` | enum `radiate\|multilane` | optional | `radiate` | swave (radiate only) | **`multilane` unimplemented in swave generator** (§2.4) |
-| `max_poly` | int | optional | `7` | none-yet | multilane only; unimplemented |
-| `lane_dz` | int | optional | `2` | none-yet | multilane only; unimplemented |
-| `lane_offsets` | list \| null | optional | `null` | none-yet | multilane only; unimplemented |
+| `chord_mode` | enum `radiate\|multilane` | optional | `radiate` | swave (radiate) / multilane | `multilane` selects the **multilane form**; rejected on swave/straight/custom (§2.3) |
+| `max_poly` | int | optional | `7` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
+| `lane_dz` | int | optional | `2` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
+| `lane_offsets` | list \| null | optional | `null` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
 | `side_view` | bool | optional | `false` | none (designer-only) | render toggle, not a build param — ignored |
 | **slice-only (Family B, OUT OF SCOPE)** | | | | | |
 | `audio_file` | str \| null | optional | `null` | none (slice) | hard-fail if `method=slice` |
@@ -359,18 +359,25 @@ def load_params(path_or_dict: str | dict, form: str) -> dict
 ```python
 UNIMPLEMENTED = {
   "start_dir != '+X'":        "direction rotation not implemented; geometry is authored +X only",
-  "chord_mode == 'multilane'":"swave multilane fold not implemented (only radiate)",
+  "chord_mode == 'multilane'":"chord_mode=multilane is not a swave/straight/custom option — use --form multilane instead",
   "line_width_radiate != 3":  "radiate width is fixed at 3 (above + 2 sides)",
   "signal_tracks 3D dx/dy":   "signal-track 3D placement not implemented",
-  "fold_gap / plane-fold":    "multilane/plane-fold in swave not wired",
+  "fold_gap / plane-fold":    "fold_gap/plane-fold is not wired into swave/straight/custom",
   "method == 'slice'":        "Family B audio slice out of scope",
-  "form == 'custom'":         "waypoint custom machines not implemented in v1",
-  "max_poly/lane_dz/lane_offsets": "multilane params unused (multilane unimplemented)",
+  "max_poly/lane_dz/lane_offsets": "multilane-only — use --form multilane (don't apply to swave/straight/custom)",
 }
 ```
 and a helper `assert_supported(params, form)` that generators call FIRST; it raises
 `RedPianoError` with the matching message if any unimplemented combination is set to a
-non-default. WF-2 wires `inplace.py` / `swave.py` to call `assert_supported` before emitting
+non-default.
+
+> **These hard-fails are GATED to the marching forms.** `assert_supported` only checks
+> `chord_mode`/`line_width_radiate`/`fold_gap`/`max_poly`/`lane_*` when
+> `form ∈ {swave, straight, custom}` (`params_schema.py` `if form in _MARCH`). **`multilane`
+> and `custom` ARE v1 forms** — `--form multilane` consumes `chord_mode=multilane`/`max_poly`/
+> `lane_dz`/`lane_offsets`/`signal_tracks` (dz); `--form custom` consumes `waypoints`. The
+> entries above only reject those fields when you set them on a form that doesn't use them
+> (e.g. `max_poly` on `swave`). Generators call `assert_supported` before emitting
 a single block, so an unsupported designer JSON fails loudly at the top, not mid-build.
 
 ---
@@ -467,7 +474,7 @@ Flags:
 - `--mc-version` (required, default `1.21.8`): drives `get_version_profile` → dp_format,
   function folder. Unknown version → hard fail (§1.9).
 - `--world-dir` / `--no-deploy`: deploy is **opt-in**. Default is `--no-deploy` (build into
-  `skill/build/<ns>/` only). `--world-dir <dir>` calls `Datapack.deploy`. Mutually exclusive.
+  `build/<ns>/` only). `--world-dir <dir>` calls `Datapack.deploy`. Mutually exclusive.
 
 **Pipeline order (WF-2 implements exactly this):**
 1. `profile = get_version_profile(mc_version)` (fail fast on unknown version).
@@ -482,7 +489,7 @@ Flags:
    the cut-floor assertion), and assembles datapack functions via core builders.
 7. `forceload_guard(bbox, auto_fold=force_cap)` — hard-fail or fold.
 8. Write datapack (`Datapack.write_*`, profile-driven formats + folder names).
-9. If `--world-dir`: `deploy`. Else leave in `skill/build/<ns>/`.
+9. If `--world-dir`: `deploy`. Else leave in `build/<ns>/`.
 10. Print a report (palette/cells, dropped, octave-shifted count, cut count + median delay,
     forceload chunks, song length, all WARNs) — mirrors the poc stdout summaries.
 

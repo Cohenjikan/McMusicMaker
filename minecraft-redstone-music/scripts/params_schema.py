@@ -120,12 +120,12 @@ _VALID_FORMS = _ALLF
 # ─────────────────────────────────────────────────────────────────────────────
 UNIMPLEMENTED = {
     "start_dir != '+X'":             "direction rotation not implemented; geometry is authored +X only",
-    "chord_mode == 'multilane'":     "swave multilane fold not implemented (only radiate)",
+    "chord_mode == 'multilane'":     "chord_mode=multilane is not a swave/straight/custom option (those use radiate) — use --form multilane instead",
     "line_width_radiate != 3":       "radiate width is fixed at 3 (above + 2 sides)",
     "signal_tracks 3D dx/dy":        "signal-track 3D placement not implemented",
-    "fold_gap / plane-fold":         "multilane/plane-fold in swave not wired",
+    "fold_gap / plane-fold":         "fold_gap/plane-fold is not wired into swave/straight/custom",
     "method == 'slice'":             "Family B audio slice out of scope",
-    "max_poly/lane_dz/lane_offsets": "multilane params unused (multilane unimplemented)",
+    "max_poly/lane_dz/lane_offsets": "max_poly/lane_dz/lane_offsets are multilane-only — use --form multilane (they don't apply to swave/straight/custom)",
 }
 
 

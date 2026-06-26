@@ -3,7 +3,7 @@
 **Status:** AUTHORITATIVE. This file is the single source of truth for *what the skill
 can actually do today*. When any other doc (DEVLOG.md, README.md, poc comments, the
 designer) disagrees with this table about capabilities, **this file wins**. It is
-grounded in the real code now on disk under `skill/scripts/` and in the user-verified
+grounded in the real code now on disk under `scripts/` and in the user-verified
 facts recorded below — not in aspirational handoff notes.
 
 Scope: **Family A only** (RedPiano mod, real note blocks, `/tick rate 80`, resourcepack
@@ -30,15 +30,15 @@ Columns:
 
 | form | multi-instr? | melody-cut? | designer params? | in-game verified? | canonical script | status |
 |---|---|---|---|---|---|---|
-| **inplace-single** | no — every note forced to `pno` (3 velocity layers) | no (piano decays naturally; nothing to cut) | yes (`load_params`/`assert_supported`); `multi:false` selects this form | ✅ **yes** — user "完美" (《春娇与志明》, task4, oracle poc/45) | `skill/scripts/generators/inplace.py` (`multi=False`) | **production (v1)** |
-| **inplace-multi** | **yes** — per-note GM family via `imap.family_for`/`imap.resolve` | **yes** — `plan_melody_cuts(absolute=False)`, relative `cutmel` schedule append | yes; **set `multi:true` in params JSON to select** | ✅ **yes** — user "特别好" (《七里香》 `qlxm`, oracle poc/46) | `skill/scripts/generators/inplace.py` (`multi=True`) | **production (v1)** |
-| **swave** (marching-pulse mirror S-wave) | **yes** — per-note GM family; dual-track Z-mirror + greedy L/R balance | **yes** — `plan_melody_cuts(absolute=True)`, absolute `cutmel` schedule append at `(T0+OFFSET)*2 + d` | yes (`XRUN`/`ZMAX`/`base_block`/`dual_track_mirror`/`track_sep` consumed) | ⚠️ **generation-verified only** — capability tested by user (《七里香》 `qlxs`); awaiting final in-game listen to confirm melody-cut timing by ear | `skill/scripts/generators/swave.py` (oracle poc/48) | **production (v1), pending ear-confirm** |
-| **straight** (long +X marching line) | **yes** | **yes** | yes (marching-family fields) | not separately listened (shares the swave pipeline) | `skill/scripts/generators/swave.py` (`form=straight`) | **production (v1)** — degenerate swave; biggest footprint |
-| **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | geometry-confirmed (collision + timeline self-checks pass; repeater facings N/S/E/W exercised); ear-confirm pending | `skill/scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
-| _lab origin: poc/47_ | yes | no (lab build predates the cut) | argv-driven | its custom-path geometry was verified, then lifted into `swave.py` | `skill/scripts/generators/_experimental/47_build_custom.py` | **[superseded]** — `form=custom` is now v1 via `swave.py`; standalone copy kept for reference |
-| **multilane** (one parallel lane per voice) | **yes** | **yes** (poc/49 absolute cut) | yes (`chord_mode=multilane`, `max_poly`, `lane_dz`, `lane_offsets`, `signal_tracks` dz; `+X` only) | geometry confirmed in-game (`olkml`); ear-confirm pending | `skill/scripts/generators/multilane.py` (`form=multilane`, promoted from poc/49) | **production (v1)** — **hard-fails over the forceload cap** (straight machine can't fold; long songs → use swave). Distinct parallel-lane topology |
-| _lab origin: poc/49_ | yes | yes | argv-driven | verified `olkml` | `skill/scripts/generators/_experimental/49_build_multilane.py` | **[superseded]** — promoted into `generators/multilane.py` |
-| **42 / 43** (single-piano S-wave, dual-track mirror) | no (single piano) | no | no (argv-driven lab scripts) | ✅ piano-only S-wave confirmed (`qzolks`/`wllsym`) | `skill/scripts/generators/_experimental/42_build_swave.py`, `43_build_swave_balance.py` | **[deprecated]** — superseded by `swave.py` (which adds multi-instrument + melody-cut over the *same* verified geometry) |
+| **inplace-single** | no — every note forced to `pno` (3 velocity layers) | no (piano decays naturally; nothing to cut) | yes (`load_params`/`assert_supported`); `multi:false` selects this form | ✅ **yes** — user "完美" (《春娇与志明》, task4, oracle poc/45) | `scripts/generators/inplace.py` (`multi=False`) | **production (v1)** |
+| **inplace-multi** | **yes** — per-note GM family via `imap.family_for`/`imap.resolve` | **yes** — `plan_melody_cuts(absolute=False)`, relative `cutmel` schedule append | yes; **set `multi:true` in params JSON to select** | ✅ **yes** — user "特别好" (《七里香》 `qlxm`, oracle poc/46) | `scripts/generators/inplace.py` (`multi=True`) | **production (v1)** |
+| **swave** (marching-pulse mirror S-wave) | **yes** — per-note GM family; dual-track Z-mirror + greedy L/R balance | **yes** — `plan_melody_cuts(absolute=True)`, absolute `cutmel` schedule append at `(T0+OFFSET)*2 + d` | yes (`XRUN`/`ZMAX`/`base_block`/`dual_track_mirror`/`track_sep` consumed) | ⚠️ **generation-verified only** — capability tested by user (《七里香》 `qlxs`); awaiting final in-game listen to confirm melody-cut timing by ear | `scripts/generators/swave.py` (oracle poc/48) | **production (v1), pending ear-confirm** |
+| **straight** (long +X marching line) | **yes** | **yes** | yes (marching-family fields) | not separately listened (shares the swave pipeline) | `scripts/generators/swave.py` (`form=straight`) | **production (v1)** — degenerate swave; biggest footprint |
+| **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | geometry-confirmed (collision + timeline self-checks pass; repeater facings N/S/E/W exercised); ear-confirm pending | `scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
+| _lab origin: poc/47_ | yes | no (lab build predates the cut) | argv-driven | its custom-path geometry was verified, then lifted into `swave.py` | `scripts/generators/_experimental/47_build_custom.py` | **[superseded]** — `form=custom` is now v1 via `swave.py`; standalone copy kept for reference |
+| **multilane** (one parallel lane per voice) | **yes** | **yes** (poc/49 absolute cut) | yes (`chord_mode=multilane`, `max_poly`, `lane_dz`, `lane_offsets`, `signal_tracks` dz; `+X` only) | geometry confirmed in-game (`olkml`); ear-confirm pending | `scripts/generators/multilane.py` (`form=multilane`, promoted from poc/49) | **production (v1)** — **hard-fails over the forceload cap** (straight machine can't fold; long songs → use swave). Distinct parallel-lane topology |
+| _lab origin: poc/49_ | yes | yes | argv-driven | verified `olkml` | `scripts/generators/_experimental/49_build_multilane.py` | **[superseded]** — promoted into `generators/multilane.py` |
+| **42 / 43** (single-piano S-wave, dual-track mirror) | no (single piano) | no | no (argv-driven lab scripts) | ✅ piano-only S-wave confirmed (`qzolks`/`wllsym`) | `scripts/generators/_experimental/42_build_swave.py`, `43_build_swave_balance.py` | **[deprecated]** — superseded by `swave.py` (which adds multi-instrument + melody-cut over the *same* verified geometry) |
 | **Family-B slice** (audio sample slicing) | n/a (replays sliced source audio, not re-performed notes) | n/a | n/a — `method=slice` is a **hard-fail** in `load_params` | (verified in its own repo) | external repo `mc-noteblock-demo` (NOT in this skill) | **[external / out of scope]** — runs `/tick rate 20`, no mod; v1 generators hard-fail on `method=slice` |
 
 ### How to select a form
@@ -75,7 +75,7 @@ following must be present in-game for a generated machine to make sound:
    this: pressing **[play]** fires a command block that runs `/tick rate 80` (both `inplace`
    and `swave`/marching forms). If you still hear an eerie/slow performance, set `/tick rate 80`
    manually. (Family B, by contrast, runs at the vanilla `/tick rate 20`.)
-5. **`mido`** (Python) to parse MIDI on the build side — see `skill/requirements.txt`.
+5. **`mido`** (Python) to parse MIDI on the build side — see `requirements.txt`.
 6. The machine **forceloads** the chunks it occupies so redstone pulses survive across
    unloaded chunks. inplace machines are tiny (~few chunks). swave can be large; the build
    hard-fails above the forceload soft cap (360 chunks) unless `--force-cap` is given.
@@ -83,7 +83,7 @@ following must be present in-game for a generated machine to make sound:
 Build, then deploy into a world (deploy is opt-in):
 
 ```
-python skill/scripts/build_machine.py --midi song.mid --form inplace \
+python scripts/build_machine.py --midi song.mid --form inplace \
        --ns mysong --origin 0 0 255 --mc-version 1.21.8
 # add --params designer.json  to drive geometry / multi:true
 # add --world-dir <saves>/<world>/datapacks  to deploy (default: build only)
@@ -122,15 +122,17 @@ table marks some cells "no" and some "experimental".
 4. **Tick rate differs by family.** Family A runs `/tick rate 80` (samples tuned for it);
    Family B (external slice repo) runs the vanilla `/tick rate 20`. Do not mix.
 
-5. **Unimplemented designer fields still hard-fail.** `start_dir != +X`,
-   `chord_mode = multilane`, `line_width_radiate != 3`, 3D `signal_tracks`, plane-fold
+5. **Unimplemented designer fields still hard-fail (on the forms that don't use them).**
+   `start_dir != +X`, `line_width_radiate != 3`, 3D `signal_tracks` (dx/dy), plane-fold
    `fold_gap`, and `method = slice` are listed in `params_schema.UNIMPLEMENTED`;
    `assert_supported` raises a clear error at the top of a build rather than silently
-   dropping the field. (`form = custom` is **no longer** here — it is a v1 form.)
-   (CONTRACT §2.3, §2.4.)
+   dropping the field. **`chord_mode = multilane` and `max_poly`/`lane_dz`/`lane_offsets`
+   are NOT globally unimplemented** — they hard-fail only on the marching forms
+   (swave/straight/custom); `--form multilane` is a v1 form that consumes them. `form = custom`
+   is likewise a v1 form, not unimplemented. (CONTRACT §2.3, §2.4.)
 
 6. **`_experimental/` is reference-only.** The scripts under
-   `skill/scripts/generators/_experimental/` (42/43/47/49) are **not** wired into
+   `scripts/generators/_experimental/` (42/43/47/49) are **not** wired into
    `build_machine.py` (47's custom geometry has been lifted into `swave.py`; 49/multilane
    remains experimental), are not verified end-to-end through the skill, and may consume the
    raw lab argv interface rather than the validated params dict. Use `inplace.py` /

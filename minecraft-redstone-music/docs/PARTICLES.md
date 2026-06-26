@@ -8,7 +8,7 @@
 1) 先生成机器: python build_machine.py --form swave --ns <NS> --origin X Z Y --mc-version 1.21.8
      → 除数据包外, 还在 build/ 旁生成 <NS>_coords.json
        = 每个音符的真实世界坐标(单一真相, 直接取自生成器几何)
-2) 打开 skill/designer/particle_editor.html
+2) 打开 designer/particle_editor.html
      · 载入与机器同一首 MIDI
      · 🎯 导入机器坐标 = 上一步的 <NS>_coords.json
          → 对位光标精确贴合真实音符, swave/straight/custom 也准
@@ -18,7 +18,7 @@
          ⚠ 相对模式命令体请用 `~ ~ ~`(让它跟随光标); 别在命令里写死绝对坐标, 否则偏移失效
      · 批量: ⧉+Δ 复制(1 1 1→2 2 2)、铺到后续N帧、复制到所有帧
      · 导出 particle_keyframes JSON
-3) python skill/scripts/build_particles.py --keyframes <导出.json> --ns <NS> [--music-ns <音乐NS>]
+3) python scripts/build_particles.py --keyframes <导出.json> --ns <NS> [--music-ns <音乐NS>]
 4) 游戏内: /reload → /tick rate 80 → 触发(见下)
 ```
 > **原地 inplace:** 调色板在原地反复触发, 没有移动的脉冲 → 光标=静态 origin, 无需机器坐标文件,
@@ -27,7 +27,7 @@
 ## 生成器 build_particles.py
 
 ```
-python skill/scripts/build_particles.py
+python scripts/build_particles.py
        --keyframes song_particles.json     # particle_editor 导出
        --ns qlxfx                           # 数据包命名空间
        [--music-ns qlxm]                    # 音乐机器 NS → 自动跟随其 [播放] 触发

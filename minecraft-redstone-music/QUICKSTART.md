@@ -12,7 +12,7 @@ the **RedPiano (Family A)** pipeline. Project target: **Minecraft 1.21.8**.
 > 1. **资源包 `qzpno_mv` 是否在「选项 → 资源包」手动启用?**
 >    格式不符时 MC 会**静默禁用**该包 → 所有 `qzpno:` 音效变成 "unknown soundEvent" → **全静音**。
 >    确认它在「已选用」一侧;若不在,多半是 `pack_format` 不对(1.21.8 应为 **64**)。
->    用 `poc/02e_build_resourcepack.py` 重打包(内置 `detect_rp_format()` 自动匹配版本)。
+>    获取/重打包资源包见 **[BINARIES.md](BINARIES.md)**。
 > 2. **`/tick rate 80` 是否设了?**
 >    忘了 = 播放约 **4 倍慢** + 旋律截断(melody-cut)时序失准。**按[播放]会自动触发一个命令方块运行
 >    `/tick rate 80`**(无需手输);若仍听到异常慢,在游戏里手动设一次 `/tick rate 80` 确认。
@@ -25,11 +25,10 @@ the **RedPiano (Family A)** pipeline. Project target: **Minecraft 1.21.8**.
 
 1. Install **Fabric Loader + Fabric API + Java 21** for Minecraft **1.21.8**.
 2. Put the **RedPiano mod jar** in `mods/`. **Restart Minecraft.**
-   (Regenerate the jar from `mod/redpiano/` if you don't have it — see
-   `docs/MOD_ARCHITECTURE.md`.)
+   (The jar is not in this folder — see [BINARIES.md](BINARIES.md) to obtain/build it.)
 3. Put **`qzpno_mv.zip`** in `resourcepacks/` and **enable it** in
    Options → Resource Packs (drag it to the right-hand "Selected" column).
-   Regenerate with `poc/02e_build_resourcepack.py` if needed (`rp_format=64` for 1.21.8).
+   (Not in this folder — see [BINARIES.md](BINARIES.md); `rp_format=64` for 1.21.8.)
 4. Confirm the world allows command blocks / has cheats on (the machine uses
    command blocks and mass `setblock`).
 
@@ -42,7 +41,7 @@ params JSON**. This step is optional — if you skip it, every field takes its f
 ## 2. Build the datapack
 
 ```bash
-python skill/scripts/build_machine.py \
+python scripts/build_machine.py \
     --midi  path/to/song.mid \
     --form  inplace \
     --ns    mysong \
@@ -58,12 +57,12 @@ python skill/scripts/build_machine.py \
   `straight`/`custom`/`multilane` are also available — see `docs/FEATURE_MATRIX.md`.
 - `--ns` is the datapack namespace **and** the scoreboard objective name.
 - `--origin X Z Y` sets the world build origin (overrides `start_x/z/y` from params).
-- The build is staged into `skill/build/<ns>/`. **Deploy is opt-in:** add
+- The build is staged into `build/<ns>/`. **Deploy is opt-in:** add
   `--world-dir "<world>/datapacks"` to copy it straight into a world.
 - Read the printed report: palette/cell count, dropped notes, octave-shifted count,
   melody-cut count + median delay, forceload chunk count, and any WARNs.
 
-If you did **not** pass `--world-dir`, copy `skill/build/<ns>/` into your world's
+If you did **not** pass `--world-dir`, copy `build/<ns>/` into your world's
 `datapacks/` folder yourself.
 
 ## 3. Load it in-game

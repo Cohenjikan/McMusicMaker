@@ -53,7 +53,7 @@ datapack/resourcepack-only and do not touch this code.
 Cross-referenced (not part of the jar, but tightly coupled):
 - `poc/gen_redpiano_map.py` — **writes** `RedPianoMap.java`.
 - `poc/gen_multi_map.py` — **reads** `RedPianoMap.java` back out into `poc/redpiano_map_multi.json` for the Python generators.
-- `skill/scripts/redpiano_core.py` — `VERSION_TABLE` / `get_version_profile` (datapack & resourcepack `pack_format` per MC version; §6.4).
+- `scripts/redpiano_core.py` — `VERSION_TABLE` / `get_version_profile` (datapack & resourcepack `pack_format` per MC version; §6.4).
 
 ---
 
@@ -487,7 +487,7 @@ the working invocation is:
 
 ```bash
 # JDK 21 is required (java >=21).
-export JAVA_HOME="C:/Users/Cohen/jdk/jdk-21.0.11+10"
+export JAVA_HOME="<path-to-your-jdk-21>"   # e.g. .../jdk-21.0.11+10
 
 # NOTE the wrapper-path quirk: the local Gradle has an EXTRA gradle-9.2.1/ level,
 # i.e. the gradle.bat is nested one directory deeper than expected. Use the
@@ -511,7 +511,7 @@ cd mod/redpiano
 The mod jar contains **no** `pack.mcmeta` and is version-range-gated only by
 `fabric.mod.json`. The **datapack** and **resourcepack** `pack_format` numbers —
 which DO change every MC version — are owned exclusively by
-`skill/scripts/redpiano_core.py`:
+`scripts/redpiano_core.py`:
 
 - `VERSION_TABLE` (`redpiano_core.py:43-62`) maps `mc_version →
   (dp_format, rp_format, function_folder, confidence, notes)`. Anchored row:

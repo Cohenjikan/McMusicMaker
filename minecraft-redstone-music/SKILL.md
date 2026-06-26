@@ -12,6 +12,10 @@ description: >-
   scope.
 ---
 
+<!-- The YAML block above is OPTIONAL metadata for Claude Code's skill loader (name +
+     trigger phrases). Other agents/platforms can ignore it — there is no loader to satisfy;
+     just read the body below (or README.md) and run scripts/build_machine.py. -->
+
 # Minecraft Redstone Music (Family A — RedPiano)
 
 Convert a MIDI file into a self-contained Minecraft **datapack** that drives real
@@ -20,9 +24,11 @@ custom sampled resourcepack. You point the build script at a `.mid`, pick a
 machine **form**, and it emits a datapack you `/reload` and play from an in-world
 sign console.
 
-## 用户端流程 (onboarding — 载入此 skill 后按此驱动用户)
+## 用户端流程 (onboarding — 任何 agent / 平台按此驱动用户)
 
-When this skill is invoked, walk the user through these steps:
+To fulfill a "make Minecraft redstone music from this MIDI" request, collect the inputs
+below, then run the build command in step 4. (No special "skill" loader is needed — this
+is a self-contained folder + one Python CLI; see README.md.)
 
 1. **收集输入** — ask for three things:
    - **MIDI 文件** path (`.mid`).
@@ -33,22 +39,23 @@ When this skill is invoked, walk the user through these steps:
    > (Family B) reproduces original timbre, and that lives in the **external
    > `mc-noteblock-demo` repo — this skill cannot build it.** Say so and ask for a MIDI.
 
-2. **选播放形态 — use AskUserQuestion.** Default & recommended = **`swave` S 型曲折直线**
-   (tell the user this is the default). Other MIDI option: **`inplace` 原地调色板** — the
-   in-game-verified rock-solid fallback, tiny footprint. (custom routing/particles are
-   step 5, via the HTMLs.) Put `swave` first / "(Recommended)".
+2. **选播放形态 — ask the user which form.** If your platform has a structured
+   question/choice tool, use it; otherwise just ask in plain text. Default & recommended =
+   **`swave` S 型曲折直线** (tell the user this is the default). Other MIDI option:
+   **`inplace` 原地调色板** — the in-game-verified rock-solid fallback, tiny footprint.
+   (custom routing/particles are step 5, via the HTMLs.) Offer `swave` first / "(推荐)".
 
 3. **自动备好 mod + 音效包** for the chosen version:
-   - **1.21.8** — RedPiano mod jar + `qzpno_mv` resourcepack are ready (jar from
-     `mod/redpiano/`; repack the resourcepack at the version's `rp_format` via
-     `poc/02e_build_resourcepack.py`). Tell the user: drop the jar in `mods/` (restart MC),
-     enable the pack in Options → Resource Packs.
+   - **1.21.8** — the RedPiano mod jar + `qzpno_mv` resourcepack are the two large binaries
+     that ship **separately** (not inside this folder). See **[BINARIES.md](BINARIES.md)** for
+     how to obtain/build them. Tell the user: drop the jar in `mods/` (restart MC), enable the
+     pack in Options → Resource Packs.
    - **other versions** — the mod must be **recompiled** against that version; guide via
      `docs/MOD_ARCHITECTURE.md` (porting checklist). Datapack/resourcepack `pack_format`
      is auto-handled by the version table.
 
-4. **生成 + 部署** — run `build_machine.py --midi <mid> --form swave --ns <ns> --origin X Y Z
-   --mc-version <ver> --world-dir <存档>/datapacks`. Report the stats, then the in-game
+4. **生成 + 部署** — run `python scripts/build_machine.py --midi <mid> --form swave --ns <ns>
+   --origin X Z Y --mc-version <ver> --world-dir <存档>/datapacks`. Report the stats, then the in-game
    steps: `/reload` → `/tick rate 80` → `/function <ns>:setup` → press the **[play]** sign.
 
 5. **自定义需求 → 两个 HTML**(用法都是:浏览器里手动填 → 直接复制或导出 JSON 交给 agent):
@@ -106,7 +113,7 @@ Notes on the matrix columns:
    batched mass-`setblock` build functions, a `load`/`tick`/`setup`/`play` lifecycle,
    and an in-world sign+button console.
 
-The build is staged into `skill/build/<ns>/` and only copied into a world when you
+The build is staged into `build/<ns>/` and only copied into a world when you
 pass `--world-dir` (deploy is opt-in).
 
 ## Canonical forms
@@ -130,22 +137,21 @@ This skill produces a datapack only. The runtime stack must be installed by the 
 1. **Fabric Loader + Fabric API + Java 21** for the target Minecraft version
    (project target: **1.21.8**).
 2. **RedPiano mod jar** in `mods/` (then restart Minecraft — a jar swap needs a full
-   restart, not `/reload`). Source: `mod/redpiano/` in this repo (build with gradle;
-   see `docs/MOD_ARCHITECTURE.md` and the repo's RedPiano build notes).
+   restart, not `/reload`). This jar is **not inside this folder** — see
+   [BINARIES.md](BINARIES.md) for how to obtain/build it (`docs/MOD_ARCHITECTURE.md` is the
+   mod-source reference for whoever compiles it).
 3. **`qzpno_mv` resourcepack** placed in `resourcepacks/` and **manually enabled** in
    Options → Resource Packs. If its `pack_format` does not match the MC version, MC
    **silently disables it → total silence.** For 1.21.8 the resourcepack `pack_format`
-   is **64**. Regenerate it with `poc/02e_build_resourcepack.py` (it has
-   `detect_rp_format()` to auto-match).
+   is **64**. This zip is **not inside this folder** — see [BINARIES.md](BINARIES.md).
 4. **`/tick rate 80`** must be active when playing — the samples are tuned for it.
    Forgetting it = ~4× slow playback and inaccurate melody-cut timing. The generated
    machine wires a command-block to self-set the rate, but verify in-game.
 
 > **Large binary assets bundled separately.** The prebuilt **RedPiano mod jar** and
-> **`qzpno_mv.zip`** resourcepack are large binaries and are **not** committed in this
-> skill tree. Bundle/distribute them alongside the skill. To regenerate: build the mod
-> from `mod/redpiano/`, and rebuild the resourcepack with `poc/02e_build_resourcepack.py`
-> (default `rp_format=64`). The text assets that *are* bundled here are
+> **`qzpno_mv.zip`** resourcepack are large binaries and are **not** in this folder.
+> Bundle/distribute them alongside it — full obtain/build instructions are in
+> **[BINARIES.md](BINARIES.md)**. The text assets that *are* bundled here are
 > `assets/redpiano_map_multi.json` (103-block instrument map) and `assets/demo.mid`.
 
 ## Scope
