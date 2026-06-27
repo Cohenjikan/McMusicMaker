@@ -242,7 +242,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     forceload_chunks = core._chunk_count(WX0, WZ0, WX1, WZ1)
 
     # ── 5. assemble the datapack (all plumbing via core) ──────────────────────
-    dp = core.Datapack(ns, name, out_dir, profile.mc_version)
+    dp = core.Datapack(ns, name, out_dir, profile.mc_version,
+                       direction=params.get("start_dir", "+X"), ox=OX, oz=OZ)
     desc_form = "多乐器" if multi else "单钢琴"
     dp.write_pack_mcmeta(f"{ns} {name} {desc_form}原地调色板播放器(侧面红石块反复触发, tick80)")
     dp.write_load_tick_tags()
@@ -292,12 +293,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     ctl += core.labeled_button(PBX - 6, Y, OZ, f"function {ns}:cfg/polytoggle",  ["[复音增益]", "大和弦防糊"],     sign_dialect=sd)
     ctl += core.labeled_button(PBX - 8, Y, OZ, f"function {ns}:cfg/humantoggle", ["[微抖动]", "去复印感"],        sign_dialect=sd)
 
-    # tick-rate command block: pressing [播放]/[循环播放] auto-runs `/tick rate 80`
-    # (samples are tuned for tick80). No manual /tick rate, no per-tick self-check.
-    TRX, TRY, TRZ = PBX - 10, Y, OZ
-    ctl += core.tickrate_command_block(TRX, TRY, TRZ, rate=TPS)
-    tickrate_fire = [f"setblock {TRX} {TRY + 1} {TRZ} minecraft:redstone_block",
-                     f"schedule function {ns}:trclr 2t"]
+    # NOTE: the machine does NOT auto-set the tick rate. An auto command-block that ran
+    # `/tick rate 80` on [play] was REMOVED — it proved unreliable in-game (user-tested:
+    # the auto-set didn't take). The PLAYER must MANUALLY run `/tick rate 80` before
+    # playing (the samples are tuned for tick80; without it playback is ~4x too slow).
 
     # ── 7. core build/tick scaffolding ───────────────────────────────────────
     batches = core.batch_setblocks(build_cmds, batch=2000)
@@ -320,18 +319,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         dp.write_function(f"bld/b{k}", b)
 
     dp.write_function("placectl", ctl)
-    # trclr: clear the transient tick-rate trigger block back to air (re-armable).
-    dp.write_function("trclr", f"setblock {TRX} {TRY + 1} {TRZ} minecraft:air")
     dp.write_function(
         "builddone",
         f"scoreboard players set BLD {ns} -1\nfunction {ns}:placectl\n"
         f'tellraw @a ["",{{"text":"[{ns}] built. ","color":"green"}},'
-        f'{{"text":"{desc_form}调色板 {P}音符盒(侧面触发,不过载). 按[播放]/[循环播放]/[停止]"}}]',
+        f'{{"text":"{desc_form}调色板 {P}音符盒(侧面触发,不过载). 先手动 /tick rate 80,再按[播放]/[循环播放]/[停止]"}}]',
     )
 
-    # playcore: set tick rate (auto), arm PLAY, silence, reset slots, clear cuts, start s0
-    playcore = ([f"scoreboard players set PLAY {ns} 1"] + tickrate_fire
-                + [SSTOP, f"function {ns}:offall"])
+    # playcore: arm PLAY, silence, reset slots, clear cuts, start s0. NO tick-rate command
+    # here — the player sets /tick rate 80 manually before playing (auto-set was removed).
+    playcore = ([f"scoreboard players set PLAY {ns} 1", SSTOP, f"function {ns}:offall"])
     if multi:
         playcore.append(f"schedule clear {ns}:cutmel")
     playcore.append(f"schedule function {ns}:s/s0 {max(1, T0)}t")

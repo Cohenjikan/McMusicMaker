@@ -38,7 +38,7 @@ Columns:
 | **straight** (long +X marching line) | **yes** | **yes** | yes (marching-family fields) | not separately listened (shares the swave pipeline) | `scripts/generators/swave.py` (`form=straight`) | **production (v1)** — degenerate swave; biggest footprint |
 | **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | geometry-confirmed (collision + timeline self-checks pass; repeater facings N/S/E/W exercised); ear-confirm pending | `scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
 | _lab origin: poc/47_ | yes | no (lab build predates the cut) | argv-driven | its custom-path geometry was verified, then lifted into `swave.py` | `scripts/generators/_experimental/47_build_custom.py` | **[superseded]** — `form=custom` is now v1 via `swave.py`; standalone copy kept for reference |
-| **multilane** (one parallel lane per voice) | **yes** | **yes** (poc/49 absolute cut) | yes (`chord_mode=multilane`, `max_poly`, `lane_dz`, `lane_offsets`, `signal_tracks` dz; `+X` only) | geometry confirmed in-game (`olkml`); ear-confirm pending | `scripts/generators/multilane.py` (`form=multilane`, promoted from poc/49) | **production (v1)** — **hard-fails over the forceload cap** (straight machine can't fold; long songs → use swave). Distinct parallel-lane topology |
+| **multilane** (one parallel lane per voice) | **yes** | **yes** (poc/49 absolute cut) | yes (`chord_mode=multilane`, `max_poly`, `lane_dz`, `lane_offsets`, `signal_tracks` full 3D {dx,dy,dz}; all 4 cardinals) | geometry confirmed in-game (`olkml`); ear-confirm pending | `scripts/generators/multilane.py` (`form=multilane`, promoted from poc/49) | **production (v1)** — **soft footprint cap**: over it pass `--force-cap` to build anyway (a straight machine can't plane-fold, but it is **not** a guaranteed audio drop — tested fine at ~428 chunks; use swave for a smaller footprint). Distinct parallel-lane topology |
 | _lab origin: poc/49_ | yes | yes | argv-driven | verified `olkml` | `scripts/generators/_experimental/49_build_multilane.py` | **[superseded]** — promoted into `generators/multilane.py` |
 | **42 / 43** (single-piano S-wave, dual-track mirror) | no (single piano) | no | no (argv-driven lab scripts) | ✅ piano-only S-wave confirmed (`qzolks`/`wllsym`) | `scripts/generators/_experimental/42_build_swave.py`, `43_build_swave_balance.py` | **[deprecated]** — superseded by `swave.py` (which adds multi-instrument + melody-cut over the *same* verified geometry) |
 | **Family-B slice** (audio sample slicing) | n/a (replays sliced source audio, not re-performed notes) | n/a | n/a — `method=slice` is a **hard-fail** in `load_params` | (verified in its own repo) | external repo `mc-noteblock-demo` (NOT in this skill) | **[external / out of scope]** — runs `/tick rate 20`, no mod; v1 generators hard-fail on `method=slice` |
@@ -49,7 +49,9 @@ Columns:
   `swave`/`straight`/`custom` are ONE generator (`generators/swave.py`) differing only in path
   spine; **`custom` needs a `--params` JSON with `waypoints`** (drawn in the designer 自定义).
   **`multilane`** is `generators/multilane.py` (one lane per voice) and needs a `--params` JSON
-  with `chord_mode=multilane`; it **hard-fails over the forceload cap** (long songs → swave).
+  with `chord_mode=multilane`; the forceload cap is a **soft** cap — over it pass `--force-cap`
+  to build anyway (not a guaranteed audio drop; tested fine at ~428 chunks; use swave for a
+  smaller footprint).
 - **inplace-single vs inplace-multi is chosen by the `multi` field in the params JSON**, not
   by a CLI flag. The v1 default is **multi-instrument**: with no params (or `multi:true`) the
   CLI builds **inplace-multi** (per-GM-family + melody-cut). Pass a params JSON containing
@@ -130,14 +132,17 @@ following must be present in-game for a generated machine to make sound:
    / folder names / pack.mcmeta shape from `VERSION_TABLE` (the single source of truth). Unknown
    versions still **hard-fail** ("never guess"). See [Version adaptiveness](#version-adaptiveness)
    and CONTRACT §3.2.
-4. **`/tick rate 80`** — the samples are tuned for 80 TPS. The generated machine self-sets
-   this: pressing **[play]** fires a command block that runs `/tick rate 80` (both `inplace`
-   and `swave`/marching forms). If you still hear an eerie/slow performance, set `/tick rate 80`
-   manually. (Family B, by contrast, runs at the vanilla `/tick rate 20`.)
+4. **`/tick rate 80`** — the samples are tuned for 80 TPS. **The PLAYER must type
+   `/tick rate 80` manually before playing; the machine does NOT set it** (the earlier
+   auto-set command block was removed — it didn't work reliably in practice). Without it,
+   playback runs ~4× too slow (eerie/slow). (Family B, by contrast, runs at the vanilla
+   `/tick rate 20`.)
 5. **`mido`** (Python) to parse MIDI on the build side — see `requirements.txt`.
 6. The machine **forceloads** the chunks it occupies so redstone pulses survive across
-   unloaded chunks. inplace machines are tiny (~few chunks). swave can be large; the build
-   hard-fails above the forceload soft cap (360 chunks) unless `--force-cap` is given.
+   unloaded chunks. inplace machines are tiny (~few chunks). swave/multilane can be large;
+   the forceload cap is a **soft** cap (360 chunks) — over it the build refuses unless
+   `--force-cap` is given, in which case it WARNs and builds anyway (not a guaranteed audio
+   drop — tested fine at ~428 chunks).
 
 Build, then deploy into a world (deploy is opt-in):
 
@@ -149,7 +154,8 @@ python scripts/build_machine.py --midi song.mid --form inplace \
 ```
 
 In-game: `/reload`, then `/function <ns>:setup` (forceload + build), wait for "built",
-then press the **[播放]/[play]** sign-button.
+type `/tick rate 80` manually (the machine does NOT set it), then press the
+**[播放]/[play]** sign-button.
 
 ---
 
@@ -182,13 +188,15 @@ table marks some cells "no" and some "experimental".
    Family B (external slice repo) runs the vanilla `/tick rate 20`. Do not mix.
 
 5. **Unimplemented designer fields still hard-fail (on the forms that don't use them).**
-   `start_dir != +X`, `line_width_radiate != 3`, 3D `signal_tracks` (dx/dy), plane-fold
-   `fold_gap`, and `method = slice` are listed in `params_schema.UNIMPLEMENTED`;
-   `assert_supported` raises a clear error at the top of a build rather than silently
-   dropping the field. **`chord_mode = multilane` and `max_poly`/`lane_dz`/`lane_offsets`
-   are NOT globally unimplemented** — they hard-fail only on the marching forms
+   `line_width_radiate != 3`, plane-fold `fold_gap`, and `method = slice` are listed in
+   `params_schema.UNIMPLEMENTED`; `assert_supported` raises a clear error at the top of a
+   build rather than silently dropping the field. **`start_dir` is now fully supported** — all
+   4 cardinals (`+X`/`-X`/`+Z`/`-Z`) via emit-time rotation (`+X` = identity; non-`+X`
+   generation-verified, in-game listen pending). **`signal_tracks` now consumes the full 3D
+   offset {dx,dy,dz}** (multilane). **`chord_mode = multilane` and `max_poly`/`lane_dz`/
+   `lane_offsets` are NOT globally unimplemented** — they hard-fail only on the marching forms
    (swave/straight/custom); `--form multilane` is a v1 form that consumes them. `form = custom`
-   is likewise a v1 form, not unimplemented. (CONTRACT §2.3, §2.4.)
+   is likewise a v1 form, not unimplemented. (CONTRACT §2.3.)
 
 6. **`_experimental/` is reference-only.** The scripts under
    `scripts/generators/_experimental/` (42/43/47/49) are **not** wired into

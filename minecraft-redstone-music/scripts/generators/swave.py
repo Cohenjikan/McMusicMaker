@@ -9,8 +9,9 @@ structural change demanded by the skill contract:
     the validated designer ``params`` dict, and routes ALL plumbing through
     ``redpiano_core`` (Datapack, Grid collision guard, InstrumentMap.resolve with
     octave-shift, plan_melody_cuts, forceload_guard, labeled_button,
-    tickrate_command_block, version profile). NO hardcoded pack_format, NO hardcoded
-    world path, NO unconditional deploy.
+    version profile, direction rotation). NO hardcoded pack_format, NO hardcoded
+    world path, NO unconditional deploy. (Tick rate is MANUAL — no tick-rate command
+    block is emitted; the player types /tick rate 80.)
 
 The verified geometry/timing is copied FAITHFULLY from poc/48 and must NOT be
 re-derived (the marching forms are user-confirmed OK):
@@ -338,14 +339,13 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     CAMX = OX + PATH_XSPAN // 2
     CAMZ = (TRACK_Z[0] + TRACK_Z[-1] + PATH_ZSPAN) // 2
 
-    # tick-rate command block (machine self-sets /tick rate 80 — CONTRACT §1.7).
-    # placed beside the console; activated by setup via a redstone block on top.
-    TRX, TRY, TRZ = PBX - 10, Y, OZ
-    tickrate_setblock = core.tickrate_command_block(TRX, TRY, TRZ, rate=TPS)
-    tickrate_fire = [f"setblock {TRX} {TRY + 1} {TRZ} minecraft:redstone_block",
-                     f"schedule function {ns}:trclr 2t"]
+    # NOTE: the machine does NOT auto-set the tick rate. The auto command-block that ran
+    # `/tick rate 80` was REMOVED — it proved unreliable in-game (user-tested: the auto-set
+    # didn't take). The PLAYER must MANUALLY run `/tick rate 80` before playing (the samples
+    # are tuned for tick80; without it playback is ~4x too slow).
 
-    dp = core.Datapack(ns, name, out_dir, profile.mc_version)
+    dp = core.Datapack(ns, name, out_dir, profile.mc_version,
+                       direction=params.get("start_dir", "+X"), ox=OX, oz=OZ)
     dp.write_pack_mcmeta(
         f"{ns} {name} multi-instrument mirror-balanced S-wave + melody-cut, tick{TPS}")
     dp.write_load_tick_tags()
@@ -366,7 +366,6 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                                ["[poly gain]", "big chords", "anti-mud"], sign_dialect=sd)
     ctl += core.labeled_button(PBX - 8, Y, OZ, f"function {ns}:cfg/humantoggle",
                                ["[humanize]", "de-photocopy"], sign_dialect=sd)
-    ctl += tickrate_setblock
 
     dp.write_function("load",
                       [f"scoreboard objectives add {ns} dummy",
@@ -381,8 +380,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                       + TRIG_CLEAR
                       + [f'tellraw @a ["",{{"text":"[{ns}] {name} multi-instr mirror '
                          f'S-wave + melody-cut loaded. ","color":"aqua"}},'
-                         f'{{"text":"need RedPiano + qzpno. /function {ns}:setup '
-                         f'(self-sets /tick rate {TPS})"}}]'])
+                         f'{{"text":"need RedPiano + qzpno. Steps: /tick rate {TPS} (手动输入) '
+                         f'-> /function {ns}:setup -> 启用资源包 -> press [play]."}}]'])
 
     dp.write_function("setup",
                       RESET
@@ -390,14 +389,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                          f"scoreboard players set CLR {ns} -1"]
                       + SCHED_CLEAR
                       + TRIG_CLEAR
-                      + tickrate_fire
                       + flbuild
                       + [f"tp @a {PBX} {Y + 3} {OZ}",
                          f"schedule function {ns}:startbuild 100t",
                          f'tellraw @a "[{ns}] reset+forceload; building S-wave..."'])
-
-    # trclr: clear the transient tick-rate redstone trigger block back to air.
-    dp.write_function("trclr", f"setblock {TRX} {TRY + 1} {TRZ} minecraft:air")
 
     dp.write_function(
         "startbuild",

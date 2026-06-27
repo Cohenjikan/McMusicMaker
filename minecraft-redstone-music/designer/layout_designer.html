@@ -89,7 +89,7 @@
         <button data-method="redpiano" class="on">🎹 真音符盒(MIDI)</button>
         <button data-method="slice" class="v1off" disabled>🎵 命令方块切片(MP3)</button>
       </div>
-      <span class="v1note">🎵 切片(slice)<span class="v1badge">v1 暂不支持 / 下一轮</span>需外部 mc-noteblock-demo 仓库, 本 skill 不含</span>
+      <span class="v1note">🎵 切片(slice)<span class="v1badge">外部 · 本 skill 不含</span>属<b>独立的外部仓库 mc-noteblock-demo</b>, <b>不在本 skill 范围内, 也不是本 skill 的待办项</b>。请到该仓库使用切片/MP3 管线。</span>
       <div id="midiCtl">
         <label class="row"><span class="k">MIDI 文件</span><input type="file" id="midiFile" accept=".mid,.midi"></label>
         <div class="hint" id="midiInfo">未载入 MIDI(可手填下方 cell 数预览)。载入后播放,光标沿路线<b>实时移到脉冲位置</b>。</div>
@@ -119,7 +119,7 @@
         <button data-f="custom">自定义</button>
         <button data-f="inplace">原地播放</button>
       </div>
-      <span class="v1note">v1 支持 <b>S 波浪 / 直线 / 自定义(走线)/ 原地播放</b>。自定义=拖节点画路线(导出 waypoints)。多轨分布仍 <span class="v1badge">v1 暂不支持 / 下一轮</span></span>
+      <span class="v1note">支持 <b>S 波浪 / 直线 / 自定义(走线)/ 原地播放</b>。自定义=拖节点画路线(导出 waypoints)。<b>多轨分布</b>在下方③和弦模式里开启(导出 form=multilane)。</span>
       <div id="swaveCtl">
         <label class="row"><span class="k">每折 X 长 XRUN</span><input type="range" id="xrun" min="2" max="30" value="6"><input type="number" id="xrunN" value="6"></label>
         <label class="row"><span class="k">Z 振幅 ZMAX</span><input type="range" id="zmax" min="2" max="40" value="10"><input type="number" id="zmaxN" value="10"></label>
@@ -164,11 +164,11 @@
       <label class="row"><span class="k">起点 Y (高度)</span><input type="number" id="startY" value="255"></label>
       <div class="seg" id="startDir">
         <button data-d="+X" class="on">→ +X</button>
-        <button data-d="-X" class="v1off" disabled>← -X</button>
-        <button data-d="+Z" class="v1off" disabled>↓ +Z</button>
-        <button data-d="-Z" class="v1off" disabled>↑ -Z</button>
+        <button data-d="-X">← -X</button>
+        <button data-d="+Z">↓ +Z</button>
+        <button data-d="-Z">↑ -Z</button>
       </div>
-      <span class="v1note">v1 几何仅按 <b>+X</b> 编写。其他方向(-X / +Z / -Z)<span class="v1badge">v1 暂不支持 / 下一轮</span></span>
+      <span class="v1note">脉冲从起点沿所选方向推进。预览按 <b>+X</b> 画形状, 生成器按 <b>start_dir</b> 旋转摆放(+X / -X / +Z / -Z 均支持)。</span>
       <div class="hint">脉冲从起点沿此方向推进(中继器朝向随之)。预览用起点标记+方向读数表示;生成器按此摆放/朝向机器。</div>
     </div>
     <div class="grp" id="lineGrp">
@@ -187,17 +187,17 @@
     </div>
     <div class="grp">
       <h2>⑦ 信号轨道(粒子同步)</h2>
-      <span class="v1note">仅 <b>多轨分布(multilane)</b> 形态消费信号轨,且只用 <b>Z 偏移 dz</b>。3D 的 dx/dy <span class="v1badge">暂不支持</span>。完整的关键帧粒子请用 <b>particle_editor.html</b>。</span>
-      <div class="hint">平行跟随主脉冲的<b>中继器链</b>(与音乐完全同步, 无音符盒), 供玩家在旁摆命令方块触发粒子。相对脊柱偏移 dz。</div>
+      <span class="v1note"><b>多轨分布(multilane)</b> 形态消费信号轨, 支持 3D 偏移 <b>dx / dy / dz</b>。完整的关键帧粒子请用 <b>particle_editor.html</b>。</span>
+      <div class="hint">平行跟随主脉冲的<b>中继器链</b>(与音乐完全同步, 无音符盒), 供玩家在旁摆命令方块触发粒子。相对脊柱偏移 (dx, dy, dz)。</div>
       <div>
       <label class="row"><span class="k">轨道名</span><input type="text" id="sigName" placeholder="如 粒子轨1"></label>
-      <label class="row"><span class="k">X 偏移 dx</span><input type="number" id="sigDx" value="0" disabled title="3D dx 暂不支持"></label>
+      <label class="row"><span class="k">X 偏移 dx</span><input type="number" id="sigDx" value="0"></label>
       <label class="row"><span class="k">Z 偏移 dz</span><input type="number" id="sigDz" value="6"></label>
-      <label class="row"><span class="k">Y 偏移 dy</span><input type="number" id="sigDy" value="0" disabled title="3D dy 暂不支持"></label>
+      <label class="row"><span class="k">Y 偏移 dy</span><input type="number" id="sigDy" value="0"></label>
       <div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn sec" id="addSig">➕ 加轨道</button>
         <button class="btn sec" id="delSig">🗑 删最后</button>
-        <button class="btn sec" id="toggleSide2" disabled title="3D 侧视(dy)暂不支持">📐 侧视调位</button>
+        <button class="btn sec" id="toggleSide2">📐 侧视调位</button>
       </div>
       <div id="sigList" class="blklist" style="max-height:110px"></div>
       </div>
@@ -667,25 +667,26 @@ function applyImportedParams(P){
   const warns=[];
   if(P.schema_version===undefined) warns.push('缺 schema_version');
   else if(P.schema_version!==SCHEMA_VERSION) warns.push(`schema_version=${JSON.stringify(P.schema_version)} ≠ 本设计器 ${SCHEMA_VERSION}`);
-  // 2) 受限字段降级(对应被禁用的控件), 各自给出警告
-  let form=P.form;
-  if(form!=='inplace'&&form!=='swave'){if(form!==undefined)warns.push(`form=${form} v1 不支持, 改用 swave`);form='swave';}
+  // 2) 受限字段降级(对应仍被禁用的控件), 各自给出警告
+  //    form=multilane 是“③和弦模式”的多轨分布(基底走线仍是直线/swave), 映射到 chord_mode=multilane
+  let isML=(P.form==='multilane'||P.chord_mode==='multilane');
+  let form=isML?(P.form==='multilane'?'swave':P.form):P.form;
+  if(form!=='inplace'&&form!=='swave'&&form!=='straight'&&form!=='custom'){
+    if(form!==undefined)warns.push(`form=${form} 不支持, 改用 swave`);form='swave';}
   let method=P.method;
-  if(method==='slice'){warns.push('method=slice v1 不支持, 改用 redpiano');method='redpiano';}
+  if(method==='slice'){warns.push('method=slice 属外部仓库(mc-noteblock-demo), 不在本 skill 范围, 改用 redpiano');method='redpiano';}
   if(method!=='redpiano'&&method!==undefined&&method!=='slice'){warns.push(`method=${method} 未知, 改用 redpiano`);method='redpiano';}
   let dir=P.start_dir;
-  if(dir!==undefined&&dir!=='+X'){warns.push(`start_dir=${dir} v1 仅 +X, 已改回 +X`);dir='+X';}
-  let chord=P.chord_mode;
-  if(chord==='multilane'){warns.push('chord_mode=multilane v1 不支持, 改用 radiate');chord='radiate';}
-  if(P.signal_tracks&&P.signal_tracks.length)warns.push('signal_tracks v1 不支持, 已忽略');
+  if(dir!==undefined&&dir!=='+X'&&dir!=='-X'&&dir!=='+Z'&&dir!=='-Z'){warns.push(`start_dir=${dir} 未知, 已改回 +X`);dir='+X';}
+  let chord=isML?'multilane':'radiate';
   // 3) 写回状态(仅识别的键; 缺省保持当前值)
   const num=(v,d)=>v===undefined||v===null||isNaN(+v)?d:+v;
   S.form=form;
   S.method='redpiano';
   if(P.base_block!==undefined)S.base=P.base_block;
   S.start_x=num(P.start_x,S.start_x);S.start_z=num(P.start_z,S.start_z);S.start_y=num(P.start_y,S.start_y);
-  S.start_dir='+X';
-  S.chord_mode='radiate';
+  S.start_dir=(dir==='-X'||dir==='+Z'||dir==='-Z'||dir==='+X')?dir:'+X';
+  S.chord_mode=chord;
   // swave 字段
   S.cells=Math.max(2,num(P.cells,S.cells));S.sound=num(P.sounding,S.sound);
   S.xrun=num(P.XRUN,S.xrun);S.zmax=num(P.ZMAX,S.zmax);
@@ -694,24 +695,30 @@ function applyImportedParams(P){
   S.sep=num(P.track_sep,S.sep);
   // inplace 字段
   S.pal=Math.max(1,num(P.palette_noteblocks,S.pal));S.pcols=num(P.PCOLS,S.pcols);S.rowgap=num(P.ROWGAP,S.rowgap);
-  // v1 忽略的: signal_tracks / max_poly / lane_dz / lane_offsets / audio_*
-  S.signal_tracks=[];
+  // 多轨分布(multilane)字段
+  S.max_poly=Math.max(1,num(P.max_poly,S.max_poly));S.lane_dz=Math.max(1,num(P.lane_dz,S.lane_dz));
+  S.lane_offsets=(Array.isArray(P.lane_offsets)&&P.lane_offsets.length)
+    ?P.lane_offsets.map(l=>({z:num(l.z,0),y:num(l.y,0)})):null;
+  // 信号轨道(3D dx/dy/dz)
+  S.signal_tracks=(Array.isArray(P.signal_tracks)?P.signal_tracks:[]).map((s,i)=>(
+    {dx:num(s.dx,0),dz:num(s.dz,0),dy:num(s.dy,0),name:(s.name||`轨${i+1}`)}));
   if(P.song)songName=P.song;
   // 4) 同步 UI 控件到新状态
   syncSeg('#method','data-method','redpiano');
   syncSeg('#form','data-f',S.form);
-  syncSeg('#startDir','data-d','+X');
-  syncSeg('#chordMode','data-m','radiate');
+  syncSeg('#startDir','data-d',S.start_dir);
+  syncSeg('#chordMode','data-m',S.chord_mode);
   $('midiCtl').style.display='';$('sliceCtl').style.display='none';
   $('swaveCtl').style.display=S.form==='swave'?'':'none';
   $('customCtl').style.display='none';
   $('inplaceCtl').style.display=S.form==='inplace'?'':'none';
   $('lineGrp').style.display=S.form==='inplace'?'none':'';
-  $('multiLaneCtl').style.display='none';$('radiateHint').style.display='';
+  const isMLnow=S.chord_mode==='multilane';
+  $('multiLaneCtl').style.display=isMLnow?'':'none';$('radiateHint').style.display=isMLnow?'none':'';
   cv.classList.toggle('custom',false);
   const setRN=(id,key)=>{if($(id))$(id).value=S[key];if($(id+'N'))$(id+'N').value=S[key];};
   setRN('xrun','xrun');setRN('zmax','zmax');setRN('rad','rad');setRN('gap','gap');setRN('sep','sep');
-  setRN('pcols','pcols');setRN('rowgap','rowgap');
+  setRN('pcols','pcols');setRN('rowgap','rowgap');setRN('maxPoly','max_poly');setRN('laneDz','lane_dz');
   $('cells').value=S.cells;$('sound').value=S.sound;$('pal').value=S.pal;
   $('startX').value=S.start_x;$('startZ').value=S.start_z;$('startY').value=S.start_y;
   $('dual').checked=S.dual;

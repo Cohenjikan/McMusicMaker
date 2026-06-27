@@ -264,22 +264,32 @@ d = max(min_cut_gt, d)
 
 ### 1.7 Tick-rate handling
 
+- **Tick rate is MANUAL.** The PLAYER must type `/tick rate 80` manually before playing; the
+  machine does **NOT** set it. Without it, playback runs ~4× too slow (eerie/slow — MEMORY:
+  redpiano-runtime-gotchas "eerie/slow = needs manual /tick rate 80").
+- `redpiano_core.tickrate_command_block` was **DELETED**: the earlier auto-set command block
+  (fired from `playcore` on **[play]**) proved unreliable in-game, so it was removed. There is
+  no self-set mechanism — the rate must be set by hand.
+- **No gametime "self-check".** An earlier `tickrate_selfcheck` was also removed: gametime
+  advances by exactly 1 per game-tick *regardless* of `/tick rate`, so a delta check cannot
+  detect the rate and only spams a false WARN every tick.
+
+### 1.8 Direction rotation (emit-time)
+
 ```python
-def tickrate_command_block(x, y, z, rate=80, facing="up") -> list[str]
-    # a command_block that runs '/tick rate <rate>' so the machine self-sets tempo on use
+def rot_xz(x, z, start_dir) -> tuple[int, int]
+def rotate_command(cmd: str, start_dir) -> str
 ```
-- The machine MUST NOT assume the player typed `/tick rate 80` (MEMORY: redpiano-runtime-gotchas
-  "eerie/slow = needs manual /tick rate 80"). Core provides a command-BLOCK that sets the rate;
-  generators place it in the console and FIRE it from `playcore`, so pressing **[play]** runs
-  `/tick rate 80` automatically (no manual typing).
-- **No gametime "self-check".** An earlier `tickrate_selfcheck` was removed: gametime advances
-  by exactly 1 per game-tick *regardless* of `/tick rate`, so a delta check cannot detect the
-  rate and only spams a false WARN every tick. The self-SET command block is the mechanism.
+- All form geometry is authored **+X**; `start_dir` (`+X`/`-X`/`+Z`/`-Z`) is applied at emit
+  time by rotating the authored coords. `rot_xz` rotates an `(x, z)` pair around the origin;
+  `rotate_command` applies it to `setblock`/`forceload`/`tp` coordinates and remaps `facing=` /
+  `rotation=` blockstates accordingly.
+- **`+X` is the identity** (verified: the emitted path is byte-unchanged at `+X`). All four
+  cardinals are supported; non-`+X` output is generation-verified (round-trips, collision-free)
+  but still needs an **in-game listen** (the facings bind to in-world redstone).
 
-### 1.8 (reserved) — radiate/chord emission is **NOT** here
-
-`chord3` / radiate / palette grid / S-wave path layout are **geometry** → they live in
-`generators/`. Core must not gain them. Listed here only to prevent misplacement.
+radiate/chord emission is **NOT** here: `chord3` / radiate / palette grid / S-wave path layout
+are **geometry** → they live in `generators/`. Core must not gain them.
 
 ### 1.9 Version profile accessor
 
@@ -335,8 +345,8 @@ implements it** → if SET to a non-default, `load_params` MUST raise (§2.3).
 | `start_x` | int | optional | `0` | both (origin X) | overridden by CLI `--origin` |
 | `start_z` | int | optional | `0` | both (origin Z) | " |
 | `start_y` | int | optional | `255` | both (origin Y) | " |
-| `start_dir` | enum `+X\|-X\|+Z\|-Z` | optional | `+X` | both | **only `+X` implemented**; others → unimplemented (§2.4) |
-| `signal_tracks` | list[`{dx,dz,dy,name}`] \| null | optional | `null` | none-yet | particle/redstone signal lanes; **3D dx/dy/dz unimplemented** |
+| `start_dir` | enum `+X\|-X\|+Z\|-Z` | optional | `+X` | both | **all 4 cardinals supported** via emit-time rotation (`redpiano_core` §1.8); `+X` = identity; non-`+X` generation-verified, in-game listen pending |
+| `signal_tracks` | list[`{dx,dz,dy,name}`] \| null | optional | `null` | multilane | particle/redstone signal lanes; **full 3D offset {dx,dy,dz} all consumed by multilane** |
 | **inplace-only** | | | | | |
 | `palette_noteblocks` | int | optional | (derived) | inplace (report/ref) | actual palette size is derived from MIDI; designer value is a preview hint |
 | `PCOLS` | int | optional | `16` | inplace | palette grid width (poc/45 `PCOLS`) |
@@ -393,10 +403,8 @@ def load_params(path_or_dict: str | dict, form: str) -> dict
 `params_schema.py` exposes a constant:
 ```python
 UNIMPLEMENTED = {
-  "start_dir != '+X'":        "direction rotation not implemented; geometry is authored +X only",
   "chord_mode == 'multilane'":"chord_mode=multilane is not a swave/straight/custom option — use --form multilane instead",
   "line_width_radiate != 3":  "radiate width is fixed at 3 (above + 2 sides)",
-  "signal_tracks 3D dx/dy":   "signal-track 3D placement not implemented",
   "fold_gap / plane-fold":    "fold_gap/plane-fold is not wired into swave/straight/custom",
   "method == 'slice'":        "Family B audio slice out of scope",
   "max_poly/lane_dz/lane_offsets": "multilane-only — use --form multilane (don't apply to swave/straight/custom)",
@@ -410,7 +418,8 @@ non-default.
 > `chord_mode`/`line_width_radiate`/`fold_gap`/`max_poly`/`lane_*` when
 > `form ∈ {swave, straight, custom}` (`params_schema.py` `if form in _MARCH`). **`multilane`
 > and `custom` ARE v1 forms** — `--form multilane` consumes `chord_mode=multilane`/`max_poly`/
-> `lane_dz`/`lane_offsets`/`signal_tracks` (dz); `--form custom` consumes `waypoints`. The
+> `lane_dz`/`lane_offsets`/`signal_tracks` (full 3D offset {dx,dy,dz}); `--form custom`
+> consumes `waypoints`. The
 > entries above only reject those fields when you set them on a form that doesn't use them
 > (e.g. `max_poly` on `swave`). Generators call `assert_supported` before emitting
 a single block, so an unsupported designer JSON fails loudly at the top, not mid-build.
@@ -539,7 +548,10 @@ Flags:
 - `--params` (optional): designer JSON. If omitted, all fields take defaults for `--form`.
 - `--form` (required): one of `inplace`/`swave`/`straight`/`custom`/`multilane`. Must agree
   with `params.form` if both given. (`custom` needs `--params` with `waypoints`; `multilane`
-  needs `--params` with `chord_mode=multilane` and hard-fails over the forceload cap.)
+  needs `--params` with `chord_mode=multilane`. The forceload cap is a **soft** cap — over it,
+  pass `--force-cap` to build anyway; multilane is a straight machine so it can't plane-fold,
+  but it is not a guaranteed audio drop — tested fine at ~428 chunks. For a smaller footprint
+  use swave.)
 - `--ns` (required): datapack namespace (also scoreboard objective name).
 - `--origin X Z Y` (required): world origin; **overrides** `start_x/start_z/start_y` from params.
 - `--mc-version` (required, default `1.21.8`): drives `get_version_profile` → dp_format,

@@ -243,10 +243,17 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
         print(f"    - or copy  {out_path}  into your world's datapacks/ folder, then /reload")
         print("  In-game next steps (once installed):")
         print("    1. /reload")
-    print("    2. /tick rate 80                  (RedPiano samples are tuned for tick80)")
+    print("    2. /tick rate 80                  ⚠ TYPE THIS MANUALLY — the machine does NOT set it")
+    print("                                       (samples tuned for tick80; ~4x too slow without it)")
     print(f"    3. /function {args.ns}:setup       (builds the machine in the world)")
-    print(f"    4. press the [play] sign/button to perform the song")
-    print("  Requires the RedPiano mod + qzpno resource pack to be active.")
+    print("    4. enable the qzpno_mv resourcepack in Options -> Resource Packs (or = total silence)")
+    print("    5. press the [play] sign/button to perform the song")
+    print("")
+    print("  RUNTIME ASSETS REQUIRED:")
+    print("    - This command builds/deploys the DATAPACK only.")
+    print("    - qzpno_mv.zip must exist in the profile resourcepacks/ folder and be enabled.")
+    print("    - RedPiano mod + matching Fabric API must be in mods/, then Minecraft restarted.")
+    print("    - For an end-to-end run, use scripts/prepare_all.py (default automation).")
     # Version-specific binaries reminder — the #1 in-the-wild failure mode: an agent
     # builds the datapack for a non-1.21.8 version and stops there, but the PREBUILT jar
     # (minecraft ~1.21.8) won't load on that version and the prebuilt qzpno (rp 64) is
@@ -341,7 +348,7 @@ def run(args):
         args.name = os.path.splitext(os.path.basename(args.midi))[0] or "untitled"
 
     # 1. version profile — fail fast on unknown version / below the /tick rate floor,
-    #    then enforce the supported auto-build band (green 1.21..1.21.9; 'yellow'
+    #    then enforce the supported auto-build band (green 1.21..1.21.10; 'yellow'
     #    1.20.x resolves its datapack facts but the mod isn't auto-supported there).
     profile = core.get_version_profile(args.mc_version)
     core.assert_build_supported(profile)

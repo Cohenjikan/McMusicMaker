@@ -14,7 +14,7 @@ What this helper DOES do is turn "recompile the mod" from a research task into a
     the chosen version. It does NOT run gradle, and does NOT widen the tested `minecraft`
     range in fabric.mod.json unless you pass --set-mc-range (and even then it warns).
 
-Supported (green) band: 1.21..1.21.9 — number-only retarget (no Java source edits; the
+Supported (green) band: 1.21..1.21.10 — number-only retarget (no Java source edits; the
 1.21.x scoreboard/sound API the mod uses compiles across the whole line). Below 1.21 the
 mod needs a real Java source-port (the <1.21 scoreboard config API) + Java 17 at 1.20.4 —
 out of this skill's auto scope; this helper prints that checklist instead of writing.
@@ -82,7 +82,7 @@ def toolchain_for(mc_version):
             )
         raise RedPianoError(
             f"mc_version {mc_version}: no mod toolchain row (supported mod band is "
-            f"1.21..1.21.9). See docs/MOD_ARCHITECTURE.md §6 to port further."
+            f"1.21..1.21.10). See docs/MOD_ARCHITECTURE.md §6 to port further."
         )
     return profile, tc
 
@@ -166,7 +166,7 @@ def build_argparser():
         description="Print (or --write) the verified RedPiano mod toolchain for a target "
                     "MC version. Does not run gradle.")
     p.add_argument("--mc-version", default="1.21.8", dest="mc_version",
-                   help="target Minecraft version (1.21..1.21.9; default 1.21.8).")
+                   help="target Minecraft version (1.21..1.21.10; default 1.21.8).")
     p.add_argument("--write", action="store_true",
                    help="apply the numbers to mod/redpiano/gradle.properties + the "
                         "fabric-loom plugin line in build.gradle.")

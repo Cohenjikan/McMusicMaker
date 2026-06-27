@@ -119,14 +119,16 @@ _VALID_FORMS = _ALLF
 # raises with the matching message if any of these is set to a non-default.
 # ─────────────────────────────────────────────────────────────────────────────
 UNIMPLEMENTED = {
-    "start_dir != '+X'":             "direction rotation not implemented; geometry is authored +X only",
     "chord_mode == 'multilane'":     "chord_mode=multilane is not a swave/straight/custom option (those use radiate) — use --form multilane instead",
     "line_width_radiate != 3":       "radiate width is fixed at 3 (above + 2 sides)",
-    "signal_tracks 3D dx/dy":        "signal-track 3D placement not implemented",
     "fold_gap / plane-fold":         "fold_gap/plane-fold is not wired into swave/straight/custom",
     "method == 'slice'":             "Family B audio slice out of scope",
     "max_poly/lane_dz/lane_offsets": "max_poly/lane_dz/lane_offsets are multilane-only — use --form multilane (they don't apply to swave/straight/custom)",
 }
+
+# the four supported play directions (start_dir). +X is the authored geometry; -X/+Z/-Z
+# are produced by a rotation transform applied at emit time (redpiano_core.rotate_command).
+VALID_DIRS = ("+X", "-X", "+Z", "-Z")
 
 
 def _is_set_nondefault(params, key):
@@ -270,20 +272,17 @@ def assert_supported(params, form):
     if _get("method") == "slice":
         raise RedPianoError(UNIMPLEMENTED["method == 'slice'"])
 
-    # start_dir != '+X'
-    if _get("start_dir") not in (None, "+X"):
-        raise RedPianoError(UNIMPLEMENTED["start_dir != '+X'"])
+    # start_dir: all four cardinals are supported (the +X-authored geometry is rotated at
+    # emit time by redpiano_core.rotate_command). Validate the value; reject unknowns.
+    if _get("start_dir") not in (None,) + VALID_DIRS:
+        raise RedPianoError(
+            f"start_dir must be one of {' / '.join(VALID_DIRS)} (got {_get('start_dir')!r})"
+        )
 
-    # signal_tracks: multilane consumes the dz (lateral) offset; the 3D dx/dy parts
-    # are NOT wired (poc/49 drops them) -> hard-fail only on dx/dy, allow dz.
+    # signal_tracks: multilane now consumes the FULL 3D offset (dx/dy/dz). Validate shape.
     sig = _get("signal_tracks")
-    if sig:
-        if isinstance(sig, (list, tuple)):
-            for tr in sig:
-                if isinstance(tr, dict) and (tr.get("dx") or tr.get("dy")):
-                    raise RedPianoError(UNIMPLEMENTED["signal_tracks 3D dx/dy"])
-        else:
-            raise RedPianoError(UNIMPLEMENTED["signal_tracks 3D dx/dy"])
+    if sig is not None and not isinstance(sig, (list, tuple)):
+        raise RedPianoError("signal_tracks must be a list of {dx,dy,dz} offset objects")
 
     # marching-pulse (swave/straight/custom) unimplemented features
     if form in _MARCH:
@@ -357,9 +356,12 @@ if __name__ == "__main__":
     p = load_params({"PCOLS": 16}, "swave")  # PCOLS==default -> allowed (no-op)
     print("ok: default-valued cross-form field tolerated")
 
-    # assert_supported: start_dir
-    expect_raise(lambda: assert_supported(load_params({}, "inplace") | {"start_dir": "-X"}, "inplace"),
-                 "direction rotation", "start_dir != +X")
+    # assert_supported: start_dir — all 4 cardinals now PASS; an invalid one raises
+    for d in ("+X", "-X", "+Z", "-Z"):
+        assert_supported(load_params({}, "inplace") | {"start_dir": d}, "inplace")
+    print("ok: all 4 start_dir cardinals pass assert_supported")
+    expect_raise(lambda: assert_supported(load_params({}, "inplace") | {"start_dir": "+Y"}, "inplace"),
+                 "start_dir must be one of", "invalid start_dir rejected")
     # assert_supported: multilane
     expect_raise(lambda: assert_supported(load_params({}, "swave") | {"chord_mode": "multilane"}, "swave"),
                  "multilane", "chord_mode multilane")

@@ -10,9 +10,9 @@ chains (no note blocks) for the player to place command blocks beside (粒子 sy
 Geometry/lifecycle copied faithfully from poc/49; plumbing routed through
 redpiano_core (version-aware pack_format + function folder, opt-in deploy) and the
 multi-instrument map (octave-shift, not silent clamp). The forceload soft-cap is a
-HARD FAIL here (not a warning): a straight machine's footprint ≈ its bounding box,
-so long songs blow past ~360 chunks and historically caused overload断音. Refuse and
-point the user to the folded S-wave form.
+SOFT warning (footprint/perf on weak hardware), NOT a guaranteed audio drop — over the
+cap it refuses unless --force-cap is given, then it WARNs and builds anyway (user-tested
+~428 chunks with no dropped notes). For a smaller footprint use the folded S-wave form.
 
 SHARED INTERFACE:
     def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None) -> dict
@@ -162,13 +162,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     build_cmds = ["gamerule commandModificationBlockLimit 2147483647"]
     sources = []   # (x,y,z) redstone source per chain
 
-    def emit_chain(out, lz, ly, voices):
+    def emit_chain(out, lz, ly, voices, lx=0):
+        # lx/ly/lz = per-chain X/Y/Z offset off the origin. Voice lanes use lx=0 (they
+        # share the +X spine); signal tracks may offset in 3D (dx/dy/dz).
         z = OZ + lz
         yb = Y + ly
-        grid.put(out, OX - 1, yb - 1, z, BASE)
-        sources.append((OX - 1, yb, z))
+        x0 = OX + lx
+        grid.put(out, x0 - 1, yb - 1, z, BASE)
+        sources.append((x0 - 1, yb, z))
         for i, (kind, v) in enumerate(cells):
-            x = OX + i
+            x = x0 + i
             if kind == "rep":
                 grid.put(out, x, yb - 1, z, BASE)
                 grid.put(out, x, yb, z, f"minecraft:repeater[facing={RFACE},delay={v}]")
@@ -182,22 +185,35 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     for li in range(NLANE):
         emit_chain(build_cmds, LANES[li]["z"], LANES[li].get("y", 0), lane_voices[li])
+    # signal tracks: pure repeater chains for command-block particles. Now consume the
+    # full 3D offset (dx/dy/dz) — previously dz only (poc/49 dropped dx/dy).
     for sg in SIGS:
-        emit_chain(build_cmds, int(sg.get("dz", 0)), 0, None)
+        emit_chain(build_cmds, int(sg.get("dz", 0)), int(sg.get("dy", 0)), None,
+                   lx=int(sg.get("dx", 0)))
 
     batches = core.batch_setblocks(build_cmds, BATCH)
 
-    # 5. per-path forceload — HARD FAIL over the cap (straight machine can't fold itself)
+    # 5. per-path forceload. The footprint ≈ the bounding box (a straight multilane can't
+    #    fold itself). Over the SOFT cap this is a footprint/perf concern on weak hardware —
+    #    NOT a guaranteed audio drop (user-tested ~428 chunks with no dropped notes). Honor
+    #    --force-cap: without it, refuse a big footprint (and suggest swave); with it, WARN
+    #    and build anyway. The forceload is already emitted one `add` per chunk (safe stride).
     occ = grid.occ
     chunks = sorted(set((x >> 4, z >> 4) for (x, _, z) in occ))
     NCH = len(chunks)
-    if NCH > core.FORCELOAD_SOFT_CAP:
+    force_cap = bool(params.get("force_cap")) if params else False
+    if NCH > core.FORCELOAD_SOFT_CAP and not force_cap:
         raise RedPianoError(
-            f"multilane footprint = {NCH} forceload chunks > {core.FORCELOAD_SOFT_CAP} cap. "
-            f"A straight multilane machine ≈ its bounding box; this song is too long and would "
-            f"overload the server (开头后断音). Use --form swave (folded S-wave) instead, or "
-            f"shorten the song."
+            f"multilane footprint = {NCH} forceload chunks > soft cap {core.FORCELOAD_SOFT_CAP}. "
+            f"A straight multilane ≈ its bounding box, so a long song has a large footprint that "
+            f"may stress a weak server. Pass --force-cap to build it anyway (per-chunk forceload; "
+            f"tested fine at ~428 chunks), or use --form swave (folded S-wave) for a smaller footprint."
         )
+    if NCH > core.FORCELOAD_SOFT_CAP:
+        core.log.warning(
+            "multilane footprint %d chunks > soft cap %d; building anyway (--force-cap). "
+            "Per-chunk forceload — a large footprint, not a guaranteed audio drop.",
+            NCH, core.FORCELOAD_SOFT_CAP)
     flbuild = ["forceload remove all"] + [
         f"forceload add {cx * 16} {cz * 16}" for (cx, cz) in chunks
     ]
@@ -209,7 +225,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     WY0, WY1 = min(ally) - 2, max(ally) + 2
 
     # 6. datapack — via core.Datapack (version-aware pack_format + folder names)
-    dp = core.Datapack(ns, name, out_dir, profile.mc_version)
+    dp = core.Datapack(ns, name, out_dir, profile.mc_version,
+                       direction=params.get("start_dir", "+X"), ox=OX, oz=OZ)
     dp.write_pack_mcmeta(
         f"{ns} 多轨分布式直线行进脉冲(每声部一轨, {NLANE}轨+{len(SIGS)}信号轨), tick80"
     )
@@ -245,7 +262,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
            "scoreboard players set poly rpcfg 1", "scoreboard players set human rpcfg 1"]
         + SCHED_CLEAR + TRIG_CLEAR
         + [f'tellraw @a ["",{{"text":"[{ns}] 多轨分布式直线机 loaded. ","color":"aqua"}},'
-           f'{{"text":"需RedPiano+qzpno. /tick rate 80 -> /function {ns}:setup"}}]'])
+           f'{{"text":"需RedPiano+qzpno. 手动 /tick rate 80 -> /function {ns}:setup -> 启用资源包 -> 按 [play]"}}]'])
     dp.write_function("setup",
         RESET + ["gamemode creative @a", SSTOP, f"scoreboard players set CLR {ns} -1"]
         + SCHED_CLEAR + TRIG_CLEAR + flbuild

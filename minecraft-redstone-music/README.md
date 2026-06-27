@@ -1,9 +1,10 @@
 # minecraft-redstone-music
 
-Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**: this tool
-emits a self-contained **datapack** that drives real **note blocks** through the **RedPiano**
-mod, playing your song with sampled instruments (piano / bass / lead / pad / drums). One
-`--mc-version` flag self-syncs the whole output (datapack + resourcepack + mod-build config) to
+Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**. The playable
+runtime is a **datapack + enabled `qzpno_mv` resourcepack + RedPiano mod + Fabric API**:
+the datapack drives real note blocks through the mod, and the resourcepack supplies the
+sampled instruments (piano / bass / lead / pad / drums). One `--mc-version` flag self-syncs the datapack,
+resourcepack, mod build, and profile install to
 your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max `pack.mcmeta`);
 **1.21.8 is the verified default & anchor**.
 
@@ -14,13 +15,13 @@ your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max
 
 ---
 
-## Quick start (the one command)
+## Quick start
 
 ```bash
 # 0. one-time: install the only Python dependency
 pip install -r requirements.txt           # just `mido` (MIDI parsing)
 
-# 1. build a datapack from a MIDI (run from INSIDE this folder; paths are folder-relative)
+# 1. build a datapack from a MIDI (datapack-only smoke test)
 python scripts/build_machine.py --midi assets/demo.mid --form inplace \
        --ns mysong --origin 0 0 255 --mc-version 1.21.8
 ```
@@ -38,17 +39,34 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
   straight into a world (otherwise copy `build/<ns>/` there yourself). Deploy is opt-in.
 - The script prints a stats report **and the exact in-game next steps**. Read them back to the user.
 
+For a real handoff, use the runtime command. It builds/deploys the datapack, builds/copies
+the resourcepack into the profile and selects it in `options.txt`, writes the RedPiano mod
+build config, auto-detects Gradle + JDK 21 to build/install the RedPiano jar, and reuses or
+downloads the matching Fabric API jar:
+
+```bash
+python scripts/prepare_all.py --midi path/to/song.mid --form swave --ns mysong \
+       --origin 0 0 255 --mc-version 1.21.8 \
+       --world-dir "<profile>/saves/<world>/datapacks" \
+       [--samples-root ../poc | --prebuilt-rp path/to/qzpno_mv.zip] \
+       [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
+```
+
+In a full source checkout, `prepare_all.py` auto-detects `../../poc` as the sample root.
+In a packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it refuses
+to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a missing
+RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
+
 ## Play it in Minecraft
 
-1. Install the runtime stack (one-time) — see **[BINARIES.md](BINARIES.md)** + [QUICKSTART.md](QUICKSTART.md):
-   Fabric Loader + Fabric API + Java 21, the **RedPiano mod jar** in `mods/` (restart MC), and the
-   **`qzpno_mv` resourcepack** enabled. *(These two large binaries ship separately — see BINARIES.md.)*
-2. Copy `build/<ns>/` into your world's `datapacks/` folder (or use `--world-dir`).
-3. In-game: `/reload` → `/tick rate 80` → `/function <ns>:setup` (wait for "built") → press the
-   **[播放]/[play]** sign-button. Pressing play also auto-runs `/tick rate 80`.
+1. Run `prepare_all.py` for the target profile/world, then fully restart Minecraft if any
+   jar in `mods/` changed.
+2. In-game: `/reload` → `/function <ns>:setup` (wait for "built") → press the
+   **[播放]/[play]** sign-button. Pressing play auto-runs `/tick rate 80`.
 
-> **No sound?** 9 times out of 10 it's the resourcepack not enabled, the wrong `/tick rate`, or the
-> mod jar missing — see the triage box at the top of [QUICKSTART.md](QUICKSTART.md).
+> **No sound?** 9 times out of 10 it's the resourcepack not enabled, RedPiano/Fabric API
+> missing from `mods/`, Minecraft not restarted after jar changes, or tick rate reverted — see
+> the triage box at the top of [QUICKSTART.md](QUICKSTART.md).
 
 ## What's in this folder
 
@@ -56,8 +74,9 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
 |---|---|
 | `scripts/build_machine.py` | the build CLI (this is the entry point you run) |
 | `scripts/build_particles.py` | optional: music-synced particle/command tracks (see docs/PARTICLES.md) |
-| `scripts/build_resourcepack.py` | optional: version-driven `qzpno_mv` resourcepack repack (`--mc-version`; samples ship separately, see BINARIES.md) |
-| `scripts/mod_build.py` | optional: prints (or `--write` applies) the verified mod toolchain per `--mc-version` (does not run gradle) |
+| `scripts/prepare_all.py` | preferred handoff CLI: datapack + resourcepack install/enable + RedPiano jar build/install + Fabric API install |
+| `scripts/build_resourcepack.py` | version-driven `qzpno_mv` resourcepack repack (`--mc-version`; samples ship separately, see BINARIES.md) |
+| `scripts/mod_build.py` | low-level helper: prints/applies the verified mod toolchain per `--mc-version`; `prepare_all.py` runs the build by default |
 | `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (`VERSION_TABLE` in `redpiano_core.py` is the single source of truth for per-version facts) |
 | `assets/demo.mid`, `assets/redpiano_map_multi.json` | bundled test MIDI + the 103-block instrument map |
 | `designer/*.html` | browser tools to customize routing + particle placement (optional) |

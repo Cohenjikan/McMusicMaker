@@ -24,6 +24,7 @@ Pure stdlib only.
 import json
 import logging
 import os
+import re
 import shutil
 
 # share the exception + schema helpers from params_schema (no geometry there).
@@ -41,7 +42,7 @@ log = logging.getLogger("redpiano")
 
 # Global timing constants — the qzpno samples are tuned for `/tick rate 80`, where
 # one redstone-tick cell = 2 game-ticks (U = 2/80 = 0.025s). These are INVARIANT
-# across the supported band (1.21..1.21.9 all run the same sample set at tick80), so
+# across the supported band (1.21..1.21.10 all run the same sample set at tick80), so
 # they live here as the single source of truth and are surfaced on every
 # VersionProfile. They are only *usable* when profile.has_tick_rate (>=1.20.3) — which
 # get_version_profile enforces, refusing any version below that floor.
@@ -78,7 +79,7 @@ def _vrow(dp, rp, folder, packmeta, sign, has_tick, tier, conf, notes=""):
 #                          strings — the old form renders as literal text on the sign)
 #   has_tick_rate          /tick rate exists (>=1.20.3); False => tick80 model impossible
 #                          => get_version_profile HARD-REFUSES (the honest floor)
-#   tier                   'green'  fully auto (1.21..1.21.9): data + resourcepack + mod
+#   tier                   'green'  fully auto (1.21..1.21.10): data + resourcepack + mod
 #                                   (number-only recompile)
 #                          'yellow' data/resourcepack auto, but the mod needs a Java
 #                                   source-port (<1.21 scoreboard API) — OUT OF auto scope
@@ -197,7 +198,7 @@ def get_version_profile(mc_version):
 
 
 def assert_build_supported(profile):
-    """Enforce the skill's supported auto-build band (green = 1.21..1.21.9). 'yellow'
+    """Enforce the skill's supported auto-build band (green = 1.21..1.21.10). 'yellow'
     versions (1.20.3..1.20.6) resolve their datapack facts fine, but the RedPiano mod
     is NOT auto-supported below 1.21 (the scoreboard config API changed; it needs a
     small Java source-port + Java 17), so refuse cleanly rather than hand out a
@@ -209,7 +210,7 @@ def assert_build_supported(profile):
             f"mc_version {profile.mc_version} is in the 'yellow' band: the datapack and "
             f"resourcepack adapt automatically, but the RedPiano mod is not auto-supported "
             f"below 1.21 (the scoreboard config API changed; it needs a small Java "
-            f"source-port + Java 17). This skill's supported auto range is 1.21..1.21.9 — "
+            f"source-port + Java 17). This skill's supported auto range is 1.21..1.21.10 — "
             f"use a 1.21.x version, or port+recompile the mod per docs/MOD_ARCHITECTURE.md "
             f"§6 and remove this guard."
         )
@@ -226,7 +227,7 @@ class Datapack:
     semantics byte-for-byte, but profile-driven instead of hardcoded.
     """
 
-    def __init__(self, ns, name, out_dir, mc_version):
+    def __init__(self, ns, name, out_dir, mc_version, direction="+X", ox=0, oz=0):
         self.ns = ns
         self.name = name
         self.mc_version = mc_version
@@ -234,6 +235,11 @@ class Datapack:
         self.dp_format = self.profile.dp_format
         self.function_folder = self.profile.function_folder
         self.tag_function_folder = self.profile.tag_function_folder
+        # play direction: '+X' (identity, verified path) or '-X'/'+Z'/'-Z' (rotate emitted
+        # commands around (ox,oz) — §1.8). ox/oz are the machine origin's X/Z.
+        self.direction = direction or "+X"
+        self.ox = int(ox)
+        self.oz = int(oz)
         self.root = os.path.join(out_dir, ns)
         # like the poc: remove and recreate the datapack root
         if os.path.isdir(self.root):
@@ -257,6 +263,10 @@ class Datapack:
         singular; core parameterizes it)."""
         if not isinstance(body, str):
             body = "\n".join(body)
+        # rotate the emitted geometry for a non-+X play direction (§1.8). +X is a no-op.
+        if self.direction != "+X":
+            body = "\n".join(rotate_command(line, self.direction, self.ox, self.oz)
+                             for line in body.split("\n"))
         self.write(f"data/{self.ns}/{self.function_folder}/{name}.mcfunction", body)
 
     def write_pack_mcmeta(self, description):
@@ -332,7 +342,7 @@ def build_load_fn(ns, name, extra_objectives=True):
         "forceload remove all",
         f"schedule clear {ns}:done",
         f'tellraw @a ["",{{"text":"[{ns}] {name} loaded. ","color":"aqua"}},'
-        f'{{"text":"need RedPiano mod + qzpno pack. /tick rate 80 -> /function {ns}:setup"}}]',
+        f'{{"text":"need RedPiano mod + qzpno pack. Steps: /tick rate 80 (手动输入) -> /function {ns}:setup -> 启用资源包 -> press [play]."}}]',
     ]
     return out
 
@@ -798,9 +808,9 @@ def plan_melody_cuts(mel_events, *, tps=80, melcap_s=1.2, min_cut_gt=4,
                 overlapping += 1
         if overlapping >= 1:
             short = ev.split(":")[-1] if ":" in ev else ev
-            msg = (f"event-level cut: {overlapping + 1} overlapping {short} notes "
-                   f"share one cut @cell {tk} — earlier note(s) will be silenced "
-                   f"prematurely")
+            msg = (f"event-level cut: {overlapping + 1} overlapping {short} notes share one "
+                   f"cut @cell {tk} — an earlier tail MAY be shortened slightly (a sustaining "
+                   f"pad/lead/bass tail; usually INAUDIBLE — user-tested no audible note loss)")
             warnings.append(msg)
             log.warning(msg)
 
@@ -819,9 +829,10 @@ def plan_melody_cuts(mel_events, *, tps=80, melcap_s=1.2, min_cut_gt=4,
             if onset_k < cut_j < onset_k + natural_gt[k]:
                 cross += 1
     if cross:
-        msg = (f"event-level cut is GLOBAL: {cross} cross-instrument note-overlap(s) get "
-               f"shortened by the melody-cut (melody stays audible; dense pad/lead/bass "
-               f"tails may thin). v1 limitation — per-note cut is out of scope.")
+        msg = (f"event-level cut is GLOBAL: {cross} cross-instrument tail-overlap(s) MAY be "
+               f"trimmed by the melody-cut (the melody always stays audible; only dense "
+               f"pad/lead/bass tails are affected, and user-testing found this INAUDIBLE — no "
+               f"dropped notes). Informational, not a defect — per-note cut is out of v1 scope.")
         warnings.append(msg)
         log.warning(msg)
 
@@ -839,27 +850,108 @@ def plan_melody_cuts(mel_events, *, tps=80, melcap_s=1.2, min_cut_gt=4,
 # §1.7  Tick-rate handling
 # ─────────────────────────────────────────────────────────────────────────────
 
-def tickrate_command_block(x, y, z, rate=80, facing="up"):
-    """A command_block that runs '/tick rate <rate>' so the machine self-sets tempo
-    on use. The machine MUST NOT assume the player typed /tick rate 80 (MEMORY:
-    redpiano-runtime-gotchas 'eerie/slow = needs manual /tick rate 80'). Returns the
-    setblock command(s) placing an auto-off command block primed with the tick-rate
-    command; wire its activation into setup/play."""
-    return [
-        f'setblock {x} {y} {z} minecraft:command_block[facing={facing},conditional=false]'
-        f'{{Command:"tick rate {rate}",auto:0b}}',
-    ]
-
-# NOTE: a `tickrate_selfcheck` once lived here but was removed — it could not actually
-# detect the rate (gametime advances by 1 per game-tick regardless of /tick rate) and
-# spammed a false WARN every tick. The machine instead self-SETS the rate: generators
-# place a tickrate_command_block in the console and fire it from `playcore` (pressing
-# [play] runs `/tick rate 80` automatically). No per-tick check, no manual typing.
+# The machine does NOT auto-set the tick rate. An auto command-block that ran
+# `/tick rate {rate}` (and an even older per-tick `tickrate_selfcheck`) were BOTH removed:
+# the self-check could not detect the rate (gametime advances 1/game-tick regardless of
+# /tick rate), and the auto command-block proved unreliable in-game (user-tested: the
+# auto-set didn't take). Policy: the PLAYER types `/tick rate 80` MANUALLY before playing.
+# Generators must NOT emit a tick-rate command block; the in-game instructions say so.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §1.8 (reserved) — radiate/chord/palette/S-wave layout are GEOMETRY -> generators/
+# §1.8  Direction rotation — play the +X-authored machine along -X / +Z / -Z.
+#   The generators author geometry along +X. To support the other three cardinals we
+#   rotate the EMITTED commands around the origin (a rigid transform): rotate the (x,z)
+#   integer coords in setblock/forceload/tp, and remap directional blockstates
+#   (repeater/observer/... `facing=`, sign `rotation=`). +X is the IDENTITY (the verified
+#   path stays byte-for-byte unchanged). Generation-verified (round-trips, collision-free);
+#   the non-+X facings bind to in-world redstone, so a new direction needs an in-game listen.
 # ─────────────────────────────────────────────────────────────────────────────
+
+_FACING_CW = {"north": "east", "east": "south", "south": "west", "west": "north"}  # 90° CW
+_DIR_TURNS = {"+X": 0, "+Z": 1, "-X": 2, "-Z": 3}  # quarter-turns CW from +X
+# block-edit regex: name[states]rest  (states may be empty)
+_BLOCK_STATE_RE = re.compile(r"^([^\[\]]+)\[([^\]]*)\](.*)$")
+
+
+def rot_xz(x, z, direction, ox, oz):
+    """Rotate point (x,z) around (ox,oz) so a +X-extending machine extends ``direction``.
+    +X is identity. (+Z=90° CW, -X=180°, -Z=90° CCW.)"""
+    dx, dz = x - ox, z - oz
+    if direction == "+X":
+        return x, z
+    if direction == "+Z":
+        return ox - dz, oz + dx
+    if direction == "-X":
+        return ox - dx, oz - dz
+    if direction == "-Z":
+        return ox + dz, oz - dx
+    raise RedPianoError(f"unknown direction {direction!r} (expected +X/-X/+Z/-Z)")
+
+
+def _remap_state_token(token, turns):
+    """Rotate a single blockstate token (`facing=west`, `rotation=3`) `turns` quarter-CW."""
+    if "=" not in token:
+        return token
+    k, v = token.split("=", 1)
+    if k == "facing" and v in _FACING_CW:
+        for _ in range(turns):
+            v = _FACING_CW[v]
+        return f"{k}={v}"
+    if k == "rotation":
+        try:
+            return f"{k}={(int(v) + 4 * turns) % 16}"
+        except ValueError:
+            return token
+    return token
+
+
+def _rotate_block_states(block, turns):
+    """Rewrite `facing=`/`rotation=` inside a block's [..] state list for `turns` CW."""
+    m = _BLOCK_STATE_RE.match(block)
+    if not m or turns == 0:
+        return block
+    name, states, rest = m.group(1), m.group(2), m.group(3)
+    if not states:
+        return block
+    new = ",".join(_remap_state_token(t.strip(), turns) for t in states.split(","))
+    return f"{name}[{new}]{rest}"
+
+
+def rotate_command(cmd, direction, ox, oz):
+    """Rotate one datapack command's geometry for a non-+X play direction. ``direction``
+    == '+X' returns ``cmd`` unchanged (identity). Otherwise rotates the integer (x,z) coords
+    in setblock / forceload-add / tp around (ox,oz) and remaps facing/rotation blockstates.
+    Commands without rotatable integer coords (relative `~`, selectors, scoreboard, tellraw)
+    pass through verbatim."""
+    if direction == "+X":
+        return cmd
+    turns = _DIR_TURNS.get(direction)
+    if turns is None:
+        raise RedPianoError(f"unknown direction {direction!r} (expected +X/-X/+Z/-Z)")
+    parts = cmd.split(" ")
+    head = parts[0]
+    try:
+        if head == "setblock" and len(parts) >= 5:
+            x, y, z = int(parts[1]), int(parts[2]), int(parts[3])
+            nx, nz = rot_xz(x, z, direction, ox, oz)
+            block = _rotate_block_states(" ".join(parts[4:]), turns)
+            return f"setblock {nx} {y} {nz} {block}"
+        if head == "forceload" and len(parts) >= 4 and parts[1] == "add":
+            x1, z1 = int(parts[2]), int(parts[3])
+            nx1, nz1 = rot_xz(x1, z1, direction, ox, oz)
+            if len(parts) >= 6:
+                x2, z2 = int(parts[4]), int(parts[5])
+                nx2, nz2 = rot_xz(x2, z2, direction, ox, oz)
+                return f"forceload add {nx1} {nz1} {nx2} {nz2}"
+            return f"forceload add {nx1} {nz1}"
+        if head == "tp" and len(parts) >= 5:
+            x, y, z = int(parts[2]), int(parts[3]), int(parts[4])
+            nx, nz = rot_xz(x, z, direction, ox, oz)
+            return f"tp {parts[1]} {nx} {y} {nz}"
+    except (ValueError, IndexError):
+        return cmd  # non-integer coords (relative/selector) -> leave verbatim
+    return cmd
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1006,10 +1098,19 @@ if __name__ == "__main__":
     assert any("overlapping" in w for w in plan_ov.warnings), plan_ov.warnings
     print("ok: polyphony WARN fired ->", plan_ov.warnings[0])
 
-    # ── tick-rate helper (self-SET command block; the broken self-check was removed) ──
-    tcb = tickrate_command_block(0, 255, 0)
-    assert "tick rate 80" in tcb[0]
-    print("ok: tick-rate command-block (machine self-sets the rate on play)")
+    # ── tick rate is MANUAL: no auto tick-rate command block is emitted anymore. ──
+    assert not hasattr(sys.modules[__name__], "tickrate_command_block"), \
+        "tickrate_command_block must stay removed (player sets /tick rate 80 manually)"
+    print("ok: no auto tick-rate command block (player types /tick rate 80 manually)")
+
+    # ── direction rotation (§1.8): +X identity, others rotate + remap facing/rotation ──
+    assert rotate_command("setblock 5 64 3 minecraft:stone", "+X", 0, 0) == "setblock 5 64 3 minecraft:stone"
+    assert rot_xz(1, 0, "+Z", 0, 0) == (0, 1) and rot_xz(1, 0, "-X", 0, 0) == (-1, 0) and rot_xz(1, 0, "-Z", 0, 0) == (0, -1)
+    assert rot_xz(*rot_xz(7, 3, "+Z", 0, 0), "-Z", 0, 0) == (7, 3)   # +Z then -Z round-trips
+    assert "facing=north" in rotate_command("setblock 2 64 0 minecraft:repeater[facing=west,delay=2]", "+Z", 0, 0)
+    assert "rotation=4" in rotate_command('setblock 0 64 0 minecraft:oak_sign[rotation=0]{a}', "+Z", 0, 0)
+    assert rotate_command("scoreboard players set PLAY ns 1", "-X", 0, 0) == "scoreboard players set PLAY ns 1"
+    print("ok: direction rotation (+X identity; +Z/-X/-Z rotate coords + facing/rotation)")
 
     # ── Datapack writer (temp dir) ───────────────────────────────────────────
     import tempfile
