@@ -30,6 +30,29 @@ To fulfill a "make Minecraft redstone music from this MIDI" request, collect the
 below, then run the build command in step 4. (No special "skill" loader is needed — this
 is a self-contained folder + one Python CLI; see README.md.)
 
+> ## ⚠ 交付准则 — AGENT MUST READ before reporting success (the #1 failure mode)
+> **"Datapack built" is NOT a deliverable, and "self-check passed" / "tier green" is NOT "it works".**
+> The datapack only auto-adapts the *commands/format*; the SOUND needs a **version-matched mod jar +
+> resourcepack**. If those don't match the MC version, the note blocks fall back to **vanilla** sounds
+> (faint harp + booming basedrum) — exactly the symptom when an agent runs `build_machine.py` and stops.
+> So for **any MC version other than `1.21.8`** (the only version with prebuilt binaries), BEFORE you
+> report success you MUST prepare BOTH binaries:
+> 1. **Resourcepack** — `python scripts/build_resourcepack.py --mc-version <v> --samples-root <dir>`.
+>    The **samples are NOT in this folder** (licensed; see [BINARIES.md](BINARIES.md)) — obtain them and
+>    point `--samples-root` at them. The prebuilt `qzpno_mv.zip` (rp 64) is reusable **only on 1.21.7 / 1.21.8**.
+> 2. **Mod** — `python scripts/mod_build.py --mc-version <v> --write`, then `gradle build` in
+>    `mod/redpiano/` (JDK 21; **needs network** the first time you target a version). Put the new jar
+>    **plus the matching `fabric-api +<v>`** (NOT the 1.21.8 build) in `mods/`, then **restart MC**. The
+>    mod source lives in the **full repo**, not this packaged `minecraft-redstone-music/` subfolder.
+> 3. **Never claim it "works" before the user has listened in-game.** A recompiled Fabric mixin can
+>    compile yet be silent or mis-pitched — only an in-game listen confirms it. Hand off the in-game
+>    steps (step 4) and ask the user to confirm they actually hear it.
+>
+> **One command for 1–2:** `python scripts/prepare_all.py …` runs datapack → resourcepack → mod-config
+> (→ optional `gradle build`) in order and stops at the in-game listen. **Simplest reliable path = target
+> `1.21.8` (or 1.21.7)** where the binaries already match; pick another `1.21.x` only when you're ready to
+> do the full re-adapt + recompile.
+
 1. **收集输入** — ask for three things:
    - **MIDI 文件** path (`.mid`).
    - **存档路径** — the world's `datapacks/` folder, for deployment.
