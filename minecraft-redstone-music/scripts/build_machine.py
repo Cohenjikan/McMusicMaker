@@ -247,6 +247,26 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
     print(f"    3. /function {args.ns}:setup       (builds the machine in the world)")
     print(f"    4. press the [play] sign/button to perform the song")
     print("  Requires the RedPiano mod + qzpno resource pack to be active.")
+    # Version-specific binaries reminder — the #1 in-the-wild failure mode: an agent
+    # builds the datapack for a non-1.21.8 version and stops there, but the PREBUILT jar
+    # (minecraft ~1.21.8) won't load on that version and the prebuilt qzpno (rp 64) is
+    # silently disabled, so the note blocks fall back to VANILLA sounds (wrong/broken
+    # audio — faint harp + booming basedrum). Loudly point at the per-version fix.
+    if profile is not None and profile.mc_version != "1.21.8":
+        v = profile.mc_version
+        print("-" * 64)
+        print(f"  ⚠ VERSION-SPECIFIC BINARIES REQUIRED — this is {v}, NOT the prebuilt 1.21.8.")
+        print(f"    The prebuilt 1.21.8 binaries will NOT work here:")
+        print(f"      · RedPiano jar declares minecraft ~1.21.8 → Fabric refuses to load it on {v}.")
+        print(f"      · qzpno_mv.zip is rp_format 64 → {v} needs rp {profile.rp_format}; MC silently")
+        print(f"        disables a mismatched pack → total silence.")
+        print(f"    Without BOTH adapted, note blocks fall back to vanilla sounds (broken audio).")
+        print(f"    Prepare them for {v} (samples ship separately — see BINARIES.md):")
+        print(f"      resourcepack:  python scripts/build_resourcepack.py --mc-version {v} "
+              f"--samples-root <dir> --out <profile>/resourcepacks/qzpno_mv.zip")
+        print(f"      mod (recompile): python scripts/mod_build.py --mc-version {v} --write   "
+              f"then build mod/redpiano (gradle, JDK 21) + use fabric-api for {v}")
+        print(f"    A recompiled mixin jar still needs ONE in-game listen.")
     print("-" * 64)
 
 
