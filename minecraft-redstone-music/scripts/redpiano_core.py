@@ -39,85 +39,177 @@ log = logging.getLogger("redpiano")
 #   poc/02e resourcepack rp=64, user-verified in-game).
 # ─────────────────────────────────────────────────────────────────────────────
 
-# mc_version : (dp_format, rp_format, function_folder, confidence, notes)
+# Global timing constants — the qzpno samples are tuned for `/tick rate 80`, where
+# one redstone-tick cell = 2 game-ticks (U = 2/80 = 0.025s). These are INVARIANT
+# across the supported band (1.21..1.21.9 all run the same sample set at tick80), so
+# they live here as the single source of truth and are surfaced on every
+# VersionProfile. They are only *usable* when profile.has_tick_rate (>=1.20.3) — which
+# get_version_profile enforces, refusing any version below that floor.
+TPS = 80                    # the /tick rate target the samples are tuned for
+GAME_TICKS_PER_CELL = 2     # 1 redstone-tick cell = 2 game-ticks at tick80
+
+
+def _vrow(dp, rp, folder, packmeta, sign, has_tick, tier, conf, notes=""):
+    """Build a VERSION_TABLE row. ``has_return_cmd`` shares the /tick rate floor
+    (both `/tick rate` and `return`/`return run` landed in 1.20.3), so it is derived
+    from ``has_tick``."""
+    return {
+        "dp_format": dp, "rp_format": rp, "function_folder": folder,
+        "packmeta_shape": packmeta, "sign_dialect": sign,
+        "has_tick_rate": has_tick, "has_return_cmd": has_tick,
+        "tier": tier, "confidence": conf, "notes": notes,
+    }
+
+
+# §3 / §1.9  VERSION_TABLE — the SINGLE SOURCE OF TRUTH for every per-MC-version fact
+# the datapack/resourcepack layer needs. (Mod-jar toolchain numbers live separately in
+# mod_build.py, since the mod is recompiled out-of-band.) All dp/rp numbers are
+# cross-verified against https://minecraft.wiki/w/Pack_format (high confidence).
+# Anchored row: MC 1.21.8 -> dp=81, rp=64 (user-verified in-game).
+#
+# Row fields (see _vrow):
+#   dp_format / rp_format  datapack / resourcepack pack_format integers (DIFFERENT lines)
+#   function_folder        'function' (>=1.21, format-48 rename) | 'functions' (<=1.20.6)
+#   packmeta_shape         'single' (<=1.21.8) | 'minmax' (>=1.21.9 / 25w31a: pack.mcmeta
+#                          uses min_format/max_format; a single pack_format is silently
+#                          disabled by MC there)
+#   sign_dialect           'component_string' (1.20..1.21.4: messages are JSON-text STRINGS)
+#                          'component_snbt'   (>=1.21.5: messages are SNBT COMPOUNDS, not
+#                          strings — the old form renders as literal text on the sign)
+#   has_tick_rate          /tick rate exists (>=1.20.3); False => tick80 model impossible
+#                          => get_version_profile HARD-REFUSES (the honest floor)
+#   tier                   'green'  fully auto (1.21..1.21.9): data + resourcepack + mod
+#                                   (number-only recompile)
+#                          'yellow' data/resourcepack auto, but the mod needs a Java
+#                                   source-port (<1.21 scoreboard API) — OUT OF auto scope
+#                          'red'    below the tick-rate floor (<=1.20.2) — refused
 VERSION_TABLE = {
-    "1.20.4":  (26, 22, "functions", "high",
-                "last pre-rename line; plural folders functions/, tags/functions/"),
-    "1.21":    (48, 34, "function",  "high",
-                "24w21a/format 48: folders renamed to SINGULAR function/, tags/function/, "
-                "advancement/, predicate/, loot_table/"),
-    "1.21.1":  (48, 34, "function",  "high",  "same as 1.21"),
-    "1.21.2":  (57, 42, "function",  "high",  ""),
-    "1.21.3":  (57, 42, "function",  "high",  ""),
-    "1.21.4":  (61, 46, "function",  "high",  ""),
-    "1.21.5":  (71, 55, "function",  "high",  ""),
-    "1.21.6":  (80, 63, "function",  "high",  ""),
-    "1.21.7":  (81, 64, "function",  "high",  ""),
-    "1.21.8":  (81, 64, "function",  "high",
-                "ANCHORED: matches poc generators (dp 81) + poc/02e resourcepack (rp 64). "
-                "Project target."),
-    "1.21.9":  (88, 69, "function",  "low",
-                "25w31a+ switched to min_format/max_format; single pack_format deprecated. "
-                "Numbers approximate — verify before use."),
+    # ── red: below the /tick rate floor (1.20.3). Present only so the refusal can
+    #    name the real reason instead of a generic "unknown version". ──
+    "1.20":    _vrow(15, 15, "functions", "single", "component_string", False, "red", "high",
+                     "no /tick rate (added 1.20.3) -> the tick80 timing model is impossible"),
+    "1.20.1":  _vrow(15, 15, "functions", "single", "component_string", False, "red", "high",
+                     "see 1.20 (below the /tick rate floor)"),
+    "1.20.2":  _vrow(18, 18, "functions", "single", "component_string", False, "red", "high",
+                     "see 1.20 (below the /tick rate floor)"),
+    # ── yellow: data adapts, but the mod needs a <1.21 scoreboard source-port. ──
+    "1.20.3":  _vrow(26, 22, "functions", "single", "component_string", True,  "yellow", "high",
+                     "the /tick rate floor; datapack OK but the mod needs a scoreboard source-port"),
+    "1.20.4":  _vrow(26, 22, "functions", "single", "component_string", True,  "yellow", "high",
+                     "plural folders functions/, tags/functions/; mod needs scoreboard port + Java 17"),
+    "1.20.5":  _vrow(41, 32, "functions", "single", "component_string", True,  "yellow", "high",
+                     "mod needs a <1.21 scoreboard source-port"),
+    "1.20.6":  _vrow(41, 32, "functions", "single", "component_string", True,  "yellow", "high",
+                     "mod needs a <1.21 scoreboard source-port"),
+    # ── green: fully auto. Singular function/ folder (format-48 rename at 1.21). ──
+    "1.21":    _vrow(48, 34, "function",  "single", "component_string", True,  "green", "high",
+                     "24w21a/format 48: folders renamed to SINGULAR function/, tags/function/, etc."),
+    "1.21.1":  _vrow(48, 34, "function",  "single", "component_string", True,  "green", "high", "same as 1.21"),
+    "1.21.2":  _vrow(57, 42, "function",  "single", "component_string", True,  "green", "high", ""),
+    "1.21.3":  _vrow(57, 42, "function",  "single", "component_string", True,  "green", "high", ""),
+    "1.21.4":  _vrow(61, 46, "function",  "single", "component_string", True,  "green", "high",
+                     "LAST version using JSON-string sign text components (1.21.5 -> SNBT)"),
+    "1.21.5":  _vrow(71, 55, "function",  "single", "component_snbt",   True,  "green", "high",
+                     "text components became SNBT compounds in NBT -> sign dialect flips here"),
+    "1.21.6":  _vrow(80, 63, "function",  "single", "component_snbt",   True,  "green", "high", ""),
+    "1.21.7":  _vrow(81, 64, "function",  "single", "component_snbt",   True,  "green", "high",
+                     "last release using a single pack_format (1.21.9 -> min/max)"),
+    "1.21.8":  _vrow(81, 64, "function",  "single", "component_snbt",   True,  "green", "high",
+                     "ANCHORED: user-verified in-game; dp 81 / rp 64. Verified default."),
+    "1.21.9":  _vrow(88, 69, "function",  "minmax", "component_snbt",   True,  "green", "high",
+                     "25w31a: pack.mcmeta uses min_format/max_format (single pack_format disabled). "
+                     "dp 88 / rp 69 (verified)."),
 }
 
 
 class VersionProfile:
-    """Resolved per-MC-version format/folder facts. Single source of truth for
-    pack_format numbers and the 1.21 plural->singular folder rename."""
+    """Resolved per-MC-version facts. Single source of truth for pack_format numbers,
+    the 1.21 plural->singular folder rename, the pack.mcmeta shape (single vs min/max),
+    the sign-NBT dialect, the tick-rate/timing capability, and the support tier."""
 
     __slots__ = ("mc_version", "dp_format", "rp_format", "function_folder",
-                 "tag_function_folder", "confidence", "notes")
+                 "tag_function_folder", "packmeta_shape", "sign_dialect",
+                 "has_tick_rate", "has_return_cmd", "tier", "tps",
+                 "game_ticks_per_cell", "confidence", "notes")
 
-    def __init__(self, mc_version, dp_format, rp_format, function_folder,
-                 confidence, notes):
+    def __init__(self, mc_version, row):
         self.mc_version = mc_version
-        self.dp_format = dp_format
-        self.rp_format = rp_format
-        self.function_folder = function_folder
+        self.dp_format = row["dp_format"]
+        self.rp_format = row["rp_format"]
+        self.function_folder = row["function_folder"]
         # the tags/<x>/ segment follows the same singular/plural rename
-        self.tag_function_folder = function_folder
-        self.confidence = confidence
-        self.notes = notes
+        self.tag_function_folder = row["function_folder"]
+        self.packmeta_shape = row["packmeta_shape"]
+        self.sign_dialect = row["sign_dialect"]
+        self.has_tick_rate = row["has_tick_rate"]
+        self.has_return_cmd = row["has_return_cmd"]
+        self.tier = row["tier"]
+        self.tps = TPS
+        self.game_ticks_per_cell = GAME_TICKS_PER_CELL
+        self.confidence = row["confidence"]
+        self.notes = row["notes"]
 
     @property
     def uses_minmax(self):
-        """1.21.9+ uses pack.mcmeta min_format/max_format; single pack_format is
-        deprecated there. Not yet truly supported (write_pack_mcmeta warns)."""
-        return self.mc_version >= "1.21.9"
+        """1.21.9+ (25w31a) uses pack.mcmeta min_format/max_format; a single
+        pack_format is silently disabled there. Now fully emitted (write_pack_mcmeta)."""
+        return self.packmeta_shape == "minmax"
 
     def __repr__(self):
         return (f"VersionProfile({self.mc_version}, dp={self.dp_format}, "
                 f"rp={self.rp_format}, folder={self.function_folder!r}, "
-                f"conf={self.confidence})")
+                f"packmeta={self.packmeta_shape}, sign={self.sign_dialect}, "
+                f"tier={self.tier}, conf={self.confidence})")
 
 
 def get_version_profile(mc_version):
-    """The ONLY accessor for pack_format / folder facts. Raises on an unknown
-    version — never guesses (CONTRACT §1.9). Nothing else in the codebase may
-    hardcode a pack_format or folder name."""
+    """The ONLY accessor for pack_format / folder / dialect facts. Pure fact-resolver
+    (CONTRACT §1.9): never guesses. RAISES on an unknown version, and on any version
+    below the /tick rate floor (<=1.20.2, has_tick_rate=False) where the tick80 timing
+    model cannot work. Resolving SUCCEEDS for every known buildable version including
+    the 'yellow' 1.20.3..1.20.6 band — the green-band *build policy* is enforced
+    separately by assert_build_supported(), so these facts stay queryable (e.g. for the
+    plural-folder rename) without implying the mod exists there."""
     row = VERSION_TABLE.get(mc_version)
     if row is None:
         raise RedPianoError(
             f"unknown mc_version {mc_version}; add it to VERSION_TABLE "
             f"(source dp/rp format from https://minecraft.wiki/w/Pack_format)"
         )
-    dp_format, rp_format, function_folder, confidence, notes = row
-    if confidence == "low":
-        log.warning("mc_version %s has LOW-confidence format data: %s",
-                    mc_version, notes)
-    profile = VersionProfile(mc_version, dp_format, rp_format, function_folder,
-                             confidence, notes)
-    # 1.21.9+ switched pack.mcmeta to min_format/max_format; a single pack_format is
-    # SILENTLY DISABLED by MC (= total silence). We don't emit min/max yet, so hard-fail
-    # rather than hand the user a build that won't load. (Honest > a silent footgun.)
-    if profile.uses_minmax:
+    if not row["has_tick_rate"]:
+        # The hard floor: no /tick rate (added 1.20.3) -> the game is locked at 20 TPS
+        # and the samples are tuned for tick80, so playback is 4x too slow with the
+        # repeater geometry physically baked at 0.025s/cell. Not a config knob — refuse.
         raise RedPianoError(
-            f"mc_version {mc_version} (>=1.21.9) needs pack.mcmeta min_format/max_format, "
-            f"which this skill does not emit yet — a single pack_format={dp_format} would be "
-            f"silently disabled by MC. Use 1.21.8 (the project target) until min/max is added."
+            f"mc_version {mc_version} predates the /tick rate command (added 1.20.3) and "
+            f"`return` control flow; the RedPiano timing model runs the game at {TPS} TPS "
+            f"and the samples are tuned for it, so on {mc_version} playback would be "
+            f"{TPS // 20}x too slow with no way to correct it. 1.20.3 is the hard floor — "
+            f"use 1.21.8 (the verified default)."
         )
-    return profile
+    if row["confidence"] == "low":
+        log.warning("mc_version %s has LOW-confidence format data: %s",
+                    mc_version, row["notes"])
+    return VersionProfile(mc_version, row)
+
+
+def assert_build_supported(profile):
+    """Enforce the skill's supported auto-build band (green = 1.21..1.21.9). 'yellow'
+    versions (1.20.3..1.20.6) resolve their datapack facts fine, but the RedPiano mod
+    is NOT auto-supported below 1.21 (the scoreboard config API changed; it needs a
+    small Java source-port + Java 17), so refuse cleanly rather than hand out a
+    datapack with no mod behind it. To opt into yellow: port + recompile the mod (see
+    docs/MOD_ARCHITECTURE.md §6) and relax this guard. 'red' is already refused upstream
+    in get_version_profile (the /tick rate floor)."""
+    if profile.tier == "yellow":
+        raise RedPianoError(
+            f"mc_version {profile.mc_version} is in the 'yellow' band: the datapack and "
+            f"resourcepack adapt automatically, but the RedPiano mod is not auto-supported "
+            f"below 1.21 (the scoreboard config API changed; it needs a small Java "
+            f"source-port + Java 17). This skill's supported auto range is 1.21..1.21.9 — "
+            f"use a 1.21.x version, or port+recompile the mod per docs/MOD_ARCHITECTURE.md "
+            f"§6 and remove this guard."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,9 +258,18 @@ class Datapack:
 
     def write_pack_mcmeta(self, description):
         """Write pack.mcmeta with the profile's dp_format (NEVER hardcoded 81),
-        indent=2 (poc/45 L135). 1.21.9+ (min_format/max_format) is rejected upstream
-        in get_version_profile, so dp_format here is always a valid single pack_format."""
-        meta = {"pack": {"pack_format": self.dp_format, "description": description}}
+        indent=2 (poc/45 L135). The SHAPE is profile-driven: <=1.21.8 use a single
+        `pack_format`; >=1.21.9 (25w31a) use `min_format`/`max_format` (a single
+        pack_format is silently disabled by MC there -> total silence)."""
+        if self.profile.packmeta_shape == "minmax":
+            # 1.21.9+: single pack_format is rejected; emit min/max (same number for
+            # both, = support exactly this format). description first to mirror the
+            # 1.21.9 pack.mcmeta example shape.
+            meta = {"pack": {"description": description,
+                             "min_format": self.dp_format,
+                             "max_format": self.dp_format}}
+        else:
+            meta = {"pack": {"pack_format": self.dp_format, "description": description}}
         # pack.mcmeta is a raw JSON file at the root (not via write(), which adds \n);
         # keep indent=2 like the poc.
         p = os.path.join(self.root, "pack.mcmeta")
@@ -304,24 +405,49 @@ class Grid:
 # §1.3  Sign / button helpers — exactly-4-line ASSERTION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def sign_messages(lines):
-    """Minecraft signs have exactly 4 lines. Assert 0 < len(lines) <= 4 and pad to
-    4 with empty strings, producing the JSON-text-component CSV used in
+def sign_messages(lines, dialect="component_string"):
+    """Minecraft signs have exactly 4 lines. Assert 0 < len(lines) <= 4 and pad to 4
+    with empty strings, producing the per-line text-component CSV used inside
     oak_sign{front_text:{messages:[...]}} (poc/45 L157). >4 lines -> RedPianoError
-    (the poc silently truncates with [:4]; the contract UPGRADES this to a hard
-    assert so over-long labels are caught at generation time)."""
+    (the poc silently truncated with [:4]; the contract UPGRADES this to a hard assert).
+
+    The serialization of each entry is VERSION-DEPENDENT (the profile.sign_dialect
+    field — see VERSION_TABLE):
+
+      'component_string'  (MC 1.20 .. 1.21.4): each entry is a JSON-text STRING,
+                          e.g.  '{"text":"hi"}'  — wrapped in single quotes so it is an
+                          SNBT string whose contents are parsed as a JSON component.
+      'component_snbt'    (MC >= 1.21.5): text components became NBT, so each entry is an
+                          SNBT COMPOUND, e.g.  {"text":"hi"}  (NO wrapping quotes). On
+                          1.21.5+ the old quoted form renders as LITERAL text on the sign
+                          (a cosmetic bug), so the dialect MUST flip at 1.21.5.
+
+    Generators pass profile.sign_dialect; the default keeps the historical 1.20..1.21.4
+    string form for any caller that does not (e.g. the self-test)."""
     if not (0 < len(lines) <= 4):
         raise RedPianoError(f"sign needs <=4 lines, got {len(lines)}")
     padded = (list(lines) + ["", "", "", ""])[:4]
-    return ",".join('\'{"text":"%s"}\'' % s for s in padded)
+    if dialect == "component_snbt":
+        # >=1.21.5: SNBT compound entries — {"text":"..."} with no wrapping quotes.
+        return ",".join('{"text":"%s"}' % s for s in padded)
+    if dialect == "component_string":
+        # 1.20..1.21.4: JSON-text string entries — '{"text":"..."}'.
+        return ",".join('\'{"text":"%s"}\'' % s for s in padded)
+    raise RedPianoError(
+        f"unknown sign dialect {dialect!r} (expected 'component_string' for 1.20..1.21.4 "
+        f"or 'component_snbt' for >=1.21.5; legacy <1.20 signs are below the tick-rate floor)"
+    )
 
 
-def labeled_button(bx, y, oz, cmd, lines, lamp="minecraft:redstone_lamp"):
+def labeled_button(bx, y, oz, cmd, lines, *, sign_dialect="component_string",
+                   lamp="minecraft:redstone_lamp"):
     """Emit the 5-block console widget verbatim from poc/45 ``lbtn`` (L156-162):
     lamp at Y-1,oz; command_block[facing=up]{Command:"<cmd>",auto:0b} at Y,oz;
     stone_button[face=floor] at Y+1,oz; lamp at Y-1,oz-2; oak_sign at Y,oz-2 with
-    sign_messages(lines)."""
-    msgs = sign_messages(lines)
+    sign_messages(lines). ``sign_dialect`` (profile.sign_dialect) selects the sign-NBT
+    serialization so console signs render correctly on the target version (string form
+    1.20..1.21.4, SNBT-compound form >=1.21.5)."""
+    msgs = sign_messages(lines, sign_dialect)
     return [
         f"setblock {bx} {y - 1} {oz} {lamp}",
         f'setblock {bx} {y} {oz} minecraft:command_block[facing=up,conditional=false]'
@@ -751,14 +877,32 @@ if __name__ == "__main__":
             return
         raise AssertionError(f"{label}: expected RedPianoError, none raised")
 
-    # ── version profile ──────────────────────────────────────────────────────
+    # ── version profile (single source of truth) ─────────────────────────────
     prof = get_version_profile("1.21.8")
     assert prof.dp_format == 81 and prof.rp_format == 64, prof
     assert prof.function_folder == "function" and prof.tag_function_folder == "function"
+    assert prof.packmeta_shape == "single" and prof.sign_dialect == "component_snbt"
+    assert prof.tier == "green" and prof.has_tick_rate and prof.tps == 80
     print("ok: 1.21.8 profile", prof)
-    prof2 = get_version_profile("1.20.4")
-    assert prof2.dp_format == 26 and prof2.function_folder == "functions", prof2
-    print("ok: 1.20.4 profile (plural folders)", prof2)
+    # 1.21.4 = last JSON-string sign dialect; 1.21.5 flips to SNBT.
+    assert get_version_profile("1.21.4").sign_dialect == "component_string"
+    assert get_version_profile("1.21.5").sign_dialect == "component_snbt"
+    print("ok: sign dialect flips component_string -> component_snbt at 1.21.5")
+    # 1.21.9 now RESOLVES (no longer blanket-rejected) with the min/max packmeta shape.
+    prof9 = get_version_profile("1.21.9")
+    assert prof9.dp_format == 88 and prof9.rp_format == 69 and prof9.uses_minmax, prof9
+    print("ok: 1.21.9 profile (min/max pack.mcmeta)", prof9)
+    # yellow band: facts resolve, but the build policy refuses (mod not auto <1.21).
+    prof_y = get_version_profile("1.20.4")
+    assert prof_y.dp_format == 26 and prof_y.function_folder == "functions" and prof_y.tier == "yellow"
+    print("ok: 1.20.4 profile resolves (plural folders, yellow tier)", prof_y)
+    expect_raise(lambda: assert_build_supported(prof_y),
+                 "yellow", "yellow band refused by build policy")
+    assert_build_supported(prof)   # green passes silently
+    assert_build_supported(prof9)  # 1.21.9 green passes silently
+    # red band: below the /tick rate floor -> refuse with the timing reason.
+    expect_raise(lambda: get_version_profile("1.20.2"),
+                 "tick rate", "below tick-rate floor (1.20.2)")
     expect_raise(lambda: get_version_profile("9.9.9"),
                  "unknown mc_version", "unknown version")
 
@@ -774,13 +918,23 @@ if __name__ == "__main__":
     assert g.bbox() == (0, 0, 0, 0)
     print("ok: bbox", g.bbox())
 
-    # ── sign 4-line assert ───────────────────────────────────────────────────
+    # ── sign 4-line assert + version-aware dialect ───────────────────────────
     assert sign_messages(["a", "b"]).count("text") == 4
     expect_raise(lambda: sign_messages(["1", "2", "3", "4", "5"]),
                  "sign needs <=4 lines", "over-long sign")
-    btn = labeled_button(10, 255, 0, "function ns:play", ["[play]"])
+    # dialect: 1.20..1.21.4 wraps each entry in single quotes (JSON string); 1.21.5+
+    # drops them (SNBT compound). The ONLY difference is the wrapping quotes.
+    s_str = sign_messages(["[play]"], "component_string")
+    s_snbt = sign_messages(["[play]"], "component_snbt")
+    assert s_str.startswith("'{") and "'" in s_str, s_str
+    assert s_snbt.startswith('{"text"') and "'" not in s_snbt, s_snbt
+    expect_raise(lambda: sign_messages(["x"], "legacy"), "unknown sign dialect",
+                 "unknown sign dialect rejected")
+    btn = labeled_button(10, 255, 0, "function ns:play", ["[play]"],
+                         sign_dialect="component_snbt")
     assert len(btn) == 5 and "command_block" in btn[1]
-    print("ok: labeled_button 5 blocks; sign asserts <=4 lines")
+    assert "'" not in btn[4], btn[4]   # SNBT-compound sign has no wrapping quotes
+    print("ok: labeled_button 5 blocks; sign dialect string/snbt; <=4 lines")
 
     # ── instrument map + octave-shift resolver ───────────────────────────────
     imap = InstrumentMap.load()
@@ -860,9 +1014,16 @@ if __name__ == "__main__":
         assert os.path.isfile(os.path.join(dp.root, "data", "testns", "function", "load.mcfunction"))
         assert os.path.isfile(os.path.join(dp.root, "data", "minecraft", "tags", "function", "load.json"))
         meta = json.load(open(os.path.join(dp.root, "pack.mcmeta")))
-        assert meta["pack"]["pack_format"] == 81
-        print("ok: Datapack writes profile-driven singular folders + dp_format 81")
-        # pre-1.21 -> plural folders
+        assert meta["pack"]["pack_format"] == 81 and "min_format" not in meta["pack"]
+        print("ok: Datapack writes profile-driven singular folders + single dp_format 81")
+        # 1.21.9 -> min_format/max_format pack.mcmeta (single pack_format would be disabled)
+        dp9 = Datapack("ns9", "V9", td, "1.21.9")
+        dp9.write_pack_mcmeta("v9 pack")
+        meta9 = json.load(open(os.path.join(dp9.root, "pack.mcmeta")))
+        assert meta9["pack"]["min_format"] == 88 and meta9["pack"]["max_format"] == 88
+        assert "pack_format" not in meta9["pack"]
+        print("ok: 1.21.9 Datapack writes min_format/max_format (88)")
+        # pre-1.21 -> plural folders (facts resolve even though the build policy is green-only)
         dp2 = Datapack("oldns", "Old", td, "1.20.4")
         dp2.write_load_tick_tags()
         dp2.write_function("load", ["say hi"])

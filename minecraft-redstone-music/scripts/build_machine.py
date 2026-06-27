@@ -157,7 +157,7 @@ def _summarize_notes(notes):
     return fam_counts, (min(midis), max(midis)), dur_s
 
 
-def _print_report(args, notes, stats, deployed_to):
+def _print_report(args, notes, stats, deployed_to, profile=None):
     """Print a clean stats summary + the in-game next-steps. Mirrors the poc
     stdout summaries (palette/cells, dropped, octave-shifted, cut count + median,
     forceload chunks, song length, all WARNs)."""
@@ -170,6 +170,14 @@ def _print_report(args, notes, stats, deployed_to):
     print("=" * 64)
     print(f"  namespace      : {args.ns}")
     print(f"  mc-version     : {args.mc_version}")
+    if profile is not None:
+        # Make the version self-sync VISIBLE: every format/dialect below was derived
+        # from the one --mc-version flag, not hardcoded.
+        pf = (f"min/max {profile.dp_format}" if profile.packmeta_shape == "minmax"
+              else f"pack_format {profile.dp_format}")
+        print(f"  version profile: dp {pf} · rp {profile.rp_format} · "
+              f"folder {profile.function_folder}/ · sign {profile.sign_dialect} · "
+              f"tier {profile.tier}")
     print(f"  origin (X Z Y) : {args.origin[0]} {args.origin[1]} {args.origin[2]}")
     print("")
     print(f"  notes          : {stats.get('note_count', len(notes))}"
@@ -312,8 +320,11 @@ def run(args):
     if args.name is None:
         args.name = os.path.splitext(os.path.basename(args.midi))[0] or "untitled"
 
-    # 1. version profile — fail fast on unknown version.
+    # 1. version profile — fail fast on unknown version / below the /tick rate floor,
+    #    then enforce the supported auto-build band (green 1.21..1.21.9; 'yellow'
+    #    1.20.x resolves its datapack facts but the mod isn't auto-supported there).
     profile = core.get_version_profile(args.mc_version)
+    core.assert_build_supported(profile)
 
     # 2. params — fail fast on cross-form / slice / custom.
     params = load_params(args.params if args.params is not None else {}, args.form)
@@ -390,7 +401,7 @@ def run(args):
                 "song": args.name,
                 "origin": stats.get("playhead_origin",
                                     [args.origin[0], args.origin[2], args.origin[1]]),
-                "tps": 80,
+                "tps": profile.tps,
                 "notes": pcells,
             }, f, ensure_ascii=False, indent=1)
 
@@ -399,7 +410,7 @@ def run(args):
     deployed_to = None
     if deploy_dir is not None:
         deployed_to = stats.get("deployed_to") or os.path.join(deploy_dir, args.ns)
-    _print_report(args, notes, stats, deployed_to)
+    _print_report(args, notes, stats, deployed_to, profile)
     if coords_path:
         print(f"  particle coords : {coords_path}")
         print(f"    -> load into designer/particle_editor.html (导入机器坐标) for")

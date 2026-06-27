@@ -1,7 +1,9 @@
 # QUICKSTART — build & play a redstone music machine
 
 End-to-end checklist to go from a `.mid` file to music playing in Minecraft, using
-the **RedPiano (Family A)** pipeline. Project target: **Minecraft 1.21.8**.
+the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**; any
+**1.21.x up to 1.21.9** works — one `--mc-version` flag adapts `pack_format`, folders,
+`pack.mcmeta` shape, and sign dialect from the version table.
 
 ---
 
@@ -11,24 +13,36 @@ the **RedPiano (Family A)** pipeline. Project target: **Minecraft 1.21.8**.
 >
 > 1. **资源包 `qzpno_mv` 是否在「选项 → 资源包」手动启用?**
 >    格式不符时 MC 会**静默禁用**该包 → 所有 `qzpno:` 音效变成 "unknown soundEvent" → **全静音**。
->    确认它在「已选用」一侧;若不在,多半是 `pack_format` 不对(1.21.8 应为 **64**)。
->    获取/重打包资源包见 **[BINARIES.md](BINARIES.md)**。
+>    确认它在「已选用」一侧;若不在,多半是 `rp_format` 不对(1.21.8 行为 **64**;
+>    其它版本由 `--mc-version` 从版本表自动取值)。获取/重打包资源包见
+>    **[BINARIES.md](BINARIES.md)**,或用 `scripts/build_resourcepack.py` 在 skill 内按版本重打包。
 > 2. **`/tick rate 80` 是否设了?**
 >    忘了 = 播放约 **4 倍慢** + 旋律截断(melody-cut)时序失准。**按[播放]会自动触发一个命令方块运行
 >    `/tick rate 80`**(无需手输);若仍听到异常慢,在游戏里手动设一次 `/tick rate 80` 确认。
 > 3. **RedPiano 模组 jar 是否在 `mods/` 且已重启 MC?**
 >    换 jar 必须**完整重启** Minecraft(`/reload` 不够)。还需 Fabric Loader + Fabric API + Java 21。
+>
+> 注:在 **1.21.5+**(含默认的 1.21.8),控制台告示牌的文本现用 **SNBT** 方言(修掉了旧引号格式
+> 在新版渲染成字面文本的潜伏 bug);方言在 1.21.5 自动切换。
 
 ---
 
 ## 0. One-time install (runtime stack)
 
-1. Install **Fabric Loader + Fabric API + Java 21** for Minecraft **1.21.8**.
+1. Install **Fabric Loader + Fabric API + Java 21** for Minecraft **1.21.8**
+   (the verified default). For another `1.21.x` target, run
+   `python scripts/mod_build.py --mc-version <ver>` to print the verified toolchain
+   (fabric-loom / fabric-loader / fabric-api / Java) for that version.
 2. Put the **RedPiano mod jar** in `mods/`. **Restart Minecraft.**
    (The jar is not in this folder — see [BINARIES.md](BINARIES.md) to obtain/build it.)
+   The mixin binds to **internal NoteBlock bytecode**, so every target version still needs
+   a **recompiled jar plus one in-game listen** — within `1.21.x` the retarget is
+   number-only (`scripts/mod_build.py --write`), no Java source edits.
 3. Put **`qzpno_mv.zip`** in `resourcepacks/` and **enable it** in
    Options → Resource Packs (drag it to the right-hand "Selected" column).
-   (Not in this folder — see [BINARIES.md](BINARIES.md); `rp_format=64` for 1.21.8.)
+   (Not in this folder — see [BINARIES.md](BINARIES.md); `rp_format=64` is the **1.21.8** row,
+   other versions derive from the version table.) Repack it for any version in the skill with
+   `python scripts/build_resourcepack.py --mc-version <ver> --samples-root <dir> --out qzpno_mv.zip`.
 4. Confirm the world allows command blocks / has cheats on (the machine uses
    command blocks and mass `setblock`).
 

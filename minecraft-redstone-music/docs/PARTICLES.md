@@ -32,7 +32,8 @@ python scripts/build_particles.py
        --ns qlxfx                           # 数据包命名空间
        [--music-ns qlxm]                    # 音乐机器 NS → 自动跟随其 [播放] 触发
        [--offset-gt 0]                      # 整体游戏刻偏移(粒子领先/滞后时校准)
-       [--mc-version 1.21.8]                # 版本表驱动 pack_format, 未知版本拒建
+       [--mc-version 1.21.8]                # 版本表驱动 pack_format/牌子 NBT; 默认 1.21.8(实测锚点)
+                                            #   支持自动带 1.21..1.21.9; 1.20.3-1.20.6/未知版本拒建(assert_build_supported)
        [--console-origin X Y Z]             # 控制台牌子位置(默认布局 origin, Z-6)
        [--world-dir <world>/datapacks]      # 给了才部署; 默认只写 build/
 ```
@@ -49,7 +50,7 @@ python scripts/build_particles.py
 - **用 `schedule function` 而非物理命令方块计时:** 物理命令方块要红石时钟 + 每刻选择逻辑、脆弱;调度函数是精确、稳健的等价物 —— 每个关键帧 = `schedule function <NS>:k/<id> <Δt>t`,落在各自游戏刻。编辑器里的"命令方块"(类型/坐标/命令)1:1 映射为一条调度命令(`type` 透传,v1 各触发一次;要循环就多打关键帧)。
 - **PF 守卫:** `fire` 置 `PF=1` 并调度全部;每个 `k/<id>` 用 `execute if score PF <NS> matches 1 run …` 包裹;`stop` 置 `PF=0` 并 `schedule clear` 全部 → 可干净停止/重播。
 - **坐标(单一真相):** 走线形态的对位光标**直接取自生成器导出的 `<NS>_coords.json`**(每个触发格 track-0 旋律音符盒的真实世界坐标),编辑器不再自己重算走线(早期 JS 重算与生成器漂移过, swave 上偏 1~3 格)。编辑器导出的 `pos` 已是绝对世界坐标(相对块按该帧真实 playhead 解析),生成器直接 `execute positioned X Y Z run <命令>`。注意 `positioned` 只设锚点:命令体写死绝对坐标会忽略锚点,故相对块用 `~ ~ ~`。
-- **鲁棒性复用 redpiano_core:** pack_format/文件夹来自版本表(未知版本硬失败,不硬编码);中文 tellraw/牌子写 UTF-8;默认 `--no world-dir` 不部署。
+- **鲁棒性复用 redpiano_core:** pack_format/文件夹/牌子 NBT 方言均来自版本表 `get_version_profile`(不硬编码),并经 `assert_build_supported()` 把关 —— 1.20.3-1.20.6/未知版本硬失败,1.21.9 经 min/max pack.mcmeta 支持(详见 [CONTRACT](CONTRACT.md));中文 tellraw/牌子写 UTF-8(1.21.5+ 的控制台牌子改用 SNBT compound NBT 方言,避免旧引号形式被当字面量渲染);默认 `--no world-dir` 不部署。
 
 ## 导出 schema(particle_keyframes v1)
 ```jsonc

@@ -513,24 +513,39 @@ The mod jar contains **no** `pack.mcmeta` and is version-range-gated only by
 which DO change every MC version — are owned exclusively by
 `scripts/redpiano_core.py`:
 
-- `VERSION_TABLE` (`redpiano_core.py:43-62`) maps `mc_version →
-  (dp_format, rp_format, function_folder, confidence, notes)`. Anchored row:
-  `"1.21.8": (81, 64, "function", "high", …)` (`:56-58`) — dp=81, rp=64,
-  **singular** `function/` folder.
-- `get_version_profile(mc_version)` (`:95-105`) is the **only** accessor; it
-  **raises** on an unknown version (never guesses). Nothing else may hardcode a
-  `pack_format` or folder name (CONTRACT §1.9).
-- The **1.21 plural→singular rename**: ≤1.20.4 used `functions/`,
-  `tags/functions/`; 1.21+ uses singular `function/`, `tags/function/`
-  (`VERSION_TABLE` rows `:44-48`).
-- **1.21.9+ caveat:** `uses_minmax` (`:83-87`) flags that 25w31a+ replaced single
-  `pack_format` with `min_format`/`max_format`; the `1.21.9` row is marked
-  `confidence:"low"` (`:59-61`) and `write_pack_mcmeta` only **warns** and writes
-  a best-effort single format. True min/max support is future work.
+- `VERSION_TABLE` (built by `_vrow`, `redpiano_core.py:86-122`) maps each
+  `mc_version` to a **rich record** — `dp_format, rp_format, function_folder,
+  packmeta_shape, sign_dialect, has_tick_rate, has_return_cmd, tier, confidence,
+  notes` (plus `tps`/`game_ticks_per_cell` surfaced on the profile). Anchored row:
+  `"1.21.8": _vrow(81, 64, "function", "single", "component_snbt", True, "green",
+  "high", …)` (`:117-118`) — dp=81, rp=64, **singular** `function/`, single
+  `pack_format`, SNBT sign dialect. Rows span **1.20..1.21.9**.
+- `get_version_profile(mc_version)` (`:165-193`) is the **only** accessor; it
+  **raises** on an unknown version (never guesses) and on any version below the
+  `/tick rate` floor (`has_tick_rate==False`, ≤1.20.2). `assert_build_supported`
+  (`:196-…`) then enforces the green band (1.21..1.21.9), refusing the "yellow"
+  1.20.3..1.20.6 rows (datapack adapts but the mod needs a `<1.21` source-port).
+  Nothing else may hardcode a `pack_format` or folder name (CONTRACT §1.9).
+- The **1.21 plural→singular rename** (format 48): **≤1.20.6** used `functions/`,
+  `tags/functions/`; **1.21+** uses singular `function/`, `tags/function/`.
+- **1.21.9+ (25w31a):** the `packmeta_shape` field is `"minmax"`, and
+  `write_pack_mcmeta` **emits** `{"pack":{"min_format":N,"max_format":N,…}}` for
+  those rows (a single `pack_format` is silently disabled there). `uses_minmax`
+  (`:152-156`) is just `packmeta_shape=="minmax"`. So **1.21.9 is SUPPORTED**
+  (dp 88 / rp 69, `confidence:"high"`) — the format is verified; only the in-game
+  listen remains.
 
-**To port:** add the target MC row to `VERSION_TABLE` with dp/rp numbers from
-<https://minecraft.wiki/w/Pack_format>, set the right folder singular/plural,
-and an honest `confidence`. Do **not** touch the mod for this.
+**To port within the supported band:** the row usually already exists. To add a new
+MC row, give `_vrow` the dp/rp numbers from <https://minecraft.wiki/w/Pack_format>,
+the right folder singular/plural, `packmeta_shape` (`single`/`minmax`), `sign_dialect`
+(`component_string` <1.21.5 / `component_snbt` ≥1.21.5), `has_tick_rate`, `tier`, and
+an honest `confidence`. Do **not** touch the mod for this — but DO use the two
+companion CLIs: `scripts/build_resourcepack.py --mc-version <v> --samples-root <dir>`
+repacks `qzpno_mv` with the version's `rp_format` + pack.mcmeta shape (a de-hardcoded
+port of `poc/02e`), and `scripts/mod_build.py --mc-version <v> [--write]` prints (or
+applies into `mod/redpiano/gradle.properties` + `build.gradle`) the verified mod
+toolchain. `mod_build.py` does **not** run gradle and does not widen the tested
+`fabric.mod.json` range — a recompiled jar still needs one in-game listen.
 
 ### 6.5 Reproducibility gap — the missing gradle wrapper (call-out + fix)
 

@@ -1,8 +1,11 @@
 # minecraft-redstone-music
 
-Turn a **MIDI file** into a **Minecraft (Java 1.21.8) redstone-music machine**: this tool
+Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**: this tool
 emits a self-contained **datapack** that drives real **note blocks** through the **RedPiano**
-mod, playing your song with sampled instruments (piano / bass / lead / pad / drums).
+mod, playing your song with sampled instruments (piano / bass / lead / pad / drums). One
+`--mc-version` flag self-syncs the whole output (datapack + resourcepack + mod-build config) to
+your target. The supported auto band is **1.21 … 1.21.9** (1.21.9 via min/max `pack.mcmeta`);
+**1.21.8 is the verified default & anchor**.
 
 > **For any agent, on any platform.** This is a plain, self-contained folder + one Python
 > CLI. There is **no special "skill" loader, registry, or env var** to set up — you read these
@@ -27,7 +30,10 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
   is the recommended default for the full "playhead travels the line" machine. Other forms:
   `straight`, `custom`, `multilane` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
 - `--ns` datapack namespace (also the scoreboard name). `--origin X Z Y` is the world build
-  origin (note the order: **X Z Y**). `--mc-version` must be `1.21.8` (the supported target).
+  origin (note the order: **X Z Y**). `--mc-version` is any version in the supported auto band
+  **1.21 … 1.21.9** (defaults to the verified `1.21.8` anchor); pack_format, function-folder name,
+  `pack.mcmeta` shape and sign-NBT dialect all auto-derive from the version table. An unknown
+  version still **hard-fails** ("never guess").
 - The datapack is written to `build/<ns>/`. Add `--world-dir "<world>/datapacks"` to deploy it
   straight into a world (otherwise copy `build/<ns>/` there yourself). Deploy is opt-in.
 - The script prints a stats report **and the exact in-game next steps**. Read them back to the user.
@@ -50,7 +56,9 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
 |---|---|
 | `scripts/build_machine.py` | the build CLI (this is the entry point you run) |
 | `scripts/build_particles.py` | optional: music-synced particle/command tracks (see docs/PARTICLES.md) |
-| `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (no need to touch) |
+| `scripts/build_resourcepack.py` | optional: version-driven `qzpno_mv` resourcepack repack (`--mc-version`; samples ship separately, see BINARIES.md) |
+| `scripts/mod_build.py` | optional: prints (or `--write` applies) the verified mod toolchain per `--mc-version` (does not run gradle) |
+| `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (`VERSION_TABLE` in `redpiano_core.py` is the single source of truth for per-version facts) |
 | `assets/demo.mid`, `assets/redpiano_map_multi.json` | bundled test MIDI + the 103-block instrument map |
 | `designer/*.html` | browser tools to customize routing + particle placement (optional) |
 | `SKILL.md` | the agent-onboarding flow (collect inputs → pick form → build → install) |

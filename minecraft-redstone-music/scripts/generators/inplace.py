@@ -284,12 +284,13 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     # ── 6. console (labeled buttons via core) + tick-rate command block ───────
     ctl = ["gamerule commandModificationBlockLimit 2147483647"]
+    sd = profile.sign_dialect   # version-aware sign NBT (string <=1.21.4 / SNBT >=1.21.5)
     head2 = ["[播放]", "多乐器", "调色板"] if multi else ["[播放]", "调色板", "侧触发, 放一遍"]
-    ctl += core.labeled_button(PBX,     Y, OZ, f"function {ns}:play",            head2)
-    ctl += core.labeled_button(PBX - 2, Y, OZ, f"function {ns}:loop",            ["[循环播放]", "放完自动重放"])
-    ctl += core.labeled_button(PBX - 4, Y, OZ, f"function {ns}:stop",            ["[停止]", "立即静音"])
-    ctl += core.labeled_button(PBX - 6, Y, OZ, f"function {ns}:cfg/polytoggle",  ["[复音增益]", "大和弦防糊"])
-    ctl += core.labeled_button(PBX - 8, Y, OZ, f"function {ns}:cfg/humantoggle", ["[微抖动]", "去复印感"])
+    ctl += core.labeled_button(PBX,     Y, OZ, f"function {ns}:play",            head2,                       sign_dialect=sd)
+    ctl += core.labeled_button(PBX - 2, Y, OZ, f"function {ns}:loop",            ["[循环播放]", "放完自动重放"],   sign_dialect=sd)
+    ctl += core.labeled_button(PBX - 4, Y, OZ, f"function {ns}:stop",            ["[停止]", "立即静音"],         sign_dialect=sd)
+    ctl += core.labeled_button(PBX - 6, Y, OZ, f"function {ns}:cfg/polytoggle",  ["[复音增益]", "大和弦防糊"],     sign_dialect=sd)
+    ctl += core.labeled_button(PBX - 8, Y, OZ, f"function {ns}:cfg/humantoggle", ["[微抖动]", "去复印感"],        sign_dialect=sd)
 
     # tick-rate command block: pressing [播放]/[循环播放] auto-runs `/tick rate 80`
     # (samples are tuned for tick80). No manual /tick rate, no per-tick self-check.

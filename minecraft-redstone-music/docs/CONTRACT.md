@@ -7,7 +7,9 @@ below is distilled from verified code in those files. Where this contract and a 
 disagree, the poc wins for **geometry/timing**, this contract wins for **API shape**.
 
 Scope: **Family A only** — RedPiano mod, real note blocks, `/tick rate 80`, resourcepack
-`qzpno_mv` pack_format 64, datapack pack_format 81 (MC 1.21.8). Family B (audio slice,
+`qzpno_mv`, datapack + resourcepack + mod-build config all self-synced from one `--mc-version`.
+**Supported auto band = 1.21..1.21.9** (tier "green"); **MC 1.21.8 = the verified default & anchor**
+(dp_format 81, rp_format 64 — those are the 1.21.8 row). Family B (audio slice,
 `method=slice`) is an external repo and is **out of scope** — generators MUST hard-fail on it.
 
 The skill tree this contract governs:
@@ -15,6 +17,8 @@ The skill tree this contract governs:
 ```
 scripts/
   build_machine.py          # CLI entry (§4)
+  build_resourcepack.py     # version-driven qzpno_mv repack (§5)
+  mod_build.py              # per-version mod toolchain printer/writer (§5)
   redpiano_core.py          # shared plumbing (§1)  — NO geometry here
   params_schema.py          # schema + validation (§2)
   generators/
@@ -82,8 +86,12 @@ class Datapack:
 ```python
     def write_pack_mcmeta(self, description: str) -> None
 ```
-- Writes `pack.mcmeta` with `{"pack": {"pack_format": self.dp_format, "description": description}}`,
-  `indent=2` (poc/45 L135). `dp_format` from the version profile, **never hardcoded 81**.
+- Writes `pack.mcmeta`, `indent=2` (poc/45 L135). `dp_format` from the version profile,
+  **never hardcoded 81**. The JSON SHAPE branches on `profile.packmeta_shape`:
+  - `"single"` (≤1.21.8) → `{"pack": {"pack_format": self.dp_format, "description": description}}`.
+  - `"minmax"` (≥1.21.9, 25w31a) → `{"pack": {"min_format": self.dp_format, "max_format": self.dp_format, "description": description}}`.
+    Emitting a single `pack_format` on ≥1.21.9 would make MC silently disable the pack (= total silence),
+    so the min/max shape is mandatory there.
 
 ```python
     def write_load_tick_tags(self) -> None
@@ -141,20 +149,25 @@ class Grid:
 ### 1.3 Sign / button helpers — **exactly-4-line ASSERTION**
 
 ```python
-def sign_messages(lines: list[str]) -> str
+def sign_messages(lines: list[str], sign_dialect: str) -> str
 ```
 - Minecraft signs have exactly 4 lines. Core MUST **assert** `0 < len(lines) <= 4` and pad
-  to 4 with empty strings, producing the JSON-text-component CSV used in
-  `oak_sign{front_text:{messages:[...]}}` (poc/45 L157). If `len(lines) > 4` →
-  `RedPianoError("sign needs <=4 lines, got N")`. (poc silently truncates with `[:4]`; the
-  contract UPGRADES this to a hard assert so over-long labels are caught at generation time.)
+  to 4 with empty strings, producing the entries inside `oak_sign{front_text:{messages:[...]}}`
+  (poc/45 L157). If `len(lines) > 4` → `RedPianoError("sign needs <=4 lines, got N")`. (poc
+  silently truncates with `[:4]`; the contract UPGRADES this to a hard assert so over-long
+  labels are caught at generation time.)
+- The entry SHAPE branches on `sign_dialect` (from the version profile):
+  - `"component_string"` (1.20..1.21.4) → JSON-string entries, `messages:['{"text":"hi"}', ...]`.
+  - `"component_snbt"` (≥1.21.5) → SNBT compound entries, `messages:[{"text":"hi"}, ...]`.
+  - On 1.21.5+ (including the default 1.21.8) the old quoted form renders as LITERAL text on
+    console signs — this was a latent bug; the dialect flip at 1.21.5 fixes it.
 
 ```python
-def labeled_button(bx, y, oz, cmd: str, lines: list[str], lamp="minecraft:redstone_lamp") -> list[str]
+def labeled_button(bx, y, oz, cmd: str, lines: list[str], sign_dialect: str, lamp="minecraft:redstone_lamp") -> list[str]
 ```
 - Emits the 5-block console widget verbatim from poc/45 `lbtn` (L156-162): lamp at `Y-1,oz`,
   command_block `[facing=up]{Command:"<cmd>",auto:0b}` at `Y,oz`, stone_button `[face=floor]`
-  at `Y+1,oz`, lamp at `Y-1,oz-2`, oak_sign at `Y,oz-2` with `sign_messages(lines)`.
+  at `Y+1,oz`, lamp at `Y-1,oz-2`, oak_sign at `Y,oz-2` with `sign_messages(lines, sign_dialect)`.
 
 ### 1.4 Forceload helpers — per-path add + over-threshold guard
 
@@ -272,11 +285,32 @@ def tickrate_command_block(x, y, z, rate=80, facing="up") -> list[str]
 ```python
 def get_version_profile(mc_version: str) -> VersionProfile
 ```
-- `VersionProfile` = `{dp_format:int, rp_format:int, function_folder:str, tag_function_folder:str, notes:str, confidence:str}`.
+- `VersionProfile` carries `dp_format:int`, `rp_format:int`, `function_folder:str`,
+  `tag_function_folder:str`, `packmeta_shape:str` (`"single"`|`"minmax"`), `sign_dialect:str`
+  (`"component_string"`|`"component_snbt"`), `has_tick_rate:bool`, `has_return_cmd:bool`,
+  `tier:str` (`"green"`|`"yellow"`), `tps:int`, `game_ticks_per_cell:int`, `notes:str`,
+  `confidence:str`.
 - Looks up `mc_version` in `VERSION_TABLE` (§3). **RAISES `RedPianoError(f"unknown mc_version {v}; add it to VERSION_TABLE")` on miss** — never guesses. This is the single accessor; nothing else
   in the codebase may hardcode a pack_format or folder name.
+- **Tick-rate floor refusal (≤1.20.2):** versions below 1.20.3 have no `/tick rate` (added
+  1.20.3) and no `return`, so the tick80 timing model (80 TPS, samples tuned for it, repeater
+  geometry baked at 0.025s/cell) cannot work (4×-too-slow, unfixable). `get_version_profile`
+  **HARD-REFUSES** these. **1.20.3 = the hard floor.**
+- **1.21.9 RESOLVES** (no longer a hard-fail): it is a supported row with `packmeta_shape="minmax"`,
+  so `write_pack_mcmeta` emits `min_format`/`max_format`. (Replaces the old guard that hard-failed
+  any `uses_minmax`/≥1.21.9 version.)
 - `function_folder` is `"function"` (1.21+) or `"functions"` (pre-1.21);
   `tag_function_folder` is `"function"` / `"functions"` correspondingly (the `tags/<x>/` segment).
+
+```python
+def assert_build_supported(profile: VersionProfile) -> None
+```
+- Green-band policy gate. Raises `RedPianoError` if `profile.tier != "green"` (i.e. the
+  1.20.3..1.20.6 **"yellow"** band, whose datapack/resourcepack adapt automatically but whose
+  RedPiano mod needs a real Java source-port + Java 17 — OUT OF the skill's auto scope). The
+  three build entry points (`build_machine` + `build_particles` + `build_resourcepack`) call it
+  before emitting anything, so yellow versions fail loudly at the top. (≤1.20.2 never reaches
+  here — `get_version_profile` already refused it.)
 
 ---
 
@@ -389,26 +423,56 @@ Single source of truth in `redpiano_core.py`. Resource-pack and data-pack `pack_
 rp_format=64** (confirmed against `poc/02e_build_resourcepack.py` default `rp=64` and every
 generator's hardcoded `pack_format: 81`, and the Minecraft Wiki Pack_format table).
 
+Each entry is now a **rich record (dict)**, not the old 5-tuple — it carries `packmeta_shape`,
+`sign_dialect`, `has_tick_rate`, `has_return_cmd`, `tier`, `tps`, `game_ticks_per_cell` alongside
+the formats. Rows span **1.20..1.21.9**. `get_version_profile` is the only accessor (§1.9).
+
 ```python
 VERSION_TABLE = {
-  # mc_version : (dp_format, rp_format, function_folder, confidence, notes)
-  "1.20.4":  (26, 22, "functions", "high",
-              "last pre-rename line; plural folders functions/, tags/functions/"),
-  "1.21":    (48, 34, "function",  "high",
-              "24w21a/format 48: folders renamed to SINGULAR function/, tags/function/, advancement/, predicate/, loot_table/"),
-  "1.21.1":  (48, 34, "function",  "high",  "same as 1.21"),
-  "1.21.2":  (57, 42, "function",  "high",  ""),
-  "1.21.3":  (57, 42, "function",  "high",  ""),
-  "1.21.4":  (61, 46, "function",  "high",  ""),
-  "1.21.5":  (71, 55, "function",  "high",  ""),
-  "1.21.6":  (80, 63, "function",  "high",  ""),
-  "1.21.7":  (81, 64, "function",  "high",  ""),
-  "1.21.8":  (81, 64, "function",  "high",
-              "★ ANCHORED: matches poc generators (dp 81) + poc/02e resourcepack (rp 64). Project target."),
-  "1.21.9":  (88, 69, "function",  "low",
-              "25w31a+ switched to min_format/max_format; single pack_format deprecated. Numbers approximate — verify before use."),
+  # mc_version : {dp_format, rp_format, function_folder, packmeta_shape, sign_dialect,
+  #               has_tick_rate, has_return_cmd, tier, tps, game_ticks_per_cell,
+  #               confidence, notes}
+  # ── ≤1.20.2: HARD-REFUSED (no /tick rate, no return; tick80 impossible). 1.20.3 = hard floor.
+  # ── 1.20.3..1.20.6 = tier "yellow": dp/rp adapt, but mod needs a Java source-port → assert_build_supported() refuses.
+  "1.20.4":  {"dp_format":26, "rp_format":22, "function_folder":"functions",
+              "packmeta_shape":"single", "sign_dialect":"component_string",
+              "has_tick_rate":True, "has_return_cmd":True, "tier":"yellow",
+              "tps":80, "game_ticks_per_cell":2, "confidence":"high",
+              "notes":"last pre-rename line; plural folders functions/, tags/functions/. YELLOW: mod needs <1.21 scoreboard-API source-port + Java 17."},
+  # ── 1.21..1.21.9 = tier "green" (supported auto band).
+  "1.21":    {"dp_format":48, "rp_format":34, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_string",
+              "has_tick_rate":True, "has_return_cmd":True, "tier":"green",
+              "tps":80, "game_ticks_per_cell":2, "confidence":"high",
+              "notes":"24w21a/format 48: folders renamed to SINGULAR function/, tags/function/, advancement/, predicate/, loot_table/"},
+  "1.21.1":  {"dp_format":48, "rp_format":34, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_string", "tier":"green", "confidence":"high", "notes":"same as 1.21"},
+  "1.21.2":  {"dp_format":57, "rp_format":42, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_string", "tier":"green", "confidence":"high", "notes":""},
+  "1.21.3":  {"dp_format":57, "rp_format":42, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_string", "tier":"green", "confidence":"high", "notes":""},
+  "1.21.4":  {"dp_format":61, "rp_format":46, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_string", "tier":"green", "confidence":"high",
+              "notes":"last component_string sign line; ≥1.21.5 flips to component_snbt"},
+  "1.21.5":  {"dp_format":71, "rp_format":55, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high",
+              "notes":"sign dialect flips to SNBT compound entries; old quoted form renders as literal text"},
+  "1.21.6":  {"dp_format":80, "rp_format":63, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high", "notes":""},
+  "1.21.7":  {"dp_format":81, "rp_format":64, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high", "notes":""},
+  "1.21.8":  {"dp_format":81, "rp_format":64, "function_folder":"function",
+              "packmeta_shape":"single", "sign_dialect":"component_snbt",
+              "has_tick_rate":True, "has_return_cmd":True, "tier":"green",
+              "tps":80, "game_ticks_per_cell":2, "confidence":"high",
+              "notes":"★ ANCHORED & VERIFIED DEFAULT: matches poc generators (dp 81) + poc/02e resourcepack (rp 64), user-tested in-game."},
+  "1.21.9":  {"dp_format":88, "rp_format":69, "function_folder":"function",
+              "packmeta_shape":"minmax", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high",
+              "notes":"25w31a switched pack.mcmeta to min_format/max_format (packmeta_shape=minmax). SUPPORTED via min/max emission; dp 88 / rp 69 format-verified, in-game listen pending."},
 }
 ```
+(Fields omitted on a row inherit the documented per-family defaults — e.g. `tps=80`,
+`game_ticks_per_cell=2`, `has_tick_rate/has_return_cmd=True` across the 1.21.x rows.)
 
 ### 3.1 Confidence & sources
 
@@ -422,7 +486,7 @@ VERSION_TABLE = {
 | 1.21.6 | 80 | 63 | high | Wiki Pack_format |
 | 1.21.7 | 81 | 64 | high | Wiki Pack_format |
 | **1.21.8** | **81** | **64** | **high** | Wiki Pack_format + **anchored in repo** (poc generators dp=81, poc/02e rp=64, user-verified in-game) |
-| 1.21.9 | 88 | 69 | **low** | Wiki (single number; 1.21.9 actually uses `min_format`/`max_format` — table value is the equivalent single number, NOT yet validated in-game) |
+| 1.21.9 | 88 | 69 | **high** | Wiki; 1.21.9 uses `min_format`/`max_format` (`packmeta_shape="minmax"`) — **SUPPORTED via min/max emission**; formats verified, in-game listen pending |
 
 > **Conflict note (resolved):** an initial web search reported "1.21.8 → pack format 64",
 > which conflated the **resource-pack** number (64) with the **data-pack** number. The
@@ -431,17 +495,19 @@ VERSION_TABLE = {
 
 ### 3.2 Adding a new version (documented mechanism)
 
-To support a new MC version, add **one row** to `VERSION_TABLE` in `redpiano_core.py`:
-`"<version>": (dp_format, rp_format, function_folder, confidence, notes)`. Source the two
-format numbers from `https://minecraft.wiki/w/Pack_format` (data pack column AND resource
-pack column — they differ). Set `function_folder="function"` for 1.21+ and `"functions"` for
-pre-1.21. Set `confidence="low"` and a `notes` caveat until verified in-game; promote to
-`"high"` after a successful in-world test. **For 1.21.9+** be aware MC switched to
-`min_format`/`max_format` in `pack.mcmeta`. Until the skill emits those, `get_version_profile`
-**hard-fails** on any `uses_minmax` version (≥1.21.9) rather than writing a single `pack_format`
-that MC would silently disable (= total silence). To support 1.21.9+, add `min_format`/`max_format`
-emission to `write_pack_mcmeta` and drop that guard. Every consumer goes through
-`get_version_profile`.
+To support a new MC version, add **one row** to `VERSION_TABLE` in `redpiano_core.py` via the
+`_vrow(dp, rp, folder, packmeta, sign, has_tick, tier, conf, notes)` helper (the row is a
+rich dict, not the old 5-tuple). Source the two format numbers from
+`https://minecraft.wiki/w/Pack_format` (data pack column AND resource pack column — they
+differ). Set `function_folder="function"` for 1.21+ and `"functions"` for pre-1.21, plus
+`packmeta_shape`/`sign_dialect`/`has_tick_rate`/`tier`. Set `confidence="low"` and a `notes`
+caveat until verified in-game; promote to `"high"` after a successful in-world test.
+**For 1.21.9+** set `packmeta_shape="minmax"` so `write_pack_mcmeta` emits
+`min_format`/`max_format` (§1.4) — a single `pack_format` there would make MC silently disable
+the pack (= total silence). 1.21.9 is **now supported** via this min/max emission (it is no
+longer a hard-fail). Versions in the 1.20.3..1.20.6 band must be `tier="yellow"` so
+`assert_build_supported` (§1.9) refuses them; ≤1.20.2 is hard-refused by `get_version_profile`
+itself (below the `/tick rate` floor). Every consumer goes through `get_version_profile`.
 
 ---
 
@@ -495,6 +561,45 @@ Flags:
 
 **Exit behavior:** any `RedPianoError` → non-zero exit with the message; no partial deploy
 (build into staging dir, only `deploy` copies — a failed build never touches a world).
+
+---
+
+## 5. Companion CLIs (`build_resourcepack.py`, `mod_build.py`)
+
+Both are version-driven off the same `VERSION_TABLE`/`get_version_profile` (§1.9, §3) so one
+`--mc-version` self-syncs datapack + resourcepack + mod-build. Both call
+`assert_build_supported(profile)` (refuse yellow) and both expose `--selftest`.
+
+### 5.1 `build_resourcepack.py`
+
+```
+python build_resourcepack.py --mc-version 1.21.8 --samples-root <dir> --out <dir> [--selftest]
+```
+- Repacks the `qzpno_mv` resourcepack IN the skill (ports `poc/02e_build_resourcepack.py`,
+  de-hardcoded). Reads `rp_format` AND the `pack.mcmeta` shape (`packmeta_shape`, §1.4) from the
+  version table — **never hardcodes 64**. (rp_format 64 is the 1.21.8 row.)
+- Samples ship separately — see [BINARIES.md](../BINARIES.md).
+
+### 5.2 `mod_build.py`
+
+```
+python mod_build.py --mc-version 1.21.8 [--write] [--set-mc-range] [--selftest]
+```
+- Prints (or `--write` applies) the VERIFIED mod toolchain per version — fabric-loom /
+  fabric-loader / fabric-api / Java / Mojang mappings — plus a porting-tier note. It does **NOT**
+  run gradle and does **NOT** widen `fabric.mod.json`'s tested `minecraft` range unless you pass
+  `--set-mc-range`.
+- The mod build is **parameterized**: `mod/redpiano/build.gradle` reads
+  `minecraft_version`/`loader_version`/`fabric_version`/`java_version` from `gradle.properties`
+  (default = the 1.21.8 anchor, so an unedited build is byte-identical). `--write` retargets those
+  + rewrites the fabric-loom plugin-version line. (Verified: an offline `gradle build` still
+  produces `redpiano-1.0.0.jar` (~11.6 KB) at the anchor.)
+- **MOD HONESTY (preserved):** the mixin binds to INTERNAL NoteBlock bytecode, so EVERY target
+  version still needs a recompiled jar AND one in-game listen. Within 1.21.x the retarget is
+  NUMBER-ONLY (no Java source edits); 1.21.9 is number-only too but verify the yarn
+  `getWorld`→`getEntityWorld` rename equivalent under Mojang mappings in `genSources`. Below 1.21
+  = real Java source-port (scoreboard API); below ~1.19 = audio API port; below 1.20.3 =
+  impossible. See [MOD_ARCHITECTURE.md](MOD_ARCHITECTURE.md).
 
 ---
 

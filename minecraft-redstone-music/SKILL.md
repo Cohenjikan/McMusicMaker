@@ -33,8 +33,12 @@ is a self-contained folder + one Python CLI; see README.md.)
 1. **收集输入** — ask for three things:
    - **MIDI 文件** path (`.mid`).
    - **存档路径** — the world's `datapacks/` folder, for deployment.
-   - **MC 版本号** — must be in the VERSION_TABLE; default & best-supported =
-     **`1.21.8`**; an unknown version **hard-fails** (no silent guess).
+   - **MC 版本号** — default & verified = **`1.21.8`**. The supported auto band is
+     **`1.21`..`1.21.9`** (tier "green"): one `--mc-version` flag self-syncs pack_format,
+     folders, the pack.mcmeta shape (single ≤1.21.8 / min-max ≥1.21.9), and the sign-NBT
+     dialect (SNBT ≥1.21.5). Below **1.20.3** is refused (no `/tick rate` → the tick80
+     timing model can't work); **1.20.3–1.20.6** is refused as "yellow" (data adapts but the
+     mod needs a Java source-port); an unknown version **hard-fails** (no silent guess).
    > If the user uploads an **MP3 / audio** instead of MIDI: only the **slice** form
    > (Family B) reproduces original timbre, and that lives in the **external
    > `mc-noteblock-demo` repo — this skill cannot build it.** Say so and ask for a MIDI.
@@ -45,14 +49,20 @@ is a self-contained folder + one Python CLI; see README.md.)
    **`inplace` 原地调色板** — the in-game-verified rock-solid fallback, tiny footprint.
    (custom routing/particles are step 5, via the HTMLs.) Offer `swave` first / "(推荐)".
 
-3. **自动备好 mod + 音效包** for the chosen version:
-   - **1.21.8** — the RedPiano mod jar + `qzpno_mv` resourcepack are the two large binaries
-     that ship **separately** (not inside this folder). See **[BINARIES.md](BINARIES.md)** for
-     how to obtain/build them. Tell the user: drop the jar in `mods/` (restart MC), enable the
-     pack in Options → Resource Packs.
-   - **other versions** — the mod must be **recompiled** against that version; guide via
-     `docs/MOD_ARCHITECTURE.md` (porting checklist). Datapack/resourcepack `pack_format`
-     is auto-handled by the version table.
+3. **自动备好 mod + 音效包** for the chosen version (any of 1.21..1.21.9):
+   - The RedPiano mod jar + `qzpno_mv` resourcepack are the two large binaries that ship
+     **separately** (not inside this folder). See **[BINARIES.md](BINARIES.md)** for how to
+     obtain/build them. Tell the user: drop the jar in `mods/` (restart MC), enable the pack in
+     Options → Resource Packs.
+   - **resourcepack** — repack it for the target version with
+     `scripts/build_resourcepack.py --mc-version <ver> --samples-root <dir>` (rp_format +
+     pack.mcmeta shape are read from the version table — no hand-editing).
+   - **mod** — within 1.21.x a retarget is **number-only**: `scripts/mod_build.py
+     --mc-version <ver> --write` sets the verified toolchain (loom / loader / fabric-api / Java)
+     in `mod/redpiano/`, then rebuild the jar. The mixin binds to internal NoteBlock bytecode,
+     so a recompiled jar still needs **one in-game listen**, and you should only widen the
+     tested range to versions you actually verified. (Below 1.21 the mod needs a Java
+     source-port — see `docs/MOD_ARCHITECTURE.md`.)
 
 4. **生成 + 部署** — run `python scripts/build_machine.py --midi <mid> --form swave --ns <ns>
    --origin X Z Y --mc-version <ver> --world-dir <存档>/datapacks`. Report the stats, then the in-game
@@ -135,15 +145,16 @@ pass `--world-dir` (deploy is opt-in).
 This skill produces a datapack only. The runtime stack must be installed by the user:
 
 1. **Fabric Loader + Fabric API + Java 21** for the target Minecraft version
-   (project target: **1.21.8**).
+   (verified default **1.21.8**; supported auto band **1.21..1.21.9**).
 2. **RedPiano mod jar** in `mods/` (then restart Minecraft — a jar swap needs a full
    restart, not `/reload`). This jar is **not inside this folder** — see
    [BINARIES.md](BINARIES.md) for how to obtain/build it (`docs/MOD_ARCHITECTURE.md` is the
    mod-source reference for whoever compiles it).
 3. **`qzpno_mv` resourcepack** placed in `resourcepacks/` and **manually enabled** in
    Options → Resource Packs. If its `pack_format` does not match the MC version, MC
-   **silently disables it → total silence.** For 1.21.8 the resourcepack `pack_format`
-   is **64**. This zip is **not inside this folder** — see [BINARIES.md](BINARIES.md).
+   **silently disables it → total silence.** The `pack_format` is version-specific (e.g. **64**
+   for 1.21.8) and is auto-set by `scripts/build_resourcepack.py` from the version table.
+   This zip is **not inside this folder** — see [BINARIES.md](BINARIES.md).
 4. **`/tick rate 80`** must be active when playing — the samples are tuned for it.
    Forgetting it = ~4× slow playback and inaccurate melody-cut timing. The generated
    machine wires a command-block to self-set the rate, but verify in-game.

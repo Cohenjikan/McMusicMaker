@@ -202,10 +202,11 @@ def build(data, ns, out_dir, mc_version, *, music_ns=None, offset_gt=0,
         f"scoreboard objectives add {ns} dummy",
         f"scoreboard players set PF {ns} 0",
     ]
+    sd = dp.profile.sign_dialect   # version-aware sign NBT (string <=1.21.4 / SNBT >=1.21.5)
     setup += core.labeled_button(cx, cy, cz, f"function {ns}:fire",
-                                 [f"{name}", "粒子轨道", "[粒子播放]", ""])
+                                 [f"{name}", "粒子轨道", "[粒子播放]", ""], sign_dialect=sd)
     setup += core.labeled_button(cx, cy, cz - 4, f"function {ns}:stop",
-                                 ["", "粒子", "[停止]", ""])
+                                 ["", "粒子", "[停止]", ""], sign_dialect=sd)
     setup += [
         f"setblock {cx} {cy} {cz + 2} minecraft:redstone_lamp",
         f"tp @a {cx} {cy} {cz + 4}",
@@ -275,7 +276,8 @@ def main(argv=None):
 
     try:
         data = load_keyframes(args.keyframes)
-        profile = core.get_version_profile(args.mc_version)  # hard-fail on unknown
+        profile = core.get_version_profile(args.mc_version)  # hard-fail on unknown / below floor
+        core.assert_build_supported(profile)                 # green band only (match the music build)
         stats = build(
             data, args.ns, args.out, args.mc_version,
             music_ns=args.music_ns, offset_gt=args.offset_gt,

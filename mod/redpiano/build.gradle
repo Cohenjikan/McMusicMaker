@@ -15,20 +15,28 @@ repositories {
     mavenCentral()
 }
 
+// Toolchain numbers come from gradle.properties so the mod can be retargeted to any
+// supported MC version without editing this file. Defaults there = the 1.21.8 anchor,
+// so an unedited build is byte-identical to before. Set them for another version with
+//   python ../../minecraft-redstone-music/scripts/mod_build.py --mc-version <v> --write
+// (the fabric-loom PLUGIN version in the plugins{} block above is the one number that
+//  can't live in gradle.properties — mod_build.py rewrites that line too).
 dependencies {
-    minecraft "com.mojang:minecraft:1.21.8"
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:0.17.3"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:0.136.1+1.21.8"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
+def javaVersion = (project.java_version as int)
+
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.toVersion(javaVersion)
+    targetCompatibility = JavaVersion.toVersion(javaVersion)
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = javaVersion
     it.options.encoding = "UTF-8"
 }
 

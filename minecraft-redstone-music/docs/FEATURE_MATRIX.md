@@ -7,8 +7,10 @@ grounded in the real code now on disk under `scripts/` and in the user-verified
 facts recorded below — not in aspirational handoff notes.
 
 Scope: **Family A only** (RedPiano mod, real note blocks, `/tick rate 80`, resourcepack
-`qzpno_mv` rp_format 64, datapack dp_format 81 for MC 1.21.8). Family B (audio slice) is
-an external repo and out of scope — see the last row.
+`qzpno_mv`, datapack — formats are version-relative; rp_format 64 / dp_format 81 is the
+**1.21.8** row). The skill is now **version-adaptive** across a supported auto band
+(1.21..1.21.9); 1.21.8 is the verified default/anchor — see [Version adaptiveness](#version-adaptiveness)
+below. Family B (audio slice) is an external repo and out of scope — see the last row.
 
 Date: 2026-06-26.
 
@@ -56,21 +58,78 @@ Columns:
 
 ---
 
+## Version adaptiveness
+
+The form matrix above is version-independent. **Which MC version a machine targets** is now
+driven by one flag — `--mc-version` — which self-syncs the whole coherent output: **datapack +
+resourcepack + mod-build config** all read from a single `VERSION_TABLE` in
+`scripts/redpiano_core.py` (`get_version_profile` is the only accessor; nothing else hardcodes
+a format number). See `CONTRACT.md` §3 and `MOD_ARCHITECTURE.md` §6.4.
+
+| version band | tier | what works |
+|---|---|---|
+| **1.21 .. 1.21.9** (1.21, .1, .2, .3, .4, .5, .6, .7, .8, .9) | 🟢 green | full auto: datapack + resourcepack + mod-build config self-sync from `--mc-version`. **1.21.8 = verified default & anchor** (user-tested in-game). |
+| **1.20.3 .. 1.20.6** | 🟡 yellow | datapack/resourcepack adapt automatically, **but the RedPiano mod needs a real Java source-port** (the pre-1.21 scoreboard config API, + Java 17 at 1.20.4) — **out of auto scope**. `assert_build_supported()` refuses the mod-touching builds (`build_machine` / `build_particles` / `build_resourcepack`). |
+| **≤ 1.20.2** | ⛔ refused | **hard refuse** — no `/tick rate` (added 1.20.3) and no `return`; the tick80 timing model (80 TPS, samples tuned for it, repeater geometry baked at 0.025 s/cell) cannot work → 4×-too-slow, unfixable. **1.20.3 is the hard floor.** |
+| unknown version | ⛔ refused | still **hard-fails** ("never guess", CONTRACT §1.9). |
+
+Per-version facts auto-derive from `VERSION_TABLE` (the **1.21.8** anchor row is dp 81 / rp 64):
+
+- **datapack pack_format:** 1.21/.1 = 48, .2/.3 = 57, .4 = 61, .5 = 71, .6 = 80, .7/.8 = 81, .9 = 88.
+- **resourcepack rp_format:** 1.21/.1 = 34, .2/.3 = 42, .4 = 46, .5 = 55, .6 = 63, .7/.8 = 64, .9 = 69.
+- **function folder:** singular `function/` for all of 1.21.x (plural `functions/` only ≤ 1.20.6).
+- **pack.mcmeta shape:** single `{"pack":{"pack_format":N,…}}` for ≤ 1.21.8; **min/max**
+  `{"pack":{"min_format":N,"max_format":N,…}}` for ≥ 1.21.9 (25w31a) — dp 88 / rp 69 at 1.21.9.
+  This is how **1.21.9 is supported** (no longer a hard-fail).
+- **sign NBT dialect:** JSON-string entries `messages:['{"text":"hi"}']` for 1.20..1.21.4
+  (`component_string`); **SNBT compound entries** `messages:[{"text":"hi"}]` for ≥ 1.21.5
+  (`component_snbt`). The dialect now **flips at 1.21.5** — fixing a latent bug where on 1.21.5+
+  (including the default 1.21.8) the old quoted form rendered as **literal text** on console signs.
+
+New helper scripts (both ship a `--selftest`):
+
+- `scripts/build_resourcepack.py` — version-driven `qzpno_mv` repack in the skill (reads
+  rp_format + pack.mcmeta shape from the table). Flags: `--mc-version --samples-root --out`.
+  Samples ship separately — see `BINARIES.md`.
+- `scripts/mod_build.py` — prints (or `--write` applies) the **verified** mod toolchain per
+  version (fabric-loom / fabric-loader / fabric-api / Java / Mojang mappings) + a porting-tier
+  note. It does **not** run gradle and does **not** widen `fabric.mod.json`'s tested `minecraft`
+  range unless you pass `--set-mc-range`. The mod build is parameterized: `mod/redpiano/build.gradle`
+  reads `minecraft_version`/`loader_version`/`fabric_version`/`java_version` from
+  `gradle.properties` (default = the 1.21.8 anchor, so an unedited build is byte-identical and
+  still produces `redpiano-1.0.0.jar`, ~11.6 KB).
+
+**Mod honesty (unchanged):** the mixin binds to internal `NoteBlock` bytecode, so **every**
+target version still needs a recompiled jar **and one in-game listen**. Within 1.21.x the
+retarget is number-only (no Java source edits); 1.21.9 is number-only too but verify the yarn
+`getWorld`→`getEntityWorld` rename equivalent under Mojang mappings in `genSources`. Below 1.21
+is a real Java source-port (scoreboard API); below ~1.19 an audio-API port; below 1.20.3 is
+impossible. See `MOD_ARCHITECTURE.md` §6.4.
+
+---
+
 ## Install prerequisites (Family A)
 
 Family A re-performs notes on **real note blocks** read by the RedPiano mod, which routes
 each note to a `/playsound` of a real instrument sample from the resource pack. All of the
 following must be present in-game for a generated machine to make sound:
 
-1. **RedPiano mod** installed (Fabric, MC 1.21.8). The mod is what turns a note-block press
-   into the correct instrument sample and emits it centered on every player (so the sound
-   doesn't cut when you move). Without the mod the machine builds but plays vanilla
-   note-block timbres at best.
-2. **Resource pack `qzpno_mv`** enabled, `pack_format` (rp) = **64** for MC 1.21.8. A wrong
+1. **RedPiano mod** installed (Fabric; built for your MC version — 1.21.8 is the verified
+   anchor jar). The mod is what turns a note-block press into the correct instrument sample
+   and emits it centered on every player (so the sound doesn't cut when you move). Without the
+   mod the machine builds but plays vanilla note-block timbres at best. **The mixin binds to
+   internal `NoteBlock` bytecode, so every target version needs a recompiled jar AND one
+   in-game listen** — within 1.21.x the retarget is number-only (`mod_build.py`); below 1.21
+   is a real Java source-port. See [Version adaptiveness](#version-adaptiveness).
+2. **Resource pack `qzpno_mv`** enabled with the rp_format matching your MC version. A wrong
    rp_format makes MC silently disable the pack → silence. (dp_format and rp_format are
-   *different* number lines — dp = 81, rp = 64 for 1.21.8. See `CONTRACT.md` §3.)
-3. **MC version 1.21.8** (the project anchor; `get_version_profile` drives dp_format / folder
-   names). Other versions need a `VERSION_TABLE` row (CONTRACT §3.2).
+   *different* number lines — on **1.21.8** that is dp = 81, rp = 64; both auto-derive from
+   `VERSION_TABLE`. See `CONTRACT.md` §3 and [Version adaptiveness](#version-adaptiveness).)
+3. **An MC version in the supported auto band (1.21..1.21.9)**, selected via `--mc-version`;
+   **1.21.8** is the verified default/anchor. `get_version_profile` drives dp_format / rp_format
+   / folder names / pack.mcmeta shape from `VERSION_TABLE` (the single source of truth). Unknown
+   versions still **hard-fail** ("never guess"). See [Version adaptiveness](#version-adaptiveness)
+   and CONTRACT §3.2.
 4. **`/tick rate 80`** — the samples are tuned for 80 TPS. The generated machine self-sets
    this: pressing **[play]** fires a command block that runs `/tick rate 80` (both `inplace`
    and `swave`/marching forms). If you still hear an eerie/slow performance, set `/tick rate 80`

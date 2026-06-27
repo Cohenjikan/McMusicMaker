@@ -9,7 +9,7 @@ separately-licensed samples), so they ship **alongside** it.
 | Binary | Goes in | Why it's needed | `pack_format` (1.21.8) |
 |---|---|---|---|
 | **RedPiano mod jar** (`redpiano-1.0.0.jar`) | profile `mods/` (restart MC) | turns a note-block press into the correct instrument sample, emitted centered on every player | n/a (Fabric mod) |
-| **`qzpno_mv.zip` resourcepack** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp = 64** |
+| **`qzpno_mv.zip` resourcepack** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp = 64** (this is the 1.21.8 row) |
 
 > Without these, a generated datapack still builds and the machine still *runs*, but you'll hear
 > vanilla note-block tones at best (no mod) or **total silence** (resourcepack not enabled / wrong
@@ -29,8 +29,11 @@ Both are produced from the **McMusicMaker source repository** (this skill folder
 *subset* of it; the mod source and sample pipeline are **not** copied in here).
 
 ### 1. RedPiano mod jar
-- Source: `mod/redpiano/` in the source repo. It's a **Fabric/Loom** mod: MC **1.21.8**, official
-  Mojang mappings, fabric-loader 0.17.3, fabric-api 0.136.1+1.21.8, **Java 21**.
+- Source: `mod/redpiano/` in the source repo. It's a **Fabric/Loom** mod whose **verified default
+  anchor** is MC **1.21.8**, official Mojang mappings, fabric-loader 0.17.3, fabric-api
+  0.136.1+1.21.8, **Java 21**. For another target version, run `scripts/mod_build.py --mc-version …`
+  to print that version's verified toolchain (the gradle build reads `minecraft_version` etc. from
+  `gradle.properties`; `mod_build.py --write` retargets them).
   [docs/MOD_ARCHITECTURE.md](docs/MOD_ARCHITECTURE.md) (bundled here) documents the source in full,
   including the §6.5 build notes.
 - Build: from `mod/redpiano/`, run a Gradle build (`build` task) with `JAVA_HOME` pointing at a
@@ -39,20 +42,30 @@ Both are produced from the **McMusicMaker source repository** (this skill folder
 - After swapping the jar you must **fully restart Minecraft** (a `/reload` is not enough).
 
 ### 2. `qzpno_mv.zip` resourcepack
-- Built by `poc/02e_build_resourcepack.py` in the source repo from per-instrument sample folders
+- Built **in this skill** by `scripts/build_resourcepack.py` from per-instrument sample folders
   (`samples_piano` / `samples_bass` / `samples_lead` / `samples_pad` / `samples_drums`). **The
-  samples are large/licensed and are NOT in the repo or this package** — supply your own, or use the
-  prebuilt zip.
-- The builder targets **`rp_format = 64`** for 1.21.8 (it has `detect_rp_format()` to auto-match a
-  version). ⚠ The script currently **hardcodes its output path** to a local Modrinth
-  `resourcepacks/` dir — edit that path (or copy the produced `qzpno_mv.zip` out manually) before
-  running on another machine.
+  samples are large/licensed and are NOT in the repo or this package** — supply your own (point
+  `--samples-root` at them), or use the prebuilt zip.
+- The builder is **version-driven**: pass `--mc-version` and it reads the right `rp_format` and
+  `pack.mcmeta` shape from the version table in `scripts/redpiano_core.py`. For **1.21.8** that's
+  **`rp_format = 64`**; e.g. 1.21.9 emits `rp_format = 69` with the `min_format`/`max_format`
+  shape. Flags: `--mc-version`, `--samples-root`, `--out` (and `--selftest`).
 
 ## Other Minecraft versions
 
-For a non-1.21.8 version the mod must be **recompiled** against it and the resourcepack repacked at
-that version's `rp_format` (and the datapack `pack_format` changes too — handled automatically by
-`scripts/redpiano_core.py`'s version table). See [docs/MOD_ARCHITECTURE.md](docs/MOD_ARCHITECTURE.md)
-for the porting checklist. The build scripts here **hard-fail on versions ≥ 1.21.9** until
-`pack.mcmeta` `min_format`/`max_format` support is added (a single `pack_format` would be silently
-rejected). **1.21.8 is the supported target.**
+A single `--mc-version` flag self-syncs the whole output (datapack + resourcepack + mod-build config)
+from `scripts/redpiano_core.py`'s version table (the one source of truth). The **supported auto band
+is 1.21 .. 1.21.9**; **1.21.8 is the verified default & anchor** (user-tested in-game), not the only
+option. Within that band the datapack `pack_format`, the resourcepack `rp_format`, and the
+`pack.mcmeta` shape all derive automatically — including **1.21.9, which is now supported** via the
+`min_format`/`max_format` `pack.mcmeta` form (no longer a hard-fail).
+
+The mod, however, must still be **recompiled** per target version: run `scripts/mod_build.py` to print
+the verified toolchain (fabric-loom / fabric-loader / fabric-api / Java / mappings) for a given
+`--mc-version` (or `--write` to retarget the gradle build). Within 1.21.x the retarget is
+number-only — no Java source edits. See [docs/MOD_ARCHITECTURE.md](docs/MOD_ARCHITECTURE.md) for the
+porting checklist.
+
+> The mixin binds to **internal NoteBlock bytecode**, so **every** target version still needs a
+> **recompiled jar and one in-game listen** to confirm sound. Versions outside the auto band
+> (≤ 1.20.6, or any version not in the table) are **hard-rejected** — the scripts **never guess**.

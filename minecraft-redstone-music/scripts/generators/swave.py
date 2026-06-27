@@ -355,16 +355,17 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     # ---- control console (labeled buttons via core.labeled_button) ----
     ctl = ["gamerule commandModificationBlockLimit 2147483647"]
+    sd = profile.sign_dialect   # version-aware sign NBT (string <=1.21.4 / SNBT >=1.21.5)
     ctl += core.labeled_button(PBX, Y, OZ, f"function {ns}:play",
-                               ["[play]", "mirror S-wave", "full song"])
+                               ["[play]", "mirror S-wave", "full song"], sign_dialect=sd)
     ctl += core.labeled_button(PBX - 2, Y, OZ, f"function {ns}:view",
-                               ["[overview]", "see mirror S", "lamp flow"])
+                               ["[overview]", "see mirror S", "lamp flow"], sign_dialect=sd)
     ctl += core.labeled_button(PBX - 4, Y, OZ, f"function {ns}:stop",
-                               ["[stop]", "mute now", "if stuck"])
+                               ["[stop]", "mute now", "if stuck"], sign_dialect=sd)
     ctl += core.labeled_button(PBX - 6, Y, OZ, f"function {ns}:cfg/polytoggle",
-                               ["[poly gain]", "big chords", "anti-mud"])
+                               ["[poly gain]", "big chords", "anti-mud"], sign_dialect=sd)
     ctl += core.labeled_button(PBX - 8, Y, OZ, f"function {ns}:cfg/humantoggle",
-                               ["[humanize]", "de-photocopy"])
+                               ["[humanize]", "de-photocopy"], sign_dialect=sd)
     ctl += tickrate_setblock
 
     dp.write_function("load",

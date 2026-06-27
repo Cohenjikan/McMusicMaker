@@ -84,6 +84,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     lane_counts = [0] * NLANE
     cut_events = set()
     meldur = {}
+    mel_event_of = {}        # tick -> sound_event of the longest cut-instr note in that cell
+    _mel_best_dur = {}       # tick -> that note's dur (s), to pick the longest
     instr_count = defaultdict(int)
     dropped = 0
 
@@ -106,6 +108,11 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                 cut_events.add(r.sound_event)
                 md = float(n.get("dur", 0.1))
                 meldur[tk] = md if tk not in meldur else max(meldur[tk], md)
+                # per-cell representative cut event = the longest cut-instr note's
+                # event (for plan_melody_cuts' polyphony WARN; cut is event-level).
+                if md >= _mel_best_dur.get(tk, -1.0):
+                    _mel_best_dur[tk] = md
+                    mel_event_of[tk] = r.sound_event
 
     # 2. shared timeline cells[] (rep delays + trig) — identical to swave/47/48
     OFFSET = 1 if trig and trig[0] == 0 else 0
@@ -132,20 +139,23 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     used_trig_set = set(used_trig)
     MAXTICK = max(used_trig) if used_trig else 0
 
-    # 3. melody-sustain cut (poc/49 algorithm; absolute game-tick schedule)
-    mel_ticks = sorted(tk for tk in meldur if tk in used_trig_set)
-    CAP_GT = round(melcap_s * 80)
-    cut_sched = {}
-    cut_delays = []
-    for j, tk in enumerate(mel_ticks):
-        d = min(round(meldur[tk] * 80), CAP_GT)
-        if j + 1 < len(mel_ticks):
-            d = min(d, (mel_ticks[j + 1] - tk) * 2 - 1)
-        dly = max(MIN_CUT_GT, d)
-        cut_delays.append(dly)
-        cut_sched[tk] = (tk + OFFSET) * 2 + dly
-    cut_events = sorted(cut_events)
-    median_cut_gt = sorted(cut_delays)[len(cut_delays) // 2] if cut_delays else 0
+    # 3. melody-sustain cut via core scheduler (absolute game-tick schedule).
+    #    Routes through core.plan_melody_cuts so the contract's cut-floor assertion
+    #    (MIN_CUT_GT can never push a cut past the next onset) is enforced — a dense
+    #    melody now HARD-FAILS instead of silently clipping the next note's attack.
+    mel_events = [
+        (tk, meldur[tk], mel_event_of[tk])
+        for tk in sorted(meldur) if tk in used_trig_set
+    ]
+    plan = core.plan_melody_cuts(
+        mel_events, tps=TPS, melcap_s=melcap_s, min_cut_gt=MIN_CUT_GT,
+        offset=OFFSET, absolute=True,
+    )
+    mel_ticks = sorted(plan.delays_by_cell)
+    cut_sched = plan.schedule_by_cell
+    # cut_events drives the cutmel body; union resolved cut events with the plan's.
+    cut_events = sorted(set(cut_events) | set(plan.cut_events))
+    median_cut_gt = plan.median_delay_gt
 
     # 4. emit setblocks + collision guard (core.Grid)
     grid = core.Grid()
@@ -212,7 +222,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     CAMZ = OZ + (max(allz) - min(allz)) // 2
 
     def lbtn(bx, cmd, lines):
-        return core.labeled_button(bx, Y, OZ, cmd, lines)
+        return core.labeled_button(bx, Y, OZ, cmd, lines,
+                                   sign_dialect=profile.sign_dialect)
 
     ctl = ["gamerule commandModificationBlockLimit 2147483647"]
     ctl += lbtn(PBX, f"function {ns}:play", ["[直接播放]", "多轨分布", "听全曲", ""])
@@ -335,6 +346,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "mel_cut_cells": len(mel_ticks),
         "cut_count": len(mel_ticks),
         "median_cut_gt": median_cut_gt,
+        "warnings": list(plan.warnings),
         "deployed": deployed,
         "out": dp.root,
     }
