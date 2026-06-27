@@ -34,7 +34,7 @@ is a self-contained folder + one Python CLI; see README.md.)
    - **MIDI 文件** path (`.mid`).
    - **存档路径** — the world's `datapacks/` folder, for deployment.
    - **MC 版本号** — default & verified = **`1.21.8`**. The supported auto band is
-     **`1.21`..`1.21.9`** (tier "green"): one `--mc-version` flag self-syncs pack_format,
+     **`1.21`..`1.21.10`** (tier "green"): one `--mc-version` flag self-syncs pack_format,
      folders, the pack.mcmeta shape (single ≤1.21.8 / min-max ≥1.21.9), and the sign-NBT
      dialect (SNBT ≥1.21.5). Below **1.20.3** is refused (no `/tick rate` → the tick80
      timing model can't work); **1.20.3–1.20.6** is refused as "yellow" (data adapts but the
@@ -49,7 +49,7 @@ is a self-contained folder + one Python CLI; see README.md.)
    **`inplace` 原地调色板** — the in-game-verified rock-solid fallback, tiny footprint.
    (custom routing/particles are step 5, via the HTMLs.) Offer `swave` first / "(推荐)".
 
-3. **自动备好 mod + 音效包** for the chosen version (any of 1.21..1.21.9):
+3. **自动备好 mod + 音效包** for the chosen version (any of 1.21..1.21.10):
    - The RedPiano mod jar + `qzpno_mv` resourcepack are the two large binaries that ship
      **separately** (not inside this folder). See **[BINARIES.md](BINARIES.md)** for how to
      obtain/build them. Tell the user: drop the jar in `mods/` (restart MC), enable the pack in
@@ -67,6 +67,12 @@ is a self-contained folder + one Python CLI; see README.md.)
 4. **生成 + 部署** — run `python scripts/build_machine.py --midi <mid> --form swave --ns <ns>
    --origin X Z Y --mc-version <ver> --world-dir <存档>/datapacks`. Report the stats, then the in-game
    steps: `/reload` → `/tick rate 80` → `/function <ns>:setup` → press the **[play]** sign.
+   > **One-command (datapack + resourcepack + mod-config in one go):** for a non-1.21.8 target,
+   > `scripts/prepare_all.py --midi <mid> --ns <ns> --origin X Z Y --mc-version <ver> --form swave
+   > --samples-root <dir> [--world-dir … --rp-out … --gradle <path> --java-home <jdk>]` runs every
+   > automatable step in order and stops at the one that can't be: the in-game listen. **For a version
+   > other than 1.21.8, build_machine's report prints a ⚠ reminder** that the prebuilt 1.21.8 jar/pack
+   > won't load there and must be rebuilt — heed it, or note blocks fall back to vanilla sounds.
 
 5. **自定义需求 → 两个 HTML**(用法都是:浏览器里手动填 → 直接复制或导出 JSON 交给 agent):
    - `designer/layout_designer.html` — **自定义走线方式**(形态 / 尺寸 / 折叠 / 起点)。
@@ -145,7 +151,7 @@ pass `--world-dir` (deploy is opt-in).
 This skill produces a datapack only. The runtime stack must be installed by the user:
 
 1. **Fabric Loader + Fabric API + Java 21** for the target Minecraft version
-   (verified default **1.21.8**; supported auto band **1.21..1.21.9**).
+   (verified default **1.21.8**; supported auto band **1.21..1.21.10**).
 2. **RedPiano mod jar** in `mods/` (then restart Minecraft — a jar swap needs a full
    restart, not `/reload`). This jar is **not inside this folder** — see
    [BINARIES.md](BINARIES.md) for how to obtain/build it (`docs/MOD_ARCHITECTURE.md` is the

@@ -54,6 +54,8 @@ MOD_TOOLCHAIN = {
     "1.21.8": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.136.1+1.21.8",  "java": 21, "port_tier": "numbers", "notes": "ANCHOR — matches build.gradle byte-for-byte"},
     "1.21.9": {"loom": "1.11",   "loader": "0.17.3", "fabric_api": "0.134.1+1.21.9",  "java": 21, "port_tier": "verify:getEntityWorld",
                "notes": "yarn getWorld->getEntityWorld; under Mojang mappings verify the equivalent in genSources. fabric-api resource-loader rework."},
+    "1.21.10": {"loom": "1.11",  "loader": "0.17.3", "fabric_api": "0.138.4+1.21.10", "java": 21, "port_tier": "verify:getEntityWorld",
+               "notes": "non-breaking sibling of 1.21.9 (same loom 1.11 era). Same getWorld->getEntityWorld verify note."},
 }
 
 
@@ -206,7 +208,7 @@ if __name__ == "__main__":
         pass
     if "--selftest" in sys.argv:
         # toolchain rows resolve for the whole green band; yellow/red raise cleanly.
-        for v in ("1.21", "1.21.4", "1.21.5", "1.21.8", "1.21.9"):
+        for v in ("1.21", "1.21.4", "1.21.5", "1.21.8", "1.21.9", "1.21.10"):
             prof, tc = toolchain_for(v)
             assert tc["fabric_api"].endswith("+" + v), (v, tc)
             assert prof.tier == "green"

@@ -523,7 +523,7 @@ which DO change every MC version — are owned exclusively by
 - `get_version_profile(mc_version)` (`:165-193`) is the **only** accessor; it
   **raises** on an unknown version (never guesses) and on any version below the
   `/tick rate` floor (`has_tick_rate==False`, ≤1.20.2). `assert_build_supported`
-  (`:196-…`) then enforces the green band (1.21..1.21.9), refusing the "yellow"
+  (`:196-…`) then enforces the green band (1.21..1.21.10), refusing the "yellow"
   1.20.3..1.20.6 rows (datapack adapts but the mod needs a `<1.21` source-port).
   Nothing else may hardcode a `pack_format` or folder name (CONTRACT §1.9).
 - The **1.21 plural→singular rename** (format 48): **≤1.20.6** used `functions/`,

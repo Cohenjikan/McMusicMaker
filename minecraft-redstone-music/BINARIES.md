@@ -55,7 +55,7 @@ Both are produced from the **McMusicMaker source repository** (this skill folder
 
 A single `--mc-version` flag self-syncs the whole output (datapack + resourcepack + mod-build config)
 from `scripts/redpiano_core.py`'s version table (the one source of truth). The **supported auto band
-is 1.21 .. 1.21.9**; **1.21.8 is the verified default & anchor** (user-tested in-game), not the only
+is 1.21 .. 1.21.10**; **1.21.8 is the verified default & anchor** (user-tested in-game), not the only
 option. Within that band the datapack `pack_format`, the resourcepack `rp_format`, and the
 `pack.mcmeta` shape all derive automatically — including **1.21.9, which is now supported** via the
 `min_format`/`max_format` `pack.mcmeta` form (no longer a hard-fail).

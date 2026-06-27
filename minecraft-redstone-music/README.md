@@ -4,7 +4,7 @@ Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**: this to
 emits a self-contained **datapack** that drives real **note blocks** through the **RedPiano**
 mod, playing your song with sampled instruments (piano / bass / lead / pad / drums). One
 `--mc-version` flag self-syncs the whole output (datapack + resourcepack + mod-build config) to
-your target. The supported auto band is **1.21 … 1.21.9** (1.21.9 via min/max `pack.mcmeta`);
+your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max `pack.mcmeta`);
 **1.21.8 is the verified default & anchor**.
 
 > **For any agent, on any platform.** This is a plain, self-contained folder + one Python
@@ -31,7 +31,7 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
   `straight`, `custom`, `multilane` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
 - `--ns` datapack namespace (also the scoreboard name). `--origin X Z Y` is the world build
   origin (note the order: **X Z Y**). `--mc-version` is any version in the supported auto band
-  **1.21 … 1.21.9** (defaults to the verified `1.21.8` anchor); pack_format, function-folder name,
+  **1.21 … 1.21.10** (defaults to the verified `1.21.8` anchor); pack_format, function-folder name,
   `pack.mcmeta` shape and sign-NBT dialect all auto-derive from the version table. An unknown
   version still **hard-fails** ("never guess").
 - The datapack is written to `build/<ns>/`. Add `--world-dir "<world>/datapacks"` to deploy it

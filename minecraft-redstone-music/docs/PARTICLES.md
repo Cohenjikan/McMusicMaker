@@ -33,7 +33,7 @@ python scripts/build_particles.py
        [--music-ns qlxm]                    # 音乐机器 NS → 自动跟随其 [播放] 触发
        [--offset-gt 0]                      # 整体游戏刻偏移(粒子领先/滞后时校准)
        [--mc-version 1.21.8]                # 版本表驱动 pack_format/牌子 NBT; 默认 1.21.8(实测锚点)
-                                            #   支持自动带 1.21..1.21.9; 1.20.3-1.20.6/未知版本拒建(assert_build_supported)
+                                            #   支持自动带 1.21..1.21.10; 1.20.3-1.20.6/未知版本拒建(assert_build_supported)
        [--console-origin X Y Z]             # 控制台牌子位置(默认布局 origin, Z-6)
        [--world-dir <world>/datapacks]      # 给了才部署; 默认只写 build/
 ```

@@ -9,7 +9,7 @@ facts recorded below — not in aspirational handoff notes.
 Scope: **Family A only** (RedPiano mod, real note blocks, `/tick rate 80`, resourcepack
 `qzpno_mv`, datapack — formats are version-relative; rp_format 64 / dp_format 81 is the
 **1.21.8** row). The skill is now **version-adaptive** across a supported auto band
-(1.21..1.21.9); 1.21.8 is the verified default/anchor — see [Version adaptiveness](#version-adaptiveness)
+(1.21..1.21.10); 1.21.8 is the verified default/anchor — see [Version adaptiveness](#version-adaptiveness)
 below. Family B (audio slice) is an external repo and out of scope — see the last row.
 
 Date: 2026-06-26.
@@ -68,7 +68,7 @@ a format number). See `CONTRACT.md` §3 and `MOD_ARCHITECTURE.md` §6.4.
 
 | version band | tier | what works |
 |---|---|---|
-| **1.21 .. 1.21.9** (1.21, .1, .2, .3, .4, .5, .6, .7, .8, .9) | 🟢 green | full auto: datapack + resourcepack + mod-build config self-sync from `--mc-version`. **1.21.8 = verified default & anchor** (user-tested in-game). |
+| **1.21 .. 1.21.10** (1.21, .1, .2, .3, .4, .5, .6, .7, .8, .9) | 🟢 green | full auto: datapack + resourcepack + mod-build config self-sync from `--mc-version`. **1.21.8 = verified default & anchor** (user-tested in-game). |
 | **1.20.3 .. 1.20.6** | 🟡 yellow | datapack/resourcepack adapt automatically, **but the RedPiano mod needs a real Java source-port** (the pre-1.21 scoreboard config API, + Java 17 at 1.20.4) — **out of auto scope**. `assert_build_supported()` refuses the mod-touching builds (`build_machine` / `build_particles` / `build_resourcepack`). |
 | **≤ 1.20.2** | ⛔ refused | **hard refuse** — no `/tick rate` (added 1.20.3) and no `return`; the tick80 timing model (80 TPS, samples tuned for it, repeater geometry baked at 0.025 s/cell) cannot work → 4×-too-slow, unfixable. **1.20.3 is the hard floor.** |
 | unknown version | ⛔ refused | still **hard-fails** ("never guess", CONTRACT §1.9). |
@@ -125,7 +125,7 @@ following must be present in-game for a generated machine to make sound:
    rp_format makes MC silently disable the pack → silence. (dp_format and rp_format are
    *different* number lines — on **1.21.8** that is dp = 81, rp = 64; both auto-derive from
    `VERSION_TABLE`. See `CONTRACT.md` §3 and [Version adaptiveness](#version-adaptiveness).)
-3. **An MC version in the supported auto band (1.21..1.21.9)**, selected via `--mc-version`;
+3. **An MC version in the supported auto band (1.21..1.21.10)**, selected via `--mc-version`;
    **1.21.8** is the verified default/anchor. `get_version_profile` drives dp_format / rp_format
    / folder names / pack.mcmeta shape from `VERSION_TABLE` (the single source of truth). Unknown
    versions still **hard-fail** ("never guess"). See [Version adaptiveness](#version-adaptiveness)

@@ -119,6 +119,9 @@ VERSION_TABLE = {
     "1.21.9":  _vrow(88, 69, "function",  "minmax", "component_snbt",   True,  "green", "high",
                      "25w31a: pack.mcmeta uses min_format/max_format (single pack_format disabled). "
                      "dp 88 / rp 69 (verified)."),
+    "1.21.10": _vrow(88, 69, "function",  "minmax", "component_snbt",   True,  "green", "high",
+                     "non-breaking after 1.21.9; same major format dp 88 / rp 69 (minor-versioned "
+                     "pack formats introduced 1.21.9). min/max emission identical to 1.21.9."),
 }
 
 
@@ -892,6 +895,12 @@ if __name__ == "__main__":
     prof9 = get_version_profile("1.21.9")
     assert prof9.dp_format == 88 and prof9.rp_format == 69 and prof9.uses_minmax, prof9
     print("ok: 1.21.9 profile (min/max pack.mcmeta)", prof9)
+    # 1.21.10 = non-breaking sibling of 1.21.9 (same 88/69 minmax); top of the green band.
+    prof10 = get_version_profile("1.21.10")
+    assert prof10.dp_format == 88 and prof10.rp_format == 69 and prof10.uses_minmax
+    assert prof10.tier == "green" and prof10.sign_dialect == "component_snbt"
+    assert_build_supported(prof10)  # green passes
+    print("ok: 1.21.10 profile (green, min/max, same 88/69 as 1.21.9)", prof10)
     # yellow band: facts resolve, but the build policy refuses (mod not auto <1.21).
     prof_y = get_version_profile("1.20.4")
     assert prof_y.dp_format == 26 and prof_y.function_folder == "functions" and prof_y.tier == "yellow"

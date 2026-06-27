@@ -8,7 +8,7 @@ disagree, the poc wins for **geometry/timing**, this contract wins for **API sha
 
 Scope: **Family A only** — RedPiano mod, real note blocks, `/tick rate 80`, resourcepack
 `qzpno_mv`, datapack + resourcepack + mod-build config all self-synced from one `--mc-version`.
-**Supported auto band = 1.21..1.21.9** (tier "green"); **MC 1.21.8 = the verified default & anchor**
+**Supported auto band = 1.21..1.21.10** (tier "green"); **MC 1.21.8 = the verified default & anchor**
 (dp_format 81, rp_format 64 — those are the 1.21.8 row). Family B (audio slice,
 `method=slice`) is an external repo and is **out of scope** — generators MUST hard-fail on it.
 
@@ -19,6 +19,7 @@ scripts/
   build_machine.py          # CLI entry (§4)
   build_resourcepack.py     # version-driven qzpno_mv repack (§5)
   mod_build.py              # per-version mod toolchain printer/writer (§5)
+  prepare_all.py            # one-command orchestrator: datapack+resourcepack+mod-config (§5)
   redpiano_core.py          # shared plumbing (§1)  — NO geometry here
   params_schema.py          # schema + validation (§2)
   generators/
@@ -439,7 +440,7 @@ VERSION_TABLE = {
               "has_tick_rate":True, "has_return_cmd":True, "tier":"yellow",
               "tps":80, "game_ticks_per_cell":2, "confidence":"high",
               "notes":"last pre-rename line; plural folders functions/, tags/functions/. YELLOW: mod needs <1.21 scoreboard-API source-port + Java 17."},
-  # ── 1.21..1.21.9 = tier "green" (supported auto band).
+  # ── 1.21..1.21.10 = tier "green" (supported auto band).
   "1.21":    {"dp_format":48, "rp_format":34, "function_folder":"function",
               "packmeta_shape":"single", "sign_dialect":"component_string",
               "has_tick_rate":True, "has_return_cmd":True, "tier":"green",
@@ -469,6 +470,9 @@ VERSION_TABLE = {
   "1.21.9":  {"dp_format":88, "rp_format":69, "function_folder":"function",
               "packmeta_shape":"minmax", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high",
               "notes":"25w31a switched pack.mcmeta to min_format/max_format (packmeta_shape=minmax). SUPPORTED via min/max emission; dp 88 / rp 69 format-verified, in-game listen pending."},
+  "1.21.10": {"dp_format":88, "rp_format":69, "function_folder":"function",
+              "packmeta_shape":"minmax", "sign_dialect":"component_snbt", "tier":"green", "confidence":"high",
+              "notes":"non-breaking sibling of 1.21.9 -> same major format 88/69 (minor-versioned pack formats introduced 1.21.9). Top of the supported band."},
 }
 ```
 (Fields omitted on a row inherit the documented per-family defaults — e.g. `tps=80`,
@@ -487,6 +491,7 @@ VERSION_TABLE = {
 | 1.21.7 | 81 | 64 | high | Wiki Pack_format |
 | **1.21.8** | **81** | **64** | **high** | Wiki Pack_format + **anchored in repo** (poc generators dp=81, poc/02e rp=64, user-verified in-game) |
 | 1.21.9 | 88 | 69 | **high** | Wiki; 1.21.9 uses `min_format`/`max_format` (`packmeta_shape="minmax"`) — **SUPPORTED via min/max emission**; formats verified, in-game listen pending |
+| 1.21.10 | 88 | 69 | **high** | Wiki; non-breaking sibling of 1.21.9 → same major 88/69 (minor-versioned formats since 1.21.9). Top of the supported band |
 
 > **Conflict note (resolved):** an initial web search reported "1.21.8 → pack format 64",
 > which conflated the **resource-pack** number (64) with the **data-pack** number. The
