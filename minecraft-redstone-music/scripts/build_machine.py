@@ -232,27 +232,31 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
     print("")
     print("-" * 64)
     if deployed_to:
-        print(f"  DEPLOYED to: {deployed_to}")
-        print("  In-game next steps:")
+        nfun = (stats or {}).get("_deploy_verified")
+        print(f"  ✓ DEPLOYED + VERIFIED in world: {deployed_to}")
+        if nfun:
+            print(f"    ({nfun} functions + pack.mcmeta confirmed on disk)")
+        print("  In-game steps (the song needs ALL of these, in order):")
         print("    1. /reload")
+        print("    2. /tick rate 80                  ⚠ TYPE THIS MANUALLY — the machine does NOT set it")
+        print("                                       (samples tuned for tick80; ~4x too slow without it)")
+        print(f"    3. /function {args.ns}:setup       (builds the machine in the world)")
+        print("    4. enable the qzpno_mv resourcepack in Options -> Resource Packs (or = total silence)")
+        print("    5. press the [play] sign/button to perform the song")
     else:
         out_path = os.path.join(args.out, args.ns)
-        print(f"  Datapack written to: {out_path}")
-        print("  NOT deployed (no --world-dir). To install it, either:")
-        print(f"    - re-run with  --world-dir <world>/datapacks")
-        print(f"    - or copy  {out_path}  into your world's datapacks/ folder, then /reload")
-        print("  In-game next steps (once installed):")
-        print("    1. /reload")
-    print("    2. /tick rate 80                  ⚠ TYPE THIS MANUALLY — the machine does NOT set it")
-    print("                                       (samples tuned for tick80; ~4x too slow without it)")
-    print(f"    3. /function {args.ns}:setup       (builds the machine in the world)")
-    print("    4. enable the qzpno_mv resourcepack in Options -> Resource Packs (or = total silence)")
-    print("    5. press the [play] sign/button to perform the song")
+        print("  ⛔ NOT INSTALLED IN ANY WORLD — this was a BUILD-ONLY run (no --world-dir).")
+        print(f"     The datapack exists ONLY at: {out_path}")
+        print(f"     >>> /function {args.ns}:setup will be \"Unknown function\" in-game until you")
+        print( "         deploy it. DO NOT report success or tell the user to run it yet. <<<")
+        print("     Install it ONE of these ways:")
+        print(f"       - re-run with  --world-dir <profile>/saves/<world>/datapacks   (auto-verified), or")
+        print("       - use  scripts/prepare_all.py  (deploys datapack + resourcepack + mod), or")
+        print(f"       - copy  {out_path}  into <world>/datapacks/ yourself, then /reload")
     print("")
-    print("  RUNTIME ASSETS REQUIRED:")
-    print("    - This command builds/deploys the DATAPACK only.")
-    print("    - qzpno_mv.zip must exist in the profile resourcepacks/ folder and be enabled.")
-    print("    - RedPiano mod + matching Fabric API must be in mods/, then Minecraft restarted.")
+    print("  RUNTIME ASSETS the song also needs (datapack alone is silent):")
+    print("    - qzpno_mv.zip in the profile resourcepacks/ folder AND enabled in Options -> Resource Packs.")
+    print("    - RedPiano mod + matching Fabric API in mods/, then Minecraft restarted.")
     print("    - For an end-to-end run, use scripts/prepare_all.py (default automation).")
     # Version-specific binaries reminder — the #1 in-the-wild failure mode: an agent
     # builds the datapack for a non-1.21.8 version and stops there, but the PREBUILT jar
@@ -437,6 +441,27 @@ def run(args):
     deployed_to = None
     if deploy_dir is not None:
         deployed_to = stats.get("deployed_to") or os.path.join(deploy_dir, args.ns)
+        # VERIFY the deploy actually landed. A silently-failed copy (wrong --world-dir,
+        # permissions, etc.) must NOT be reported as success — that is the #1 in-the-wild
+        # failure (agent builds, says "/function X:setup", but the pack never reached the
+        # world → "unknown function" in-game). Confirm pack.mcmeta + the setup function.
+        ff = profile.function_folder
+        must_exist = [
+            os.path.join(deployed_to, "pack.mcmeta"),
+            os.path.join(deployed_to, "data", args.ns, ff, "setup.mcfunction"),
+        ]
+        missing = [p for p in must_exist if not os.path.isfile(p)]
+        if missing:
+            raise RedPianoError(
+                f"DEPLOY VERIFICATION FAILED — missing under {deployed_to}: {missing}. The "
+                f"datapack did NOT install; /function {args.ns}:setup would be 'unknown "
+                f"function' in-game. Ensure --world-dir is exactly "
+                f"<profile>/saves/<world>/datapacks (NOT the profile root or save root) and "
+                f"is writable."
+            )
+        fdir = os.path.join(deployed_to, "data", args.ns, ff)
+        stats["_deploy_verified"] = sum(
+            1 for _r, _d, fs in os.walk(fdir) for f in fs if f.endswith(".mcfunction"))
     _print_report(args, notes, stats, deployed_to, profile)
     if coords_path:
         print(f"  particle coords : {coords_path}")
