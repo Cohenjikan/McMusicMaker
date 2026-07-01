@@ -11,13 +11,16 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 
 > Nine times out of ten it is one of these. Check **in this order** before debugging anything else.
 >
-> 1. **⚠ 资源包 `qzpno_mv` 你手动启用了吗?(最常见的「完全没声」原因)**
->    必须在 **选项 → 资源包 (Options → Resource Packs)** 里把 **`qzpno_mv`** **移到右侧「已选用」**——
->    这一步**没有自动化能替你点**,必须手动确认在「已选用」一侧。
->    若忘了启用、或 `rp_format` 不符,MC 会**静默禁用**该包 → 所有 `qzpno:` 音效变成
->    "unknown soundEvent" → **全静音**。`rp_format`(1.21.8 行为 **64**;其它版本由 `--mc-version`
->    从版本表自动取值)。获取/重打包资源包见 **[BINARIES.md](BINARIES.md)**,或用
->    `scripts/build_resourcepack.py` 在 skill 内按版本重打包。
+> 0. **⚠ 你真的部署进游戏了吗?(在沙箱里跑 AI 时最常见、最隐蔽的原因)**
+>    如果构建是由 AI 工具(Trae 等)在沙箱里做的,它写 `C:\Minecraft` 会被重定向到一个镜像,
+>    **游戏根本读不到**。真正的部署必须由**你本人在资源管理器里双击 `dist\DEPLOY_TO_GAME.bat`**。
+>    只有当 `dist\DEPLOY_RECEIPT.txt` 存在时才算真部署(`python scripts/deploy_bundle.py --verify dist`
+>    会告诉你 `✓/✗`)。详见 **[docs/RUNTIME_SANDBOX.md](docs/RUNTIME_SANDBOX.md)**。
+> 1. **⚠ 资源包 `qzpno_mv` 你手动启用了吗?**
+>    双击 `.bat` 时会自动把它写进 `options.txt`;你只需在 **选项 → 资源包 (Options → Resource
+>    Packs)** 里确认 **`qzpno_mv`** 在右侧「已选用」。若 `rp_format` 不符,MC 会**静默禁用**该包 →
+>    所有 `qzpno:` 音效变 "unknown soundEvent" → **全静音**。`rp_format`(1.21.8/1.21.7 = **64**;
+>    其它版本由 `--mc-version` 自动取值)。见 **[BINARIES.md](BINARIES.md)**。
 > 2. **⚠ tick80 你手动设了吗?机器不会替你设。**
 >    忘了 = 播放约 **4 倍慢** + 旋律截断(melody-cut)时序失准。**你必须自己在游戏里手动敲
 >    `/tick rate 80`**(在按[播放]之前)。机器**不会**自动设置它(用命令方块自动设的方案已测试,
@@ -30,17 +33,28 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 
 ---
 
-## 0. Runtime rules
+## 0. Runtime rules — build in the workspace, install via a native double-click
 
-Use `scripts/prepare_all.py` for normal work. It is the default automation surface: it
-deploys the datapack, builds/copies and enables `qzpno_mv.zip`, writes the RedPiano mod
-build config, auto-detects Gradle + JDK 21, builds/copies the RedPiano jar into
-`<profile>/mods/`, and reuses/downloads the matching Fabric API jar.
+You are likely running in a filesystem **sandbox** (Trae SOLO / similar). In it, writing to
+`C:\Minecraft\...` is silently redirected to a private mirror the real game never reads, so a
+direct "deploy" looks fine but nothing plays. See **[docs/RUNTIME_SANDBOX.md](docs/RUNTIME_SANDBOX.md)**.
+So the flow is split:
 
-Manual runtime work is only for offline/partial artifacts. A result with no RedPiano jar
-or no matching Fabric API in `mods/` is **not ready**. After any jar changes, fully restart
-Minecraft; `/reload` is not enough for mods. The world must allow command blocks / cheats
-because the machine uses command blocks and mass `setblock`.
+- **Build:** `scripts/prepare_all.py` stages the datapack + `qzpno_mv.zip` + mod/Fabric API
+  jars into the workspace `dist/` and emits `dist/DEPLOY_TO_GAME.bat` with the real paths + a
+  token baked in. This is reliable in a sandbox (the workspace is real).
+- **Install (the user's job, once):** the **user double-clicks `dist\DEPLOY_TO_GAME.bat` in
+  Windows Explorer** — a native process, outside the sandbox — which copies everything into
+  the real profile, enables `qzpno_mv`, and writes `dist\DEPLOY_RECEIPT.txt`.
+- **Proof:** the song is in-game only after that receipt exists —
+  `python scripts/deploy_bundle.py --verify dist` (`✓`/`✗`). Never claim "installed" without it.
+
+**Do NOT** deploy into `C:\Minecraft\...` yourself, **do NOT** run the `.bat` yourself (it would
+inherit the sandbox and install into the mirror), and **do NOT** hand-write a `deploy.ps1` —
+`prepare_all.py` handles path encoding, unicode world names, options.txt, and mod checks.
+On a genuinely native host (not a sandbox) you may add `--install-now` to install inline.
+After any mod jar change, fully restart Minecraft (`/reload` is not enough for mods). The
+world must allow command blocks / cheats.
 
 ## 1. (optional) Design a layout
 
@@ -48,7 +62,7 @@ Open **`designer/layout_designer.html`** in a browser. Load your MIDI, pick a fo
 (`inplace`/`swave`/`straight`/`custom`/`multilane`), tune the parameters, and **Export
 params JSON**. This step is optional — if you skip it, every field takes its form's default.
 
-## 2. Prepare the runtime bundle (preferred)
+## 2. Build the bundle + emit the native installer (preferred)
 
 Use this for real handoff work. Do not add `--skip-*` flags unless the user explicitly
 asked for a partial/offline artifact.
@@ -61,18 +75,25 @@ python scripts/prepare_all.py \
     --origin 0 0 255 \
     --mc-version 1.21.8 \
     --world-dir "<profile>/saves/<world>/datapacks" \
+    --profile-dir "<profile>" \
+    --dist dist \
     [--samples-root ../poc | --prebuilt-rp path/to/qzpno_mv.zip] \
     [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
 ```
 
-- In a full source checkout, `prepare_all.py` auto-detects `../../poc` as the sample root.
-- In a packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise the script
-  refuses to silently skip the resourcepack.
-- When a profile is inferred from `--world-dir`, the script edits `<profile>/options.txt`
-  so `file/qzpno_mv.zip` is selected. If `options.txt` is missing, start that Minecraft
-  profile once and rerun.
-- If Gradle/JDK 21/Fabric API download is unavailable, `prepare_all.py` exits nonzero.
-  Fix the missing dependency and rerun; do not treat the datapack alone as complete.
+This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
+`dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
+
+- `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
+- **1.21.8 / 1.21.7:** pass the prebuilt `--prebuilt-rp` + `--prebuilt-mod-jar` (ship beside
+  the skill) — no Gradle/JDK/ffmpeg needed. In a full source checkout, `--samples-root`
+  auto-detects `../../poc`; the mod jar is built only if you have Gradle + JDK 21.
+- If a required dependency is unavailable, `prepare_all.py` exits nonzero. Fix it and rerun;
+  do not treat a partial build as complete.
+
+**Then:** the user double-clicks `dist\DEPLOY_TO_GAME.bat` (Explorer, native). Confirm with
+`python scripts/deploy_bundle.py --verify dist` → `✓ INSTALLED`. Only then is the song in-game.
+(Native host with no sandbox? add `--install-now` to skip the `.bat`.)
 
 ## 3. Build the datapack only (smoke test)
 

@@ -233,9 +233,13 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
     print("-" * 64)
     if deployed_to:
         nfun = (stats or {}).get("_deploy_verified")
-        print(f"  ✓ DEPLOYED + VERIFIED in world: {deployed_to}")
+        print(f"  ✓ datapack copied to world: {deployed_to}")
         if nfun:
             print(f"    ({nfun} functions + pack.mcmeta confirmed on disk)")
+        print("  ⚠ NOTE: 'confirmed on disk' only proves the bytes are where THIS process can")
+        print("    see them. Inside a Trae/sandbox runtime a C:\\Minecraft write is redirected to")
+        print("    the VMCache mirror and the real game never sees it. For a sandbox-safe install")
+        print("    use  scripts/prepare_all.py  (it emits a native DEPLOY_TO_GAME.bat + receipt).")
         print("  In-game steps (the song needs ALL of these, in order):")
         print("    1. /reload")
         print("    2. /tick rate 80                  ⚠ TYPE THIS MANUALLY — the machine does NOT set it")

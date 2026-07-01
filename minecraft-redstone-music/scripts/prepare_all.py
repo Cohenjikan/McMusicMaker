@@ -19,10 +19,18 @@ failing step aborts the rest. The two hard limits it CANNOT remove are surfaced 
 pack_format numbers for an unknown version must be added to the table (never guessed), and the
 recompiled mixin must be listened to in-game.
 
+It does NOT copy into the Minecraft profile from a sandbox (that write would land in a
+VMCache mirror the game never reads — see docs/RUNTIME_SANDBOX.md). Instead it stages
+everything into the workspace `dist/` and emits `dist/DEPLOY_TO_GAME.bat`; the USER
+double-clicks that (natively) to install, which writes `dist/DEPLOY_RECEIPT.txt` as proof.
+
 Example:
   python scripts/prepare_all.py --midi song.mid --ns mysong --origin 0 0 255 \
-      --mc-version 1.21.10 --form swave --samples-root poc \
-      --world-dir "C:/.../saves/test/datapacks" --enable-resourcepack
+      --mc-version 1.21.8 --form swave --prebuilt-rp qzpno_mv.zip \
+      --prebuilt-mod-jar redpiano-1.0.0.jar \
+      --world-dir "C:/.../saves/test/datapacks" --profile-dir "C:/.../Fabric 1.21.8" --dist dist
+  # then: user double-clicks dist/DEPLOY_TO_GAME.bat ; verify with
+  #   python scripts/deploy_bundle.py --verify dist
 """
 
 import argparse
@@ -42,8 +50,14 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from redpiano_core import RedPianoError, get_version_profile, assert_build_supported  # noqa: E402
+from runtime_guard import path_is_under_trae_vmcache  # noqa: E402
+import deploy_bundle  # noqa: E402
 
 DEFAULT_RP_OUT = os.path.join("build", "qzpno_mv.zip")
+
+
+def _under_trae_vmcache(value):
+    return path_is_under_trae_vmcache(value)
 
 
 def _default_mod_dir():
@@ -199,8 +213,8 @@ def _latest_redpiano_jar(mod_dir):
     return max(jars, key=lambda p: os.path.getmtime(p))
 
 
-def _copy_to_profile_mods(src, profile_dir):
-    mods_dir = os.path.join(profile_dir, "mods")
+def _stage_jar(src, mods_dir):
+    """Copy a jar into a staging mods/ dir (workspace), returning the target path."""
     os.makedirs(mods_dir, exist_ok=True)
     target = os.path.join(mods_dir, os.path.basename(src))
     if os.path.abspath(os.path.normpath(src)) != os.path.abspath(os.path.normpath(target)):
@@ -217,9 +231,8 @@ def _fabric_api_matches(path, mc_version):
     )
 
 
-def _find_fabric_api(profile_dir, mc_version):
-    mods_dir = os.path.join(profile_dir, "mods")
-    if not os.path.isdir(mods_dir):
+def _find_fabric_api(mods_dir, mc_version):
+    if not mods_dir or not os.path.isdir(mods_dir):
         return None
     matches = [
         os.path.join(mods_dir, name)
@@ -231,8 +244,7 @@ def _find_fabric_api(profile_dir, mc_version):
     return max(matches, key=lambda p: os.path.getmtime(p))
 
 
-def _download_fabric_api(profile_dir, mc_version):
-    mods_dir = os.path.join(profile_dir, "mods")
+def _download_fabric_api(mods_dir, mc_version):
     os.makedirs(mods_dir, exist_ok=True)
     query = urllib.parse.urlencode({
         "game_versions": json.dumps([mc_version]),
@@ -326,65 +338,6 @@ def _copy_prebuilt_resourcepack(src, out_zip, profile):
     return out_zip
 
 
-def _ensure_rp_in_profile(rp_zip, profile_dir):
-    target_dir = os.path.join(profile_dir, "resourcepacks")
-    os.makedirs(target_dir, exist_ok=True)
-    target = os.path.join(target_dir, os.path.basename(rp_zip))
-    if os.path.abspath(os.path.normpath(rp_zip)) != os.path.abspath(os.path.normpath(target)):
-        shutil.copy2(rp_zip, target)
-        print(f"  resourcepack copied into profile -> {target}")
-    return target
-
-
-def _load_options_list(line, key):
-    try:
-        return json.loads(line[len(key) + 1:] or "[]")
-    except json.JSONDecodeError as e:
-        raise RedPianoError(f"could not parse {key} in options.txt: {e}")
-
-
-def _enable_resourcepack(profile_dir, rp_zip):
-    """Enable file/<zip> in <profile>/options.txt, preserving other packs."""
-    opt = os.path.join(profile_dir, "options.txt")
-    if not os.path.isfile(opt):
-        raise RedPianoError(
-            f"cannot auto-enable resourcepack because options.txt was not found at {opt}; "
-            f"start this Minecraft profile once, or enable {os.path.basename(rp_zip)} manually"
-        )
-
-    raw = open(opt, "r", encoding="utf-8").read()
-    nl = "\r\n" if "\r\n" in raw else "\n"
-    lines = raw.split(nl)
-    entry = "file/" + os.path.basename(rp_zip)
-    changed = False
-    saw_resource_packs = False
-
-    for i, line in enumerate(lines):
-        if line.startswith("resourcePacks:"):
-            saw_resource_packs = True
-            arr = _load_options_list(line, "resourcePacks")
-            if entry not in arr:
-                arr.append(entry)
-                changed = True
-            lines[i] = "resourcePacks:" + json.dumps(arr, ensure_ascii=False)
-        elif line.startswith("incompatibleResourcePacks:"):
-            arr = _load_options_list(line, "incompatibleResourcePacks")
-            if entry in arr:
-                arr = [x for x in arr if x != entry]
-                changed = True
-            lines[i] = "incompatibleResourcePacks:" + json.dumps(arr, ensure_ascii=False)
-
-    if not saw_resource_packs:
-        lines.append("resourcePacks:" + json.dumps([entry], ensure_ascii=False))
-        changed = True
-
-    backup = opt + ".redpiano.bak"
-    if changed:
-        shutil.copyfile(opt, backup)
-        open(opt, "w", encoding="utf-8", newline="").write(nl.join(lines))
-    return entry, changed, backup
-
-
 def _run(label, argv, *, cwd=None, env=None):
     """Run a sub-step, streaming its output. Returns True on success, False on failure."""
     print("\n" + "=" * 64)
@@ -436,12 +389,8 @@ def main(argv=None):
                         "the default becomes <profile>/resourcepacks/qzpno_mv.zip.")
     p.add_argument("--profile-dir", default=None, dest="profile_dir",
                    help="Minecraft profile root, e.g. .../ModrinthApp/profiles/Fabric 1.21.8. "
-                        "Usually inferred from --world-dir <profile>/saves/<world>/datapacks.")
-    p.add_argument("--enable-resourcepack", action="store_true", dest="enable_resourcepack",
-                   help="edit <profile>/options.txt so file/qzpno_mv.zip is selected "
-                        "(kept for compatibility; this is automatic when a profile is known).")
-    p.add_argument("--no-enable-resourcepack", action="store_true", dest="no_enable_resourcepack",
-                   help="do not edit options.txt. Use only when you will enable the pack manually.")
+                        "Usually inferred from --world-dir <profile>/saves/<world>/datapacks. "
+                        "Baked into the generated DEPLOY_TO_GAME.bat.")
     # mod
     p.add_argument("--mod-dir", default=None, dest="mod_dir",
                    help="path to mod/redpiano (default ../../mod/redpiano).")
@@ -457,7 +406,8 @@ def main(argv=None):
                    help="explicitly skip RedPiano jar build. This produces a NOT READY "
                         "result unless a matching jar is already installed.")
     p.add_argument("--skip-mod-install", action="store_true", dest="skip_mod_install",
-                   help="do not copy RedPiano jar into <profile>/mods.")
+                   help="do not stage the RedPiano jar / Fabric API into the bundle (datapack "
+                        "+ resourcepack only). Use only when the mods are already installed.")
     p.add_argument("--fabric-api-jar", default="auto", dest="fabric_api_jar",
                    help="matching Fabric API jar to install, or 'auto' to reuse/download "
                         "a build for --mc-version (default auto).")
@@ -465,6 +415,15 @@ def main(argv=None):
                    help="do not use Modrinth to fetch Fabric API when it is missing.")
     p.add_argument("--skip-fabric-api-check", action="store_true", dest="skip_fabric_api_check",
                    help="explicitly skip Fabric API install/check. This is not a ready runtime.")
+    # deploy bundle
+    p.add_argument("--dist", default="dist", dest="dist",
+                   help="workspace staging dir for the deploy bundle (default 'dist'). Must be "
+                        "inside the real project folder — that is the ONE path a sandboxed agent "
+                        "can write to reliably.")
+    p.add_argument("--install-now", action="store_true", dest="install_now",
+                   help="NATIVE HOSTS ONLY: copy the staged artifacts straight into the profile "
+                        "now (skips the double-click .bat). Do NOT use inside a Trae/sandbox "
+                        "runtime — it would install into the VMCache mirror.")
     args = p.parse_args(argv)
 
     # 0. fail fast on unsupported version BEFORE running anything.
@@ -507,109 +466,119 @@ def main(argv=None):
         return 2
 
     profile_dir = args.profile_dir or _infer_profile_dir(args.world_dir, args.rp_out)
-    if args.rp_out == DEFAULT_RP_OUT and profile_dir and not args.skip_resourcepack:
-        args.rp_out = os.path.join(profile_dir, "resourcepacks", "qzpno_mv.zip")
-    auto_enable_resourcepack = (
-        not args.no_enable_resourcepack
-        and not args.skip_resourcepack
-        and profile_dir is not None
-    )
-    if args.enable_resourcepack and not profile_dir:
+    world_datapacks_dir = args.world_dir
+
+    # Hard error only if a target LITERALLY resolves under the VMCache mirror (someone
+    # pasted a VMCache path). We no longer try to *detect* the sandbox and refuse — that
+    # was unreliable (the sandbox is transparent from inside) and left the agent with no
+    # working path. Instead we always build in the workspace and emit a native installer.
+    for pth in (profile_dir, world_datapacks_dir):
+        if _under_trae_vmcache(pth):
+            sys.stderr.write(
+                f"error: target {pth} is under the Trae VMCache mirror, not the real "
+                "profile. Pass the real C:\\Minecraft\\... path instead.\n")
+            return 2
+
+    if args.install_now and not (profile_dir and world_datapacks_dir):
         sys.stderr.write(
-            "error: --enable-resourcepack needs --profile-dir, or a --world-dir shaped like "
-            "<profile>/saves/<world>/datapacks, or an --rp-out inside <profile>/resourcepacks\n"
-        )
+            "error: --install-now needs both a real --world-dir and a --profile-dir "
+            "(or an inferable one).\n")
         return 2
-    if args.no_enable_resourcepack and args.enable_resourcepack:
-        sys.stderr.write("error: choose either --enable-resourcepack or --no-enable-resourcepack\n")
-        return 2
-    if args.prebuilt_mod_jar and args.skip_mod_build:
-        print("[auto] --prebuilt-mod-jar was provided; it will be installed even though build is skipped.")
 
     mod_dir = args.mod_dir or _default_mod_dir()
+    dist_dir = os.path.abspath(args.dist)
+    mods_stage = os.path.join(dist_dir, "mods")
+    # Fail fast (before the expensive builds) if dist/ is under VMCache or not writable.
+    if _under_trae_vmcache(dist_dir):
+        sys.stderr.write(
+            f"error: --dist {dist_dir} is under the Trae VMCache mirror. Stage into the real "
+            "project workspace so the native DEPLOY_TO_GAME.bat can read it.\n")
+        return 2
+    try:
+        os.makedirs(dist_dir, exist_ok=True)
+        _probe = os.path.join(dist_dir, ".write_test")
+        with open(_probe, "w") as _f:
+            _f.write("ok")
+        os.remove(_probe)
+    except OSError as e:
+        sys.stderr.write(f"error: cannot write to --dist {dist_dir}: {e}\n")
+        return 2
     py = sys.executable
     here = _HERE
     pf = (f"min/max {profile.dp_format}" if profile.packmeta_shape == "minmax"
           else f"pack_format {profile.dp_format}")
     print("#" * 64)
     print(f"#  prepare_all — MC {args.mc_version}  (tier {profile.tier}; dp {pf}, rp {profile.rp_format})")
-    print("#  datapack -> resourcepack -> mod-config -> mod jar -> mods install")
+    print("#  build (workspace) -> stage dist/ -> emit native DEPLOY_TO_GAME.bat")
+    print(f"#  dist    -> {dist_dir}")
+    if world_datapacks_dir:
+        print(f"#  world   -> {world_datapacks_dir}")
     if profile_dir:
         print(f"#  profile -> {profile_dir}")
     print("#" * 64)
 
-    # 1. DATAPACK
+    # 1. DATAPACK — build into the workspace only (NEVER copy into the profile here;
+    #    from a sandbox that copy lands in the VMCache mirror and is invisible in-game).
     dp_argv = [py, os.path.join(here, "build_machine.py"),
                "--midi", args.midi, "--form", args.form, "--ns", args.ns,
                "--origin", str(args.origin[0]), str(args.origin[1]), str(args.origin[2]),
                "--mc-version", args.mc_version, "--out", args.out]
     if args.params:
         dp_argv += ["--params", args.params]
-    if args.world_dir:
-        dp_argv += ["--world-dir", args.world_dir]
     if args.force_cap:
         dp_argv += ["--force-cap"]
     if not _run("datapack (build_machine.py)", dp_argv):
         return 1
+    datapack_src = os.path.join(args.out, args.ns)
 
-    # 2. RESOURCEPACK
-    resourcepack_ready = False
-    resourcepack_enabled = False
+    # 2. RESOURCEPACK — build/copy the qzpno_mv.zip into the workspace dist/.
+    rp_zip = None
+    rp_stage = os.path.join(dist_dir, deploy_bundle.RP_ZIP_NAME)
     if args.samples_root:
         rp_argv = [py, os.path.join(here, "build_resourcepack.py"),
                    "--mc-version", args.mc_version, "--samples-root", args.samples_root,
-                   "--out", args.rp_out]
+                   "--out", rp_stage]
         if not _run("resourcepack (build_resourcepack.py)", rp_argv):
             return 1
-        resourcepack_ready = True
+        rp_zip = rp_stage
     elif args.prebuilt_rp:
         print("\n" + "=" * 64)
         print("  STEP: resourcepack (prebuilt copy)")
-        print(f"  source: {args.prebuilt_rp}")
-        print(f"  out   : {args.rp_out}")
+        print(f"  source: {args.prebuilt_rp} -> {rp_stage}")
         print("=" * 64)
         try:
-            _copy_prebuilt_resourcepack(args.prebuilt_rp, args.rp_out, profile)
+            _copy_prebuilt_resourcepack(args.prebuilt_rp, rp_stage, profile)
         except RedPianoError as e:
             sys.stderr.write(f"error: {e}\n")
             return 2
-        print(f"  copied -> {args.rp_out}  ({os.path.getsize(args.rp_out)//1024} KB)")
-        resourcepack_ready = True
+        print(f"  copied -> {rp_stage}  ({os.path.getsize(rp_stage)//1024} KB)")
+        rp_zip = rp_stage
     else:
         print("\n" + "-" * 64)
-        print("  STEP: resourcepack SKIPPED BY REQUEST (--skip-resourcepack).")
-        print("  This path is allowed only because --skip-resourcepack was explicit.")
-        print("  Verify qzpno_mv.zip is already installed and enabled before play.")
+        print("  STEP: resourcepack SKIPPED (--skip-resourcepack). No qzpno_mv.zip staged;")
+        print("        the machine will fall back to vanilla note-block tones or silence.")
         print("-" * 64)
 
-    if resourcepack_ready and auto_enable_resourcepack:
-        print("\n" + "=" * 64)
-        print("  STEP: enable resourcepack (options.txt)")
-        print("=" * 64)
-        try:
-            args.rp_out = _ensure_rp_in_profile(args.rp_out, profile_dir)
-            rp_entry, changed, backup = _enable_resourcepack(profile_dir, args.rp_out)
-        except RedPianoError as e:
-            sys.stderr.write(f"error: {e}\n")
-            return 2
-        resourcepack_enabled = True
-        if changed:
-            print(f"  enabled {rp_entry} in options.txt  (backup: {backup})")
-        else:
-            print(f"  {rp_entry} was already enabled in options.txt")
+    # 3. MOD BUILD-CONFIG (only meaningful if the mod source is present).
+    if (not args.skip_mod_install and not args.prebuilt_mod_jar
+            and not args.skip_mod_build and os.path.isdir(mod_dir)):
+        mb_argv = [py, os.path.join(here, "mod_build.py"),
+                   "--mc-version", args.mc_version, "--write", "--mod-dir", mod_dir]
+        if not _run("mod build-config (mod_build.py --write)", mb_argv):
+            return 1
 
-    # 3. MOD BUILD-CONFIG
-    mb_argv = [py, os.path.join(here, "mod_build.py"),
-               "--mc-version", args.mc_version, "--write", "--mod-dir", mod_dir]
-    if not _run("mod build-config (mod_build.py --write)", mb_argv):
-        return 1
-
-    # 4. MOD JAR (default automation: build it unless a prebuilt jar is supplied
-    # or the caller explicitly opts out).
+    # 4. MOD JAR — prefer a prebuilt jar (packaged bundles ship one; avoids needing
+    #    Gradle/JDK inside a stripped sandbox). Fall back to a Gradle build if source
+    #    is present. Result is a jar path in the workspace, later staged into dist/mods.
     built_jar = False
     mod_jar = None
     mod_jar_source = None
-    if args.prebuilt_mod_jar:
+    if args.skip_mod_install:
+        print("\n" + "-" * 64)
+        print("  STEP: mod + Fabric API SKIPPED (--skip-mod-install).")
+        print("  Bundle = datapack + resourcepack only; RedPiano must already be in mods/.")
+        print("-" * 64)
+    elif args.prebuilt_mod_jar:
         if not os.path.isfile(args.prebuilt_mod_jar):
             sys.stderr.write(f"error: --prebuilt-mod-jar not found: {args.prebuilt_mod_jar}\n")
             return 2
@@ -618,24 +587,18 @@ def main(argv=None):
     elif args.skip_mod_build:
         print("\n" + "-" * 64)
         print("  STEP: mod jar SKIPPED BY REQUEST (--skip-mod-build).")
-        print("  This is not a ready runtime unless RedPiano is already installed in mods/.")
+        print("  Not a ready runtime unless a matching RedPiano jar is already in mods/.")
         print("-" * 64)
     else:
         gradle, gradle_detail = _resolve_gradle(args.gradle, mod_dir)
         java_home, java_detail = _resolve_jdk21(args.java_home)
-        if not gradle:
+        if not gradle or not java_home:
             sys.stderr.write(
-                "error: RedPiano mod jar is required, but no Gradle launcher was found. "
-                f"Search detail: {gradle_detail}. Install Gradle or pass --gradle <path>; "
-                "do not report success without a jar.\n"
-            )
-            return 2
-        if not java_home:
-            sys.stderr.write(
-                "error: RedPiano mod jar is required, but no JDK 21 with javac was found. "
-                f"Search detail: {java_detail}. Install a JDK 21 or pass --java-home <path>; "
-                "a JRE is not enough.\n"
-            )
+                "error: no --prebuilt-mod-jar and could not build one "
+                f"(gradle: {gradle_detail}; jdk21: {java_detail}). "
+                "Ship/pass a prebuilt redpiano jar with --prebuilt-mod-jar, or install "
+                "Gradle + JDK 21. A stripped sandbox usually cannot build the jar — use "
+                "the prebuilt binary that ships beside the skill.\n")
             return 2
         print(f"[auto] using Gradle: {gradle_detail}")
         print(f"[auto] using JDK 21: {java_detail}")
@@ -644,109 +607,101 @@ def main(argv=None):
         env["PATH"] = os.path.join(java_home, "bin") + os.pathsep + env.get("PATH", "")
         if not _run(f"mod jar ({os.path.basename(gradle)} build)",
                     [gradle, "build"], cwd=mod_dir, env=env):
-            print("  (the build-config IS written, but the runtime is NOT ready.)")
             return 1
         mod_jar = _latest_redpiano_jar(mod_dir)
         if not mod_jar:
             sys.stderr.write(
                 f"error: Gradle build finished but no redpiano jar was found under "
-                f"{os.path.join(mod_dir, 'build', 'libs')}\n"
-            )
+                f"{os.path.join(mod_dir, 'build', 'libs')}\n")
             return 1
         built_jar = True
         mod_jar_source = "built"
 
-    # 5. MODS INSTALL (copy RedPiano + ensure matching Fabric API).
-    installed_mod_jar = None
-    fabric_api_ready = False
+    # 5. FABRIC API — resolve a matching build into the workspace dist/mods.
     fabric_api_path = None
-    if profile_dir and not args.skip_mod_install:
-        if mod_jar:
-            installed_mod_jar = _copy_to_profile_mods(mod_jar, profile_dir)
-            print(f"[auto] RedPiano jar installed -> {installed_mod_jar}")
-        elif not args.skip_mod_build:
-            sys.stderr.write("error: RedPiano jar was not built or supplied; runtime is not ready\n")
-            return 1
-
-        if args.skip_fabric_api_check:
-            print("[auto] Fabric API check skipped by request; runtime may not load.")
+    if not args.skip_mod_install and not args.skip_fabric_api_check and mod_jar:
+        if not _is_auto(args.fabric_api_jar):
+            if not os.path.isfile(args.fabric_api_jar):
+                sys.stderr.write(f"error: --fabric-api-jar not found: {args.fabric_api_jar}\n")
+                return 2
+            if not _fabric_api_matches(args.fabric_api_jar, args.mc_version):
+                sys.stderr.write(
+                    f"error: --fabric-api-jar is not a Fabric API build for "
+                    f"+{args.mc_version}: {args.fabric_api_jar}\n")
+                return 2
+            fabric_api_path = args.fabric_api_jar
         else:
-            if not _is_auto(args.fabric_api_jar):
-                if not os.path.isfile(args.fabric_api_jar):
-                    sys.stderr.write(f"error: --fabric-api-jar not found: {args.fabric_api_jar}\n")
+            fabric_api_path = _find_fabric_api(mods_stage, args.mc_version)
+            if not fabric_api_path and not args.no_download_fabric_api:
+                print("[auto] Fabric API missing; downloading matching build from Modrinth...")
+                try:
+                    fabric_api_path = _download_fabric_api(mods_stage, args.mc_version)
+                except RedPianoError as e:
+                    sys.stderr.write(f"error: {e}\n")
                     return 2
-                if not _fabric_api_matches(args.fabric_api_jar, args.mc_version):
-                    sys.stderr.write(
-                        f"error: --fabric-api-jar does not look like a Fabric API build "
-                        f"for +{args.mc_version}: {args.fabric_api_jar}\n"
-                    )
-                    return 2
-                fabric_api_path = _copy_to_profile_mods(args.fabric_api_jar, profile_dir)
-                fabric_api_ready = True
-                print(f"[auto] Fabric API installed -> {fabric_api_path}")
-            else:
-                fabric_api_path = _find_fabric_api(profile_dir, args.mc_version)
-                if fabric_api_path:
-                    fabric_api_ready = True
-                    print(f"[auto] Fabric API already present -> {fabric_api_path}")
-                elif not args.no_download_fabric_api:
-                    print("[auto] Fabric API missing; downloading matching build from Modrinth...")
-                    try:
-                        fabric_api_path = _download_fabric_api(profile_dir, args.mc_version)
-                    except RedPianoError as e:
-                        sys.stderr.write(f"error: {e}\n")
-                        return 2
-                    fabric_api_ready = True
-                    print(f"[auto] Fabric API downloaded -> {fabric_api_path}")
-                else:
-                    sys.stderr.write(
-                        f"error: matching Fabric API +{args.mc_version} was not found in "
-                        f"{os.path.join(profile_dir, 'mods')}. Pass --fabric-api-jar <jar> "
-                        "or allow the default Modrinth download.\n"
-                    )
-                    return 2
-    elif profile_dir and args.skip_mod_install:
-        print("[auto] mod install skipped by request; profile mods/ was not changed.")
+            if not fabric_api_path:
+                sys.stderr.write(
+                    f"error: no matching Fabric API +{args.mc_version}. Pass "
+                    "--fabric-api-jar <jar> or allow the Modrinth download.\n")
+                return 2
 
-    # ── consolidated summary + the one step that can't be automated ──
+    mod_jars = [j for j in (mod_jar, fabric_api_path) if j]
+
+    # 6. STAGE + emit the native deploy bundle (or install now on a real host).
+    token = deploy_bundle.new_token()
+    try:
+        result = deploy_bundle.build_deploy_bundle(
+            dist_dir, ns=args.ns, world_datapacks_dir=world_datapacks_dir,
+            profile_dir=profile_dir, mc_version=args.mc_version,
+            datapack_src_dir=datapack_src, rp_zip=rp_zip, mod_jars=mod_jars, token=token)
+    except (OSError, FileNotFoundError) as e:
+        sys.stderr.write(f"error: could not stage deploy bundle: {e}\n")
+        return 1
+
+    installed = False
+    if args.install_now:
+        print("\n" + "=" * 64)
+        print("  STEP: --install-now (native host) — copying into the real profile")
+        print("=" * 64)
+        try:
+            receipt, copied = deploy_bundle.install_now(
+                dist_dir, world_datapacks_dir=world_datapacks_dir, profile_dir=profile_dir,
+                ns=args.ns, manifest=result["manifest"], token=token, mc_version=args.mc_version)
+        except OSError as e:
+            sys.stderr.write(f"error: --install-now copy failed: {e}\n")
+            return 1
+        installed = True
+        for c in copied:
+            print(f"  [x] {c}")
+        print(f"  receipt -> {receipt}")
+
+    # ── honest summary ──
     print("\n" + "#" * 64)
-    print(f"#  prepared for MC {args.mc_version}:")
-    print(f"#    [x] datapack        ({args.ns}, {pf})"
-          + (f"  deployed -> {args.world_dir}" if args.world_dir else "  (build/ — not deployed)"))
-    if resourcepack_ready:
-        suffix = "  enabled" if resourcepack_enabled else "  NOT auto-enabled"
-        print(f"#    [x] resourcepack    (rp {profile.rp_format})  -> {args.rp_out}{suffix}")
-    else:
-        print("#    [!] resourcepack    SKIPPED BY REQUEST")
-    print(f"#    [x] mod build-config (gradle.properties + loom line in {mod_dir})")
-    if mod_jar:
-        tag = "built" if built_jar else mod_jar_source
-        print(f"#    [x] mod jar          ({tag}) -> {mod_jar}")
-    else:
-        print("#    [ ] mod jar          NOT built (explicitly skipped)")
-    if installed_mod_jar:
-        print(f"#    [x] RedPiano in mods -> {installed_mod_jar}")
-    elif profile_dir and not args.skip_mod_install:
-        print("#    [ ] RedPiano in mods NOT installed")
-    if fabric_api_ready:
-        print(f"#    [x] Fabric API       -> {fabric_api_path}")
-    elif profile_dir and args.skip_fabric_api_check:
-        print("#    [!] Fabric API       check skipped by request")
+    print(f"#  BUILT for MC {args.mc_version}  ->  dist: {dist_dir}")
+    print(f"#    [x] datapack      {args.ns}  ({pf})")
+    print(f"#    [{'x' if rp_zip else ' '}] resourcepack  "
+          + (f"qzpno_mv.zip (rp {profile.rp_format})" if rp_zip else "SKIPPED"))
+    print(f"#    [{'x' if mod_jar else ' '}] mod jar       "
+          + (f"{mod_jar_source} ({os.path.basename(mod_jar)})" if mod_jar else "NOT provided"))
+    print(f"#    [{'x' if fabric_api_path else ' '}] fabric api    "
+          + (os.path.basename(fabric_api_path) if fabric_api_path else "—"))
     print("#")
-    print("#  STILL ON YOU (cannot be automated from the filesystem):")
-    if installed_mod_jar or fabric_api_ready:
-        print("#    - fully restart Minecraft after any mods/ jar change")
-    elif profile_dir and (args.skip_mod_install or args.skip_mod_build):
-        print(f"#    - install RedPiano + Fabric API for {args.mc_version}, then restart MC")
-    elif not profile_dir:
-        print(f"#    - copy RedPiano + Fabric API for {args.mc_version} into the profile mods/, then restart MC")
-    if resourcepack_ready and not resourcepack_enabled:
-        print(f"#    - enable {os.path.basename(args.rp_out)} in Options -> Resource Packs")
-    elif not resourcepack_ready:
-        print("#    - verify qzpno_mv.zip is already installed and enabled")
-    print("#    - in-game: /reload -> /tick rate 80 (TYPE MANUALLY) -> /function %s:setup -> press [play]" % args.ns)
-    print("#      (the machine does NOT set the tick rate; you must type /tick rate 80 yourself)")
-    print("#    - LISTEN ONCE: a recompiled mixin can compile yet mis-behave; only trust it after you hear it.")
+    if installed:
+        print("#  ✓ INSTALLED NOW (native host): receipt written. Restart MC / /reload,")
+        print(f"#    /tick rate 80 (manual), enable qzpno_mv, /function {args.ns}:setup, [play].")
+    else:
+        print("#  ⚠ NOT IN THE GAME YET. From a sandbox, writing to C:\\Minecraft goes to a")
+        print("#    VMCache mirror the game never reads. The ONE reliable install step is:")
+        print(f"#      >>> the user DOUBLE-CLICKS  {result['bat']}  <<<")
+        print("#      (in Windows Explorer — a native process, outside the sandbox).")
+        print("#    It copies datapack+resourcepack+mods into the real profile, enables the")
+        print(f"#    pack, and writes {deploy_bundle.RECEIPT_NAME} back here on success.")
+        print("#    Do NOT run the .bat yourself and do NOT claim it's in-game until that")
+        print("#    receipt exists — check with:  python scripts/prepare_all.py ... (verify),")
+        print(f"#    or read {os.path.join(dist_dir, deploy_bundle.RECEIPT_NAME)}.")
+    print("#    Then in-game: restart MC (if mods changed) -> /reload -> /tick rate 80")
+    print(f"#    (TYPE MANUALLY) -> enable qzpno_mv -> /function {args.ns}:setup -> [play].")
+    print("#    LISTEN ONCE before trusting a recompiled mixin.")
     print("#" * 64)
     return 0
 

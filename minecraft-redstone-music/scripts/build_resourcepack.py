@@ -37,6 +37,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from redpiano_core import RedPianoError, get_version_profile, assert_build_supported  # noqa: E402
+from runtime_guard import RuntimeGuardError, require_not_vmcache_targets  # noqa: E402
 
 # instrument -> sample subfolder (matches poc/02e LIBS)
 LIBS = [("piano", "samples_piano"), ("bass", "samples_bass"), ("lead", "samples_lead"),
@@ -163,6 +164,13 @@ def build_argparser():
 
 def main(argv=None):
     args = build_argparser().parse_args(argv)
+    try:
+        # Only a literal VMCache-mirror --out is rejected. Building a zip anywhere else
+        # (incl. the workspace dist/) is a safe local artifact — never refuse it.
+        require_not_vmcache_targets([args.out])
+    except RuntimeGuardError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
     try:
         stats = build_resourcepack(args.mc_version, args.samples_root, args.out)
     except RedPianoError as e:
