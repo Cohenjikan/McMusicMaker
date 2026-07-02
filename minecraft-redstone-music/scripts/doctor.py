@@ -251,13 +251,51 @@ def check_mods(profile_dir, profile):
                      f"→ install the RedPiano jar + matching Fabric API into {mods_dir} "
                      f"(prepare_all.py stages both into dist/mods; DEPLOY_TO_GAME.bat copies them), "
                      f"then restart Minecraft.")
-    jars = [f for f in os.listdir(mods_dir) if f.lower().endswith(".jar")]
+    all_entries = os.listdir(mods_dir)
+    jars = [f for f in all_entries if f.lower().endswith(".jar")]
     redpiano = [f for f in jars if f.lower().startswith("redpiano")]
+
+    # A neutral one-liner (never a ✗) when disabled/stale jars are lying around — that is
+    # NORMAL and desirable after the deploy chain's "clean-then-install" renamed an old jar,
+    # so we just note it (and remind the user they can be deleted once the new build is proven).
+    disabled = [f for f in all_entries
+                if f.lower().endswith((".disabled", ".stale"))]
+    disabled_note = ""
+    if disabled:
+        disabled_note = ("  ℹ 另有 " + str(len(disabled)) +
+                         " 个已禁用 jar(" + ", ".join(sorted(disabled)) +
+                         ")，不影响加载；确认新版工作正常后可删除。")
+
     if not redpiano:
-        return Check(4, BAD, "no redpiano*.jar in profile mods/",
+        return Check(4, BAD, "no redpiano*.jar in profile mods/" + disabled_note,
                      f"→ the RedPiano mod is required (it re-performs note blocks centered on "
                      f"each player). Install redpiano-*.jar into {mods_dir} and RESTART MC. "
                      f"Build/prepare it with scripts/prepare_all.py.")
+
+    # DUPLICATE/RESIDUAL guard: more than one ACTIVE (.jar) redpiano*.jar means Fabric may load
+    # the WRONG one by modid (the exact NoSuchFieldError crash class: an old -UNVERIFIED.jar left
+    # behind next to the new build). Refuse until there is exactly one active redpiano jar.
+    if len(redpiano) > 1:
+        import time as _time
+        rows = []
+        for jar in sorted(redpiano):
+            try:
+                mt = os.path.getmtime(os.path.join(mods_dir, jar))
+                mts = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(mt))
+            except OSError:
+                mts = "?"
+            rows.append(f"{jar} (mtime {mts})")
+        newest = max(redpiano, key=lambda j: os.path.getmtime(os.path.join(mods_dir, j)))
+        olds = [j for j in sorted(redpiano) if j != newest]
+        fix_cmds = "; ".join(
+            f'Rename-Item -LiteralPath "{os.path.join(mods_dir, j)}" -NewName "{j}.stale.disabled"'
+            for j in olds)
+        return Check(4, BAD,
+                     f"发现 {len(redpiano)} 个活跃 redpiano*.jar — Fabric 可能按 modid 加载到"
+                     f"旧毒 jar 而崩溃(NoSuchFieldError 一类): "
+                     + "; ".join(rows) + disabled_note,
+                     f"→ 只保留最新的 {newest}，把其余旧 jar 改名禁用（或删除）：{fix_cmds}  "
+                     f"（改完重启 Minecraft；/reload 不够）。")
 
     # redpiano jar minecraft-range check (needs a target version)
     range_note = ""
@@ -286,7 +324,7 @@ def check_mods(profile_dir, profile):
             return Check(4, BAD,
                          f"redpiano jar present but its fabric.mod.json minecraft range does "
                          f"NOT cover MC {profile.mc_version} — Fabric will REFUSE to load it "
-                         f"({'; '.join(seen)})",
+                         f"({'; '.join(seen)})" + disabled_note,
                          f"→ recompile the mod for {profile.mc_version} "
                          f"(python scripts/mod_build.py --mc-version {profile.mc_version} --write "
                          f"then gradle build; a mixin-recompiled jar needs one in-game listen), "
@@ -300,19 +338,19 @@ def check_mods(profile_dir, profile):
             any_fab = [f for f in jars if "fabric-api" in f.lower()]
             hint = (f" (found {any_fab} — wrong +version)" if any_fab else "")
             return Check(4, BAD,
-                         f"no fabric-api jar for +{profile.mc_version} in mods/{hint}",
+                         f"no fabric-api jar for +{profile.mc_version} in mods/{hint}" + disabled_note,
                          f"→ RedPiano depends on Fabric API. Install fabric-api-*+"
                          f"{profile.mc_version}.jar into {mods_dir} and RESTART MC "
                          f"(prepare_all.py auto-downloads the matching build).")
         return Check(4, OK,
-                     f"redpiano jar + fabric-api ({fab[0]}) present{range_note}")
+                     f"redpiano jar + fabric-api ({fab[0]}) present{range_note}" + disabled_note)
     # no target version to check ranges against — presence-only pass, with a note
     any_fab = [f for f in jars if "fabric-api" in f.lower()]
     if not any_fab:
-        return Check(4, BAD, "redpiano jar present but no fabric-api jar in mods/",
+        return Check(4, BAD, "redpiano jar present but no fabric-api jar in mods/" + disabled_note,
                      f"→ install a Fabric API jar into {mods_dir} and restart MC.")
     return Check(4, OK, f"redpiano jar + a fabric-api jar present "
-                        f"(mc-version unknown — could not verify +version/range)")
+                        f"(mc-version unknown — could not verify +version/range)" + disabled_note)
 
 
 def check_datapack(world_dir, ns, profile):
@@ -574,6 +612,42 @@ def _selftest():
         assert code == 1, f"not-selected expected exit 1, got {code}\n{out}"
         assert "3. ✗" in out, out
         assert "第 3 项失败" in out, out
+
+        # ── ✗ case D: TWO active redpiano*.jar (residual old jar) -> ④ BAD ────
+        # This is the exact crime-scene class: a leftover -UNVERIFIED.jar left next to the new
+        # build makes Fabric load the wrong one by modid -> NoSuchFieldError crash.
+        profD = os.path.join(root, "profileD")
+        shutil.copytree(prof, profD)
+        rjOld = os.path.join(profD, "mods", "redpiano-1.0.0-mc1.21.7-UNVERIFIED.jar")
+        with zipfile.ZipFile(rjOld, "w") as z:
+            z.writestr("fabric.mod.json", json.dumps(
+                {"id": "redpiano", "depends": {"minecraft": f"~{mc}"}}))
+        code, out = _capture(["--dist", dist, "--profile-dir", profD, "--world-dir", world,
+                              "--mc-version", mc, "--ns", ns])
+        assert code == 1, f"double-redpiano expected exit 1, got {code}\n{out}"
+        assert "4. ✗" in out, out
+        assert "第 4 项失败" in out, out
+        assert "个活跃 redpiano" in out, out
+        # both filenames + the fix command must be reported
+        assert "redpiano-1.0.0-mc1.21.7-UNVERIFIED.jar" in out and "redpiano-1.0.0.jar" in out, out
+        assert "Rename-Item" in out, out
+
+        # ── ✓ case E: single active jar + a .stale.disabled present -> ④ OK ───
+        # A disabled/stale leftover is NORMAL after clean-then-install; it must NOT be a ✗,
+        # only a neutral one-line note.
+        profE = os.path.join(root, "profileE")
+        shutil.copytree(prof, profE)
+        # rename our staged old jar to .stale.disabled (as the deploy chain would)
+        with open(os.path.join(profE, "mods",
+                               "redpiano-1.0.0-mc1.21.7-UNVERIFIED.jar.stale.disabled"),
+                  "w", encoding="utf-8") as f:
+            f.write("stale placeholder")
+        code, out = _capture(["--dist", dist, "--profile-dir", profE, "--world-dir", world,
+                              "--mc-version", mc, "--ns", ns])
+        assert code == 0, f"single-jar+disabled expected exit 0, got {code}\n{out}"
+        assert "4. ✓" in out, out
+        assert "个已禁用 jar" in out, out          # neutral note shown
+        assert "4. ✗" not in out, out              # NOT a failure
 
         # ── SKIP path: no profile/world given -> checks ②③④⑤ SKIP, exit 0 ────
         code, out = _capture(["--dist", dist])

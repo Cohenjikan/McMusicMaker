@@ -209,9 +209,34 @@ if ($HasRp) {
 }
 
 # 3) mods -> <profile>/mods/
+$staleCount = 0
 if ($HasMods) {
     $modsDir = Join-Path $Profile 'mods'
     New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
+
+    # 本次要装的 jar 文件名清单（dist/mods 下的），用于"先清后装"：任何在 profile/mods 里
+    # 的旧 redpiano*.jar / fabric-api-*.jar 只要【不在】这个清单里，就先改名 .stale.disabled。
+    # 根因：安装只 Copy -Force 覆盖同名文件，从不清理不同名的旧版本 jar（如换版本导致文件名
+    # 改变、或上次残留的 -UNVERIFIED.jar），Fabric 会按 modid 加载到旧毒 jar 而崩溃/重复加载。
+    $installing = @{}
+    Get-ChildItem -Path (Join-Path $Dist 'mods') -Filter *.jar | ForEach-Object {
+        $installing[$_.Name.ToLowerInvariant()] = $true
+    }
+
+    # 只清"活跃"(.jar 结尾)的旧 jar；已经是 .disabled/.stale 的不动。改名不删除，保留回滚。
+    Get-ChildItem -Path $modsDir -Filter *.jar -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $lower = $_.Name.ToLowerInvariant()
+        $isRedpiano = $lower.StartsWith('redpiano')
+        $isFabricApi = $lower.StartsWith('fabric-api')
+        if (($isRedpiano -or $isFabricApi) -and (-not $installing.ContainsKey($lower))) {
+            $stalePath = $_.FullName + '.stale.disabled'
+            if (Test-Path $stalePath) { Remove-Item -LiteralPath $stalePath -Force }
+            Rename-Item -LiteralPath $_.FullName -NewName ($_.Name + '.stale.disabled') -Force
+            Write-Host "  [!] 旧 jar 已禁用 -> $($_.Name).stale.disabled  (被本次安装的新版取代)"
+            $staleCount += 1
+        }
+    }
+
     Get-ChildItem -Path (Join-Path $Dist 'mods') -Filter *.jar | ForEach-Object {
         Copy-Item $_.FullName -Destination (Join-Path $modsDir $_.Name) -Force
         Write-Host "  [x] mod -> $(Join-Path $modsDir $_.Name)"
@@ -262,6 +287,9 @@ $receipt = @(
 Write-Host '======================================================================'
 Write-Host "  ✓ 已真正部署到游戏。回执: $(Join-Path $Dist '@@RECEIPT@@')"
 Write-Host '======================================================================'
+if ($staleCount -gt 0) {
+    Write-Host "  已禁用 $staleCount 个旧 jar (.stale.disabled)，确认新版工作正常后可删除。"
+}
 Write-Host '  接下来在游戏里（按顺序）：'
 if ($HasMods) { Write-Host '   0. 完整重启 Minecraft（换过 mod jar，/reload 不够）' }
 Write-Host "   1. /reload"
@@ -501,9 +529,30 @@ def install_now(dist_dir, *, world_datapacks_dir, profile_dir, ns, manifest, tok
         copied.append(f"resourcepack:{os.path.join(rp_dir, RP_ZIP_NAME)}")
         _changed, note = _enable_pack_in_options(profile_dir)
         copied.append(f"options:{note}")
+    staled = []
     if manifest.get("mods") and profile_dir:
         mods_dir = os.path.join(profile_dir, "mods")
         os.makedirs(mods_dir, exist_ok=True)
+        # "先清后装" (mirrors the .ps1): any ACTIVE (.jar) redpiano*/fabric-api-* jar in the
+        # profile that is NOT among the filenames we're about to install gets renamed to
+        # <name>.stale.disabled first. Copy2 only overwrites SAME-named files; a version bump
+        # that changes the filename (or a leftover -UNVERIFIED.jar) would otherwise linger and
+        # Fabric would load the old jar by modid -> NoSuchFieldError crash / duplicate load.
+        installing = {os.path.basename(r).lower() for r in manifest["mods"]}
+        for existing in os.listdir(mods_dir):
+            low = existing.lower()
+            if not low.endswith(".jar"):
+                continue  # already .disabled/.stale — leave it
+            if not (low.startswith("redpiano") or low.startswith("fabric-api")):
+                continue
+            if low in installing:
+                continue  # same filename — will be overwritten in place below
+            stale_dst = os.path.join(mods_dir, existing + ".stale.disabled")
+            if os.path.exists(stale_dst):
+                os.remove(stale_dst)
+            os.rename(os.path.join(mods_dir, existing), stale_dst)
+            staled.append(existing)
+            copied.append(f"stale:{existing}.stale.disabled")
         for rel in manifest["mods"]:
             src = os.path.join(dist_dir, rel)
             shutil.copy2(src, os.path.join(mods_dir, os.path.basename(src)))
@@ -523,13 +572,19 @@ def install_now(dist_dir, *, world_datapacks_dir, profile_dir, ns, manifest, tok
             "forge a 'native host' install). Run inside the sandbox is unsupported; have the "
             f"user double-click {BAT_NAME} on the real host instead.")
     receipt = os.path.join(dist_dir, RECEIPT_NAME)
+    receipt_lines = [
+        "RECEIPT v1", f"token={token}", f"ns={ns}", f"mc_version={mc_version}",
+        f"world={world_datapacks_dir}", f"profile={profile_dir}",
+        "copied=" + "; ".join(copied),
+        "note=written by --install-now on a native host",
+    ]
+    if staled:
+        receipt_lines.append("stale=" + "; ".join(f"{s}.stale.disabled" for s in staled))
     with open(receipt, "w", encoding="utf-8") as f:
-        f.write("\n".join([
-            "RECEIPT v1", f"token={token}", f"ns={ns}", f"mc_version={mc_version}",
-            f"world={world_datapacks_dir}", f"profile={profile_dir}",
-            "copied=" + "; ".join(copied),
-            "note=written by --install-now on a native host",
-        ]))
+        f.write("\n".join(receipt_lines))
+    if staled:
+        print(f"已禁用 {len(staled)} 个旧 jar (.stale.disabled)，"
+              f"确认新版工作正常后可删除：{', '.join(staled)}")
     return receipt, copied
 
 
