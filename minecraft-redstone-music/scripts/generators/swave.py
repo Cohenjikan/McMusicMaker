@@ -117,6 +117,14 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         if n.get("vel", 1.0) >= 0.04:
             bycell[round(n["t"] / U)].append(n)
 
+    # all notes below the velocity floor -> bycell empty; trig/cells/pos would be []
+    # and later pos[0]/trig[-1] raise a bare IndexError. Fail loudly instead so
+    # build_machine can surface a clean "no audible notes" message.
+    if not bycell:
+        raise RedPianoError(
+            f"swave.build: all {len(notes)} notes are below the velocity floor "
+            f"0.04 — no audible note to place")
+
     n_tracks = 2 if dual_track else 1
     # per-cell capacity = min(global VOICES cap, total track slots = n_tracks*3). Without
     # this, a single-track config (dual_track_mirror=false) admits VOICES=6 notes but has
@@ -242,9 +250,17 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # the editor loads this exact list instead of re-deriving the S-wave spine in JS
     # (the JS re-derivation drifted: wrong cell-index + turn timing). Mirrors
     # track_transform(track=0): x = OX+xo, z = TRACK_Z[0] + (zo - PATH_ZMIN).
+    # The real note-block setblocks get rotated for non-+X play directions by
+    # core.rotate_command (via Datapack direction=start_dir); the playhead coords
+    # must undergo the SAME rot_xz around (OX,OZ) or they drift on -X/+Z/-Z.
+    start_dir = _get(params, "start_dir", "+X")
+
+    def _ph_xz(xo, zo):
+        return core.rot_xz(OX + xo, TRACK_Z[0] + (zo - PATH_ZMIN), start_dir, OX, OZ)
+
     playhead_cells = [
-        {"tick": cells[i][1], "x": OX + xo,
-         "y": Y + 1, "z": TRACK_Z[0] + (zo - PATH_ZMIN)}
+        {"tick": cells[i][1], "x": _ph_xz(xo, zo)[0],
+         "y": Y + 1, "z": _ph_xz(xo, zo)[1]}
         for i, (xo, zo, _d) in enumerate(pos) if cells[i][0] == "trig"
     ]
 
@@ -534,7 +550,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         pass  # already logged by plan_melody_cuts
 
     stats = {
-        "form": "swave",
+        "form": form,
         "note_count": nplaced,
         "dropped": dropped,
         "octave_shifted": octave_shifted[0],
@@ -558,7 +574,11 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "deployed_to": deployed_to,
         # single-source-of-truth playhead for the particle editor (track-0 melody notes)
         "playhead_cells": playhead_cells,
-        "playhead_origin": [OX, Y, OZ],
+        "playhead_origin": [core.rot_xz(OX, OZ, start_dir, OX, OZ)[0], Y,
+                            core.rot_xz(OX, OZ, start_dir, OX, OZ)[1]],
+        # music-tick OFFSET between trig cell T0 and its real schedule 2*(T0+OFFSET);
+        # cli writes it as coords.json top-level "offset" so build_particles can align.
+        "playhead_offset": OFFSET,
     }
     return stats
 
@@ -666,7 +686,7 @@ def _layout_custom(seq, waypoints):
         while cz != tz:
             s = 1 if tz > cz else -1
             steps.append((0, s)); cz += s
-    if len(steps) < ncells:
+    if len(steps) + 1 < ncells:
         raise RedPianoError(
             f"custom path too short: waypoints yield {len(steps) + 1} cells but the "
             f"song needs {ncells}. Extend the drawn route — refusing to run the pulse "

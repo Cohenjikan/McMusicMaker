@@ -59,21 +59,28 @@ def rp_packmeta(profile, description=PACK_DESCRIPTION):
     return {"pack": {"pack_format": profile.rp_format, "description": description}}
 
 
-def assemble_pack(samples_root, pack_dir):
+def assemble_pack(samples_root, pack_dir, allow_partial=False):
     """Copy every manifest-listed .ogg into <pack_dir>/assets/qzpno/sounds/ and build the
     sounds.json mapping. Returns (sounds_json, counts). Raises RedPianoError if no
-    samples are found at all, or if a manifest references a missing .ogg."""
+    samples are found at all, if ANY instrument manifest is missing (unless
+    ``allow_partial``), or if a manifest references a missing .ogg.
+
+    A missing manifest means that whole instrument silently falls back to vanilla in-game
+    (bass/lead/pad/drum go mute), so by default a partial library is a HARD failure — the
+    packaging chain must not report a half-built pack as OK. Pass ``allow_partial`` to
+    knowingly ship a subset (the missing instruments are still printed as [warn])."""
     snd_dir = os.path.join(pack_dir, "assets", "qzpno", "sounds")
     if os.path.isdir(snd_dir):
         shutil.rmtree(snd_dir)
     os.makedirs(snd_dir)
 
-    sounds_json, counts, missing = {}, {}, []
+    sounds_json, counts, missing, missing_manifests = {}, {}, [], []
     found_any_manifest = False
     for inst, sub in LIBS:
         man_path = os.path.join(samples_root, f"samples_manifest_{inst}.json")
         if not os.path.isfile(man_path):
             print(f"[warn] missing {man_path}, skipping {inst}")
+            missing_manifests.append(inst)
             continue
         found_any_manifest = True
         man = json.load(open(man_path, encoding="utf-8"))
@@ -97,6 +104,14 @@ def assemble_pack(samples_root, pack_dir):
             f"separately — see BINARIES.md. Point --samples-root at the folder holding "
             f"the manifests + samples_<inst>/ dirs."
         )
+    if missing_manifests and not allow_partial:
+        raise RedPianoError(
+            f"incomplete instrument set — missing manifest(s) for: "
+            f"{', '.join(missing_manifests)} (expected all of "
+            f"{', '.join(i for i, _ in LIBS)}). Those instruments would fall back to "
+            f"vanilla/silence in-game. Point --samples-root at the full library, or pass "
+            f"--allow-partial to knowingly ship only {', '.join(counts.keys())}."
+        )
     if missing:
         raise RedPianoError(f"missing .ogg files referenced by manifests: {missing[:5]}"
                             f"{' ...' if len(missing) > 5 else ''}")
@@ -108,7 +123,8 @@ def assemble_pack(samples_root, pack_dir):
     return sounds_json, counts
 
 
-def build_resourcepack(mc_version, samples_root, out_zip, staging_dir=None):
+def build_resourcepack(mc_version, samples_root, out_zip, staging_dir=None,
+                       allow_partial=False):
     """Assemble + zip the qzpno_mv resourcepack for ``mc_version``. Returns a stats dict."""
     profile = get_version_profile(mc_version)
     assert_build_supported(profile)  # green band only (mirror the datapack build policy)
@@ -119,7 +135,8 @@ def build_resourcepack(mc_version, samples_root, out_zip, staging_dir=None):
         shutil.rmtree(staging_dir)
     os.makedirs(staging_dir)
 
-    sounds_json, counts = assemble_pack(samples_root, staging_dir)
+    sounds_json, counts = assemble_pack(samples_root, staging_dir,
+                                        allow_partial=allow_partial)
 
     # version-driven pack.mcmeta (rp_format + single/minmax shape)
     meta = rp_packmeta(profile)
@@ -159,6 +176,10 @@ def build_argparser():
                         "(ships separately — see BINARIES.md).")
     p.add_argument("--out", default=os.path.join("build", "qzpno_mv.zip"),
                    help="output .zip path (default build/qzpno_mv.zip).")
+    p.add_argument("--allow-partial", action="store_true", dest="allow_partial",
+                   help="knowingly ship a subset of instruments when some "
+                        "samples_manifest_*.json are missing (those instruments fall back "
+                        "to vanilla in-game). Without this, a missing manifest hard-fails.")
     return p
 
 
@@ -172,7 +193,8 @@ def main(argv=None):
         sys.stderr.write(f"error: {e}\n")
         return 2
     try:
-        stats = build_resourcepack(args.mc_version, args.samples_root, args.out)
+        stats = build_resourcepack(args.mc_version, args.samples_root, args.out,
+                                   allow_partial=args.allow_partial)
     except RedPianoError as e:
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -206,6 +228,31 @@ if __name__ == "__main__":
         assert m9["pack"]["min_format"] == 69 and m9["pack"]["max_format"] == 69, m9
         assert "pack_format" not in m9["pack"], m9
         print("ok: rp pack.mcmeta 1.21.8 single pack_format=64; 1.21.9 min/max=69")
+
+        # partial-library policy: a subset library hard-fails by default, and
+        # --allow-partial (allow_partial=True) knowingly ships what's there.
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            root = os.path.join(td, "samples")
+            os.makedirs(os.path.join(root, "samples_piano"))
+            with open(os.path.join(root, "samples_piano", "c4.ogg"), "wb") as f:
+                f.write(b"OggS")  # placeholder .ogg
+            json.dump({"samples": [{"file": "c4.ogg", "id": "piano_c4"}]},
+                      open(os.path.join(root, "samples_manifest_piano.json"), "w",
+                           encoding="utf-8"))
+            # only piano present -> default must hard-fail (bass/lead/pad/drums missing).
+            try:
+                assemble_pack(root, os.path.join(td, "pack_strict"))
+                raise AssertionError("partial library should have raised")
+            except RedPianoError as e:
+                assert "incomplete instrument set" in str(e), str(e)
+                for inst in ("bass", "lead", "pad", "drums"):
+                    assert inst in str(e), str(e)
+            # allow_partial -> succeeds with just piano.
+            sj, counts = assemble_pack(root, os.path.join(td, "pack_partial"),
+                                       allow_partial=True)
+            assert counts.get("piano") == 1 and "bass" not in counts, (counts, sj)
+        print("ok: partial library hard-fails by default; --allow-partial ships the subset")
         print("build_resourcepack self-test PASSED")
         sys.exit(0)
     sys.exit(main())

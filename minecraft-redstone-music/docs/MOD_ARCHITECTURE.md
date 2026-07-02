@@ -45,8 +45,8 @@ datapack/resourcepack-only and do not touch this code.
 | `mod/redpiano/src/main/resources/fabric.mod.json` | Mod metadata + dependency ranges (`minecraft ~1.21.8`, `java >=21`, etc.). |
 | `mod/redpiano/src/main/resources/redpiano.mixins.json` | Mixin config: package, `JAVA_21` compat level, lists `NoteBlockMixin`. |
 | `mod/redpiano/src/main/resources/assets/redpiano/lang/en_us.json` | One stray lang key `block.redpiano.speaker` — vestigial, see §7. |
-| `mod/redpiano/build.gradle` | Loom 1.10.5, MC 1.21.8, **official Mojang mappings**, fabric-loader 0.17.3, fabric-api 0.136.1+1.21.8. |
-| `mod/redpiano/gradle.properties` | `-Xmx3G`, parallel. (No version props — `build.gradle` hardcodes versions.) |
+| `mod/redpiano/build.gradle` | Loom 1.10.5 (the one hardcoded version), **official Mojang mappings**; reads MC / fabric-loader / fabric-api / Java via `${project.*}` from `gradle.properties`. |
+| `mod/redpiano/gradle.properties` | `-Xmx3G`, parallel, **plus the target-version props** `minecraft_version` / `loader_version` / `fabric_version` / `java_version` (default = the 1.21.8 anchor; retarget with `mod_build.py --write`). |
 | `mod/redpiano/settings.gradle` | Plugin repos + `rootProject.name = "redpiano"`. |
 | **(missing)** `mod/redpiano/gradlew[.bat]` + `gradle/wrapper/` | **No wrapper checked in.** Reproducibility gap — see §6.5. |
 
@@ -432,11 +432,11 @@ each MC version), and <https://minecraft.wiki/w/Pack_format> for §6.4.
 
 | # | Thing | Where it lives (file:line) | How to update | How to verify |
 |---|---|---|---|---|
-| 1 | MC version | `build.gradle:19` (`minecraft:1.21.8`); `fabric.mod.json:17` (`~1.21.8`) | bump both | Loom resolves; mod loads |
-| 2 | Mappings | `build.gradle:20` (`loom.officialMojangMappings()`) | keep Mojang, or switch to Yarn (renames every type in mixin/RedPiano) | compiles |
-| 3 | fabric-loader | `build.gradle:21` (`0.17.3`) **and** `fabric.mod.json:16` (`>=0.16.0`) | bump to target-compatible | loads |
-| 4 | fabric-api | `build.gradle:22` (`0.136.1+1.21.8`) | bump to `…+<mc>` build | `ServerTickEvents` resolves |
-| 5 | fabric-loom | `build.gradle:2` (`1.10.5`) | bump to loom supporting target | gradle config succeeds |
+| 1 | MC version | `gradle.properties` `minecraft_version` (`build.gradle:25` reads `${project.minecraft_version}`); `fabric.mod.json:17` (`~1.21.8`) | `mod_build.py --mc-version <v> --write` (bumps the prop); `--set-mc-range` for fabric.mod.json | Loom resolves; mod loads |
+| 2 | Mappings | `build.gradle:26` (`loom.officialMojangMappings()`) | keep Mojang, or switch to Yarn (renames every type in mixin/RedPiano) | compiles |
+| 3 | fabric-loader | `gradle.properties` `loader_version` (`build.gradle:27`) **and** `fabric.mod.json:16` (`>=0.16.0`) | `mod_build.py --write` sets the prop; edit fabric.mod.json by hand | loads |
+| 4 | fabric-api | `gradle.properties` `fabric_version` (`build.gradle:28`) | `mod_build.py --write` sets it to the `…+<mc>` build | `ServerTickEvents` resolves |
+| 5 | fabric-loom | `build.gradle:2` (`1.10.5`, the one hardcoded version) | `mod_build.py --write` also rewrites this plugin line | gradle config succeeds |
 | 6 | **Mixin target method** | `NoteBlockMixin.java:26` (`method="triggerEvent"`) | confirm note-block sound entry point name for target/mappings (Yarn: `onSyncedBlockEvent`) | mixin applies (no `InjectionError`); custom sound plays |
 | 7 | **Mixin descriptor** | `NoteBlockMixin.java:27` params `(BlockState,Level,BlockPos,int,int)→boolean` | match new signature exactly | `@Inject` applies |
 | 8 | `NoteBlock.NOTE` property | `NoteBlockMixin.java:31` | confirm field still exists | compiles |
@@ -447,7 +447,7 @@ each MC version), and <https://minecraft.wiki/w/Pack_format> for §6.4.
 | 13 | Scoreboard API | `RedPiano.java:65-71` (`ReadOnlyScoreInfo`,`ScoreHolder.forNameOnly`,`getPlayerScoreInfo`) | only changes if porting **below** 1.21 | `rpcfg` toggles work |
 | 14 | `ServerTickEvents.END_SERVER_TICK` | `RedPiano.java:36` | fabric-api event path (stable) | flush runs each tick |
 | 15 | Mixin compat level | `redpiano.mixins.json:5` (`JAVA_21`) | match target JDK (e.g. `JAVA_22`) | mixin loads |
-| 16 | `java` dep range | `fabric.mod.json:18` (`>=21`) + `build.gradle:26-27,31` | match target JDK | loads on right JDK |
+| 16 | `java` dep range | `fabric.mod.json:18` (`>=21`) + `gradle.properties` `java_version` (`build.gradle:31` reads `project.java_version`) | `mod_build.py --write` sets the prop; edit fabric.mod.json by hand | loads on right JDK |
 | 17 | datapack `pack_format` | **NOT in mod** — `redpiano_core.py` `VERSION_TABLE` | add row for target MC | §6.4 |
 | 18 | resourcepack `pack_format` | same `VERSION_TABLE` (rp column) | add row | §6.4 |
 | 19 | function folder singular/plural | same `VERSION_TABLE` | add row | §6.4 |
@@ -457,8 +457,11 @@ things to check on any port. Items 1–5 are pure number bumps.
 
 ### 6.2 Step-by-step port procedure
 
-1. **Pin numbers** (§6.0). Edit `build.gradle:2,19-22` and the dep ranges in
-   `fabric.mod.json:15-20`.
+1. **Pin numbers** (§6.0). Run `mod_build.py --mc-version <v> --write` — it sets the
+   `minecraft_version` / `loader_version` / `fabric_version` / `java_version` props in
+   `gradle.properties` and rewrites the fabric-loom plugin line in `build.gradle:2`. Then edit
+   the dep ranges in `fabric.mod.json:15-20` by hand (add `--set-mc-range` to also bump its
+   minecraft range).
 2. **Choose mappings.** Staying on Mojang official keeps all the
    `net.minecraft.*` names in `RedPiano.java`/`NoteBlockMixin.java` valid as-is.
    Switching to Yarn means renaming every imported type and the method

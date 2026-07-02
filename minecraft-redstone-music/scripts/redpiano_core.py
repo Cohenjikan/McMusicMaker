@@ -338,10 +338,15 @@ def build_load_fn(ns, name, extra_objectives=True):
             "scoreboard players set poly rpcfg 1",
             "scoreboard players set human rpcfg 1",
         ]
+    # ``name`` is user-controlled (--song / MIDI filename) and may contain " or \\;
+    # build the tellraw payload as a dict and json.dumps it so the text is escaped and
+    # the emitted command is always valid JSON. json.dumps(name)[1:-1] yields the
+    # escaped body without its surrounding quotes for inline interpolation.
+    esc_name = json.dumps(name)[1:-1]
     out += [
         "forceload remove all",
         f"schedule clear {ns}:done",
-        f'tellraw @a ["",{{"text":"[{ns}] {name} loaded. ","color":"aqua"}},'
+        f'tellraw @a ["",{{"text":"[{ns}] {esc_name} loaded. ","color":"aqua"}},'
         f'{{"text":"need RedPiano mod + qzpno pack. Steps: /tick rate 80 (手动输入) -> /function {ns}:setup -> 启用资源包 -> press [play]."}}]',
     ]
     return out
@@ -440,12 +445,30 @@ def sign_messages(lines, dialect="component_string"):
     if not (0 < len(lines) <= 4):
         raise RedPianoError(f"sign needs <=4 lines, got {len(lines)}")
     padded = (list(lines) + ["", "", "", ""])[:4]
+    # Line text may be user-controlled (e.g. a song name) or a CJK literal (e.g. [播放]);
+    # build the JSON-component body with json.dumps(..., ensure_ascii=False) so a `"`/`\\`
+    # inside the text is JSON-escaped but CJK stays literal. `[1:-1]` drops the surrounding
+    # quotes json.dumps adds. ensure_ascii=True would emit \uXXXX, which is a LEGAL escape in
+    # the >=1.21.5 SNBT-double-quote dialect but ILLEGAL in the <=1.21.4 single-quoted SNBT
+    # string wrapper (brigadier readStringUntil only accepts \' and \\), so the whole
+    # setblock would fail to parse in-game. Keep it literal to stay valid in BOTH dialects.
+    def _jbody(s):
+        return json.dumps(s, ensure_ascii=False)[1:-1]
     if dialect == "component_snbt":
-        # >=1.21.5: SNBT compound entries — {"text":"..."} with no wrapping quotes.
-        return ",".join('{"text":"%s"}' % s for s in padded)
+        # >=1.21.5: SNBT compound entries — {"text":"..."} with no wrapping quotes. This SNBT
+        # dialect (double-quoted) accepts \" and \\, which is exactly the JSON escape set the
+        # body already carries, so the JSON-escaped body is used verbatim.
+        return ",".join('{"text":"%s"}' % _jbody(s) for s in padded)
     if dialect == "component_string":
-        # 1.20..1.21.4: JSON-text string entries — '{"text":"..."}'.
-        return ",".join('\'{"text":"%s"}\'' % s for s in padded)
+        # 1.20..1.21.4: JSON-text string entries — '{"text":"..."}'. The whole entry is a
+        # single-quoted SNBT string whose contents are then parsed as JSON. That outer SNBT
+        # layer only understands \\ and \' escapes, so the (already JSON-escaped) body must be
+        # SNBT-escaped: backslash FIRST (so JSON's own \\ / \" backslashes are doubled), then
+        # single quotes. This keeps the inner JSON intact after the SNBT layer decodes it.
+        def _snbt_wrap(body):
+            return body.replace("\\", "\\\\").replace("'", "\\'")
+        return ",".join('\'{"text":"%s"}\'' % _snbt_wrap(_jbody(s))
+                        for s in padded)
     raise RedPianoError(
         f"unknown sign dialect {dialect!r} (expected 'component_string' for 1.20..1.21.4 "
         f"or 'component_snbt' for >=1.21.5; legacy <1.20 signs are below the tick-rate floor)"
@@ -492,17 +515,36 @@ def forceload_add_region(x0, z0, x1, z1):
 
 
 def forceload_split(x0, z0, x1, z1, max_chunks_per_cmd=240):
-    """Walk X in xstep*16 strides so each 'forceload add' stays small, because one
-    forceload command is itself chunk-limited (poc/48 L380-388). Returns
-    ['forceload remove all', add...]. ``max_chunks_per_cmd`` is the per-command
-    chunk budget (poc uses 240)."""
+    """Tile the region into a 2D grid of sub-regions so each 'forceload add' stays under
+    ``max_chunks_per_cmd`` chunks, because one forceload command is itself chunk-limited
+    (poc/48 L380-388). Returns ['forceload remove all', add...] (poc uses budget 240).
+
+    The X stride is sized to fit the full Z span in one row; but when the Z span ALONE
+    already exceeds the budget, that leaves an X stride of 1 column whose per-command
+    chunk count is still (1 * zc) > budget. So Z is split into strides too — a full 2D
+    tiling — guaranteeing every emitted add is <= budget regardless of aspect ratio."""
     zc = (z1 // 16) - (z0 // 16) + 1
+    # X columns per command, then Z rows per command within that column width. When the
+    # Z span fits the budget, zstep spans all of Z (single row per column, unchanged
+    # behavior); when Z alone is oversize, xstep collapses to 1 and zstep bounds each add.
     xstep = max(1, max_chunks_per_cmd // max(1, zc))
+    zstep = max(1, max_chunks_per_cmd // max(1, min(xstep, zc)))
     out = ["forceload remove all"]
+    # Each stride's END must land on a chunk boundary, else an unaligned origin makes
+    # adjacent strides START mid-chunk and CO-COUNT the shared boundary chunk-row/column:
+    # the per-command chunk count then EXCEEDS the budget (measured 482 > 240 at x0=z0=100)
+    # and strides OVERLAP. Snap each end to the last block of the (aligned) chunk `step`
+    # chunks forward: end = ((c//16)+step)*16 - 1, clamped to the region. The next stride
+    # resumes at end+1, which is exactly the next chunk's first block (aligned). Chunk-aligned
+    # origins are unaffected (the snap coincides with the old cx+step*16-1).
     cx = x0
     while cx <= x1:
-        cxe = min(x1, cx + xstep * 16 - 1)
-        out.append(f"forceload add {cx} {z0} {cxe} {z1}")
+        cxe = min(x1, ((cx // 16) + xstep) * 16 - 1)
+        cz = z0
+        while cz <= z1:
+            cze = min(z1, ((cz // 16) + zstep) * 16 - 1)
+            out.append(f"forceload add {cx} {cz} {cxe} {cze}")
+            cz = cze + 1
         cx = cxe + 1
     return out
 
@@ -921,9 +963,11 @@ def _rotate_block_states(block, turns):
 def rotate_command(cmd, direction, ox, oz):
     """Rotate one datapack command's geometry for a non-+X play direction. ``direction``
     == '+X' returns ``cmd`` unchanged (identity). Otherwise rotates the integer (x,z) coords
-    in setblock / forceload-add / tp around (ox,oz) and remaps facing/rotation blockstates.
-    Commands without rotatable integer coords (relative `~`, selectors, scoreboard, tellraw)
-    pass through verbatim."""
+    in setblock / fill / forceload-add / tp around (ox,oz) and remaps facing/rotation
+    blockstates. ``fill`` carries TWO absolute corner points (x0 y0 z0 x1 y1 z1); both are
+    rotated independently — a rigid rotation maps a box to a box, so any corner ordering is
+    fine and no re-sort is needed. Commands without rotatable integer coords (relative `~`,
+    selectors, scoreboard, tellraw) pass through verbatim."""
     if direction == "+X":
         return cmd
     turns = _DIR_TURNS.get(direction)
@@ -937,6 +981,15 @@ def rotate_command(cmd, direction, ox, oz):
             nx, nz = rot_xz(x, z, direction, ox, oz)
             block = _rotate_block_states(" ".join(parts[4:]), turns)
             return f"setblock {nx} {y} {nz} {block}"
+        if head == "fill" and len(parts) >= 7:
+            x0, y0, z0 = int(parts[1]), int(parts[2]), int(parts[3])
+            x1, y1, z1 = int(parts[4]), int(parts[5]), int(parts[6])
+            nx0, nz0 = rot_xz(x0, z0, direction, ox, oz)
+            nx1, nz1 = rot_xz(x1, z1, direction, ox, oz)
+            rest = " ".join(parts[7:])
+            if rest:
+                rest = " " + _rotate_block_states(rest, turns)
+            return f"fill {nx0} {y0} {nz0} {nx1} {y1} {nz1}{rest}"
         if head == "forceload" and len(parts) >= 4 and parts[1] == "add":
             x1, z1 = int(parts[2]), int(parts[3])
             nx1, nz1 = rot_xz(x1, z1, direction, ox, oz)

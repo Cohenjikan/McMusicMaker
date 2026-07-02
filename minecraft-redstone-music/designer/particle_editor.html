@@ -202,7 +202,7 @@ const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 
 // ---------------- state ----------------
 let midi=null, synth=null, songName='', duration=0;
-let M = { form:'swave', OX:0, OY:255, OZ:0, XRUN:6, ZMAX:10, cells:0, waypoints:null, linked:false };
+let M = { form:'swave', OX:0, OY:255, OZ:0, XRUN:6, ZMAX:10, cells:0, waypoints:null, linked:false, offset:null };
 let spineCache=null, zmin=0;
 let realCoords=null;   // {ticks:[...sorted music_tick], xyz:Map<tick,[x,y,z]>} from build_machine
                        // <ns>_coords.json — the SINGLE SOURCE OF TRUTH playhead. When set, it
@@ -357,6 +357,7 @@ $('coordsFile').addEventListener('change', async e=>{
   realCoords={ ticks: notes.map(n=>n.tick), xyz: new Map(notes.map(n=>[n.tick,[n.x,n.y,n.z]])) };
   if(Array.isArray(data.origin)){ M.OX=data.origin[0]; M.OY=data.origin[1]; M.OZ=data.origin[2]; }
   if(data.form) M.form=data.form;
+  M.offset = (data.offset!=null) ? data.offset : null;   // cli 组透传的顶层 offset, 原样带进导出
   M.linked=true;
   recomputeKeyframes();
   $('coordspill').className='pill ok';
@@ -546,6 +547,7 @@ function buildExport(){
     kind:'particle_keyframes',
     song:songName,
     tps:80,
+    ...(M.offset!=null ? {offset:M.offset} : {}),   // 透传机器坐标文件里的顶层 offset(cli 组新增)
     linked_layout:{ form:M.form, OX:M.OX, OY:M.OY, OZ:M.OZ, XRUN:M.XRUN, ZMAX:M.ZMAX, cells:M.cells, linked:M.linked },
     keyframes: keyframes.map(kf=>({
       id:kf.id, t_sec:+kf.t.toFixed(4),
@@ -562,14 +564,26 @@ function buildExport(){
     }))
   };
 }
+// 行进形态(swave/straight/custom)未导入 <ns>_coords.json 时, 坐标是 JS 脊线推算值,
+// 会与真机漂移 → 导出前醒目确认, 默认阻止(原地/已导入坐标则直接放行)。
+const MARCH_FORMS=['swave','straight','custom'];
+function mayExport(){
+  if(realCoords) return true;                 // 已导入机器真实坐标 — 精准
+  if(!MARCH_FORMS.includes(M.form)) return true;   // 原地(inplace)等非行进形态无脊线漂移
+  return confirm('⚠ 当前是行进形态('+M.form+')且未导入机器坐标 <ns>_coords.json。\n\n'+
+    '现在导出的粒子坐标是 JS 脊线推算值, 可能与真机漂移(尤其非 +X 方向)。\n'+
+    '建议先用「导入机器坐标」载入 build_machine.py 生成的 <ns>_coords.json 再导出。\n\n'+
+    '仍要按推算坐标导出吗?');
+}
 $('expJson').onclick=()=>{
+  if(!mayExport()) return;
   const data=JSON.stringify(buildExport(),null,2);
   const blob=new Blob([data],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=(songName||'particles')+'_particles.json'; a.click(); URL.revokeObjectURL(a.href);
   toast('已导出 JSON');
 };
-$('copyJson').onclick=()=>copy(JSON.stringify(buildExport(),null,2));
+$('copyJson').onclick=()=>{ if(!mayExport()) return; copy(JSON.stringify(buildExport(),null,2)); };
 $('copyAll').onclick=()=>{
   const lines=[]; for(const kf of keyframes) for(const b of kf.blocks) lines.push(resolvedCommand(kf,b));
   if(!lines.length){toast('没有命令');return;}

@@ -106,6 +106,12 @@ def build(data, ns, out_dir, mc_version, *, music_ns=None, offset_gt=0,
 
     # --- per-keyframe schedule plan -------------------------------------------
     kfs = data["keyframes"]
+    # Machine-schedule OFFSET (music-ticks) transplanted from the coords sidecar via the
+    # particle editor. The music machine fires trigger cell N at (N+OFFSET)*2 game-ticks
+    # (swave.py OFFSET = 1 when cell 0 exists); the raw music_tick in a keyframe is the
+    # pre-OFFSET cell index, so re-add OFFSET*2 here or particles lead the pulse by 2gt.
+    # Absent => 0 (no behavior change). Stacks with the --offset-gt calibration knob.
+    sched_offset_gt = int(round(float(data.get("offset", 0) or 0))) * 2
     plan = []          # (kid, delay_gt, [command,...])
     total_blocks = 0
     skipped = 0
@@ -115,7 +121,7 @@ def build(data, ns, out_dir, mc_version, *, music_ns=None, offset_gt=0,
         # prefer the quantized music_tick (*2 game-ticks/cell) for pulse alignment
         mt = kf.get("music_tick")
         if isinstance(mt, (int, float)):
-            delay = int(round(mt)) * 2
+            delay = int(round(mt)) * 2 + sched_offset_gt
         else:
             delay = int(round(t_sec * tps))
         delay = max(1, delay + int(offset_gt))   # schedule needs >= 1t

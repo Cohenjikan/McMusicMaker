@@ -133,6 +133,25 @@ def parse_midi_notes(midi_path, imap):
     except (OSError, ValueError, EOFError, IndexError, KeyError) as e:
         raise RedPianoError(f"error while decoding MIDI '{midi_path}': {e}")
 
+    # Flush notes still ON at end-of-file (missing/lost note_off). Silently dropping
+    # them loses real audible notes on sloppy MIDIs; instead close them at the song end
+    # (dur = end - start, floored 0.02s to match the note_off path) and WARN once.
+    if active:
+        for (ch, note), (st, vel) in active.items():
+            prog = cur_prog.get(ch, 0)
+            family = imap.family_for(prog, ch)
+            drum_type = imap.gm_drum_map.get(note) if family == "drum" else None
+            notes.append({
+                "t": round(st, 4),
+                "dur": round(max(t - st, 0.02), 4),
+                "midi": int(note),
+                "vel": round(vel / 127.0, 4),
+                "family": family,
+                "drum_type": drum_type,
+            })
+        print(f"  WARN: {len(active)} note(s) had no note_off; closed at song end "
+              f"(t={t:.2f}s). MIDI may be truncated.")
+
     if not notes:
         raise RedPianoError(
             f"no playable notes found in '{midi_path}' — is it an empty or "
@@ -311,9 +330,9 @@ def build_argparser():
                    choices=["inplace", "swave", "straight", "custom", "multilane"],
                    help="machine form. swave=S-wave (default product), straight=long "
                         "line, custom=waypoint route (needs --params with waypoints), "
-                        "multilane=one parallel lane per voice (needs --params; +X, "
-                        "hard-fails over the forceload cap), inplace=palette. Must agree "
-                        "with params.form if both given.")
+                        "multilane=one parallel lane per voice (+X; --params optional — "
+                        "soft forceload cap, over it pass --force-cap to build anyway), "
+                        "inplace=palette. Must agree with params.form if both given.")
     p.add_argument("--ns", required=True,
                    help="datapack namespace (also the scoreboard objective name)")
     p.add_argument("--origin", required=True, nargs=3, type=int,
@@ -437,6 +456,10 @@ def run(args):
                 "origin": stats.get("playhead_origin",
                                     [args.origin[0], args.origin[2], args.origin[1]]),
                 "tps": profile.tps,
+                # machine-schedule OFFSET (music-ticks) the generator applied to trigger
+                # timing. The particle editor passes this through so build_particles can
+                # re-add it and stay tick-aligned with the melody-cut. Absent => 0.
+                "offset": stats.get("playhead_offset", 0),
                 "notes": pcells,
             }, f, ensure_ascii=False, indent=1)
 

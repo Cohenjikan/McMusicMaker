@@ -101,8 +101,11 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     multi = bool(params.get("multi", False))
     OX, OZ, Y = _origin_of(params, origin)
-    PCOLS = int(params.get("PCOLS", 16) or 16)
-    ROWGAP = int(params.get("ROWGAP", 3) or 3)
+    # None -> 默认; 显式 0/负值必须落到下面的越界守卫 (不能被 `or 默认` 静默改回默认)
+    _pcols = params.get("PCOLS", None)
+    _rowgap = params.get("ROWGAP", None)
+    PCOLS = int(16 if _pcols is None else _pcols)
+    ROWGAP = int(3 if _rowgap is None else _rowgap)
     if PCOLS < 1:
         raise RedPianoError(f"PCOLS must be >= 1, got {PCOLS}")
     if ROWGAP < 3:

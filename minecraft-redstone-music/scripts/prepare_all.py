@@ -50,7 +50,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from redpiano_core import RedPianoError, get_version_profile, assert_build_supported  # noqa: E402
-from runtime_guard import path_is_under_trae_vmcache  # noqa: E402
+from runtime_guard import path_is_under_trae_vmcache, RuntimeGuardError  # noqa: E402
 import deploy_bundle  # noqa: E402
 
 DEFAULT_RP_OUT = os.path.join("build", "qzpno_mv.zip")
@@ -224,11 +224,13 @@ def _stage_jar(src, mods_dir):
 
 def _fabric_api_matches(path, mc_version):
     name = os.path.basename(path).lower()
-    return (
-        name.endswith(".jar")
-        and "fabric-api" in name
-        and ("+" + mc_version.lower()) in name
-    )
+    if not name.endswith(".jar") or "fabric-api" not in name:
+        return False
+    # Match the version as a WHOLE segment: fabric-api jars are named like
+    # `fabric-api-0.115.0+1.21.8.jar`, so the MC version is the tail after the last '+'.
+    # A plain substring test ('+1.21' in name) would wrongly match `+1.21.1` for `1.21`.
+    stem = name[:-len(".jar")]
+    return stem.endswith("+" + mc_version.lower())
 
 
 def _find_fabric_api(mods_dir, mc_version):
@@ -370,8 +372,11 @@ def main(argv=None):
                    help="machine form. Ask/confirm this with the user; recommended swave, "
                         "safe fallback inplace.")
     p.add_argument("--params", default=None, help="designer JSON for build_machine (optional).")
-    p.add_argument("--world-dir", default=None, dest="world_dir",
-                   help="deploy the datapack into this world's datapacks dir (opt-in).")
+    p.add_argument("--world-dir", required=True, dest="world_dir",
+                   help="target world's datapacks dir, e.g. .../saves/<world>/datapacks. "
+                        "REQUIRED: it is baked into the generated DEPLOY_TO_GAME.bat as the "
+                        "datapack destination — without it the .bat would crash on an empty "
+                        "path when double-clicked.")
     p.add_argument("--out", default="build", help="datapack staging dir (default build).")
     p.add_argument("--force-cap", action="store_true", dest="force_cap",
                    help="pass --force-cap to build_machine (forceload auto-fold).")
@@ -385,8 +390,10 @@ def main(argv=None):
                    help="explicitly skip the resourcepack step. Use only when you have "
                         "already installed and enabled a matching qzpno_mv.zip.")
     p.add_argument("--rp-out", default=DEFAULT_RP_OUT, dest="rp_out",
-                   help="resourcepack .zip output path. If a profile is inferred/provided, "
-                        "the default becomes <profile>/resourcepacks/qzpno_mv.zip.")
+                   help="LEGACY / compat only. The resourcepack is always staged into the "
+                        "workspace dist/ (as qzpno_mv.zip) for the native DEPLOY_TO_GAME.bat; "
+                        "this value no longer controls where the pack goes. It is now used "
+                        "solely to help infer the profile dir when --profile-dir is omitted.")
     p.add_argument("--profile-dir", default=None, dest="profile_dir",
                    help="Minecraft profile root, e.g. .../ModrinthApp/profiles/Fabric 1.21.8. "
                         "Usually inferred from --world-dir <profile>/saves/<world>/datapacks. "
@@ -503,6 +510,16 @@ def main(argv=None):
     except OSError as e:
         sys.stderr.write(f"error: cannot write to --dist {dist_dir}: {e}\n")
         return 2
+    # Clear any receipt/token left by a PREVIOUS prepare_all NOW, up front — not only inside
+    # build_deploy_bundle (step 6). Any of steps 1-5 can fail and return early before step 6
+    # runs; a leftover receipt+token from a past successful deploy would then survive and make
+    # `deploy_bundle.py --verify` falsely report THIS (failed) build as installed. build_deploy_bundle
+    # still clears them again as a belt-and-suspenders safeguard.
+    for _stale in (deploy_bundle.RECEIPT_NAME, ".deploy_token"):
+        try:
+            os.remove(os.path.join(dist_dir, _stale))
+        except OSError:
+            pass
     py = sys.executable
     here = _HERE
     pf = (f"min/max {profile.dp_format}" if profile.packmeta_shape == "minmax"
@@ -654,6 +671,9 @@ def main(argv=None):
             dist_dir, ns=args.ns, world_datapacks_dir=world_datapacks_dir,
             profile_dir=profile_dir, mc_version=args.mc_version,
             datapack_src_dir=datapack_src, rp_zip=rp_zip, mod_jars=mod_jars, token=token)
+    except RuntimeGuardError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
     except (OSError, FileNotFoundError) as e:
         sys.stderr.write(f"error: could not stage deploy bundle: {e}\n")
         return 1
@@ -667,6 +687,9 @@ def main(argv=None):
             receipt, copied = deploy_bundle.install_now(
                 dist_dir, world_datapacks_dir=world_datapacks_dir, profile_dir=profile_dir,
                 ns=args.ns, manifest=result["manifest"], token=token, mc_version=args.mc_version)
+        except RuntimeGuardError as e:
+            sys.stderr.write(f"error: {e}\n")
+            return 3
         except OSError as e:
             sys.stderr.write(f"error: --install-now copy failed: {e}\n")
             return 1
@@ -697,7 +720,7 @@ def main(argv=None):
         print("#    It copies datapack+resourcepack+mods into the real profile, enables the")
         print(f"#    pack, and writes {deploy_bundle.RECEIPT_NAME} back here on success.")
         print("#    Do NOT run the .bat yourself and do NOT claim it's in-game until that")
-        print("#    receipt exists — check with:  python scripts/prepare_all.py ... (verify),")
+        print(f"#    receipt exists — check with:  python scripts/deploy_bundle.py --verify {dist_dir}")
         print(f"#    or read {os.path.join(dist_dir, deploy_bundle.RECEIPT_NAME)}.")
     print("#    Then in-game: restart MC (if mods changed) -> /reload -> /tick rate 80")
     print(f"#    (TYPE MANUALLY) -> enable qzpno_mv -> /function {args.ns}:setup -> [play].")

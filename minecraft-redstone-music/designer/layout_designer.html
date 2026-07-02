@@ -173,8 +173,11 @@
     </div>
     <div class="grp" id="lineGrp">
       <h2>⑤ 线宽 与 空格</h2>
-      <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
-      <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
+      <div id="lwGate">
+        <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
+        <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
+        <span class="v1note" id="lwNote" style="display:none">线宽/gap <b>仅多轨分布(multilane)</b> 生效, S波浪/直线/自定义尚未接入(导出恒为默认 3/1)。</span>
+      </div>
       <label class="row"><span class="k">双轨(中轴镜像)</span><input type="checkbox" id="dual" checked></label>
       <label class="row"><span class="k">双轨间距 SEP</span><input type="range" id="sep" min="2" max="20" value="3"><input type="number" id="sepN" value="3"></label>
       <div class="hint">线宽=发声列向脊柱两侧伸的音符盒数。gap=相邻折额外留空,防音符列重叠/红石串扰。</div>
@@ -199,6 +202,7 @@
         <button class="btn sec" id="delSig">🗑 删最后</button>
         <button class="btn sec" id="toggleSide2">📐 侧视调位</button>
       </div>
+      <span class="v1note" id="sigNote" style="display:none">信号轨 <b>仅多轨分布(multilane)</b> 消费, 当前形态导出会置空。到③和弦模式切到「多轨分布」再加轨道。</span>
       <div id="sigList" class="blklist" style="max-height:110px"></div>
       </div>
     </div>
@@ -370,8 +374,16 @@ function drawInplace(){
   ctx.fillStyle='#8b949e';ctx.font='11px monospace';
   ctx.fillText(`原地调色板 ${g.cols}宽 × ${g.rows}行 · ${g.P} 音符盒 · 基底 ${S.base.replace('minecraft:','')}`,46,cv.height-12);
   return m;}
+// 面板门控: 线宽/gap(⑤)与信号轨(⑦)仅 multilane 生效, 非 multilane 时灰显+提示
+function syncPanelGates(){
+  const isML=S.chord_mode==='multilane';
+  const lw=$('lwGate');if(lw){lw.classList.toggle('v1off',!isML);}
+  const lwn=$('lwNote');if(lwn)lwn.style.display=isML?'none':'';
+  ['addSig','sigName','sigDx','sigDz','sigDy'].forEach(id=>{const el=$(id);if(el)el.disabled=!isML;});
+  const sn=$('sigNote');if(sn)sn.style.display=isML?'none':'';}
 function render(){
   if(!viewInit){setFit();viewInit=true;}
+  syncPanelGates();
   ctx.clearRect(0,0,cv.width,cv.height);
   const m=S.form==='inplace'?drawInplace():drawLine();
   updateUI(m);
@@ -405,11 +417,11 @@ function updateUI(m){
             slice_note:"method=slice: 跑 mc-noteblock-demo 切片管线(Demucs分轨+逐音切片), cells/sounding 为占位, 真切片数由管线定; 布局(form/多轨/侧视/基底/信号轨/起点方向)按下方应用"}:{};
   let P;
   if(inp)P={schema_version:SCHEMA_VERSION,song:songName,form:'inplace',method:S.method,palette_noteblocks:S.pal,PCOLS:S.pcols,ROWGAP:S.rowgap,base_block:S.base,
-            start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,signal_tracks:sig,...aud,
+            start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,signal_tracks:null,...aud,  // signal_tracks 仅 multilane 消费, inplace 恒 null(否则后端硬失败)
             result:{X_span:m.Xspan,Z_width:m.Zwidth,grid:`${m.cols}x${m.rows}`,forceload_chunks:m.fl}};
   else{const isML=S.chord_mode==='multilane';
        P={schema_version:SCHEMA_VERSION,song:songName,form:isML?'multilane':S.form,method:S.method,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
-          line_width_radiate:isML?3:S.rad,fold_gap:isML?1:S.gap,dual_track_mirror:S.dual,track_sep:S.sep,base_block:S.base,
+          line_width_radiate:3,fold_gap:1,dual_track_mirror:S.dual,track_sep:S.sep,base_block:S.base,  // 线宽/gap 未接入任何形态(none-yet), 恒写默认 3/1 否则后端拒收
           start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,
           chord_mode:S.chord_mode,...(isML?ml:{}),signal_tracks:isML?sig:null,...aud,
           result:{X_span:m.Xspan,Z_width:m.Zwidth,compression:+m.comp.toFixed(2),turns:m.turns,forceload_chunks:m.fl},

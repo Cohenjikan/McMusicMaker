@@ -12,6 +12,10 @@ your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max
 > CLI. There is **no special "skill" loader, registry, or env var** to set up — you read these
 > docs and run a command. It works the same whether you're driving it from Trae, Codex, Mavis,
 > Work Buddy, Claude, or a human shell.
+>
+> One OS caveat: the generated **`DEPLOY_TO_GAME.bat` installer is Windows-only** (Minecraft
+> Java's usual home). On a non-Windows **native host** (not a sandbox), install with
+> `--install-now` instead, or copy `dist/` into the profile by hand.
 
 ---
 
@@ -39,34 +43,70 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
   straight into a world (otherwise copy `build/<ns>/` there yourself). Deploy is opt-in.
 - The script prints a stats report **and the exact in-game next steps**. Read them back to the user.
 
-For a real handoff, use the runtime command. It builds/deploys the datapack, builds/copies
-the resourcepack into the profile and selects it in `options.txt`, writes the RedPiano mod
-build config, auto-detects Gradle + JDK 21 to build/install the RedPiano jar, and reuses or
-downloads the matching Fabric API jar:
+For a real handoff, use the runtime command. It **stages** the datapack + `qzpno_mv.zip` +
+mod/Fabric API jars into the workspace `dist/` and emits **`dist/DEPLOY_TO_GAME.bat`** with the
+real profile paths + a token baked in. It does **not** install into `<profile>` itself — that
+is deliberate: an AI tool usually runs in a filesystem **sandbox** where writing to `C:\Minecraft`
+is silently redirected to a mirror the real game never reads (see
+[docs/RUNTIME_SANDBOX.md](docs/RUNTIME_SANDBOX.md)). The workspace `dist/` is the one place a
+sandbox can write reliably.
 
 ```bash
 python scripts/prepare_all.py --midi path/to/song.mid --form swave --ns mysong \
        --origin 0 0 255 --mc-version 1.21.8 \
        --world-dir "<profile>/saves/<world>/datapacks" \
-       [--samples-root ../poc | --prebuilt-rp path/to/qzpno_mv.zip] \
+       --profile-dir "<profile>" --dist dist \
+       [--samples-root path/to/poc | --prebuilt-rp path/to/qzpno_mv.zip] \
        [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
 ```
 
-In a full source checkout, `prepare_all.py` auto-detects `../../poc` as the sample root.
-In a packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it refuses
-to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a missing
-RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
+`--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`, not
+written to now. In a full source checkout, `prepare_all.py` auto-detects `../../poc` as the
+sample root (anchored to `scripts/`, i.e. repo-root `poc/`; a hand-passed `--samples-root` is
+relative to your shell's cwd, so use `./poc` from the repo root or an absolute path). In a
+packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it
+refuses to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a
+missing RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
+
+> **Packaged bundle? The prebuilt binaries are in a sibling `binaries/` folder** (`../binaries/`
+> from this skill). `qzpno_mv.zip` covers **both 1.21.7 and 1.21.8** (shared `rp_format 64`), but
+> the **mod jar is per-version** — Fabric rejects a jar whose `fabric.mod.json` range doesn't cover
+> the running game. Use `--prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar` for a **1.21.7**
+> game, `…-mc1.21.8.jar` for **1.21.8**; do **not** cross them. A `-UNVERIFIED` suffix just means
+> "built, listen once to confirm." Other 1.21.x: no prebuilt jar — recompile. See
+> [BINARIES.md](BINARIES.md) and the golden command in [QUICKSTART.md](QUICKSTART.md) §2.
+
+**Install (the user's job, once):** tell the user to **double-click `dist\DEPLOY_TO_GAME.bat` in
+Windows Explorer** — a native process, outside the sandbox — which copies everything into the real
+profile, enables `qzpno_mv`, and writes `dist\DEPLOY_RECEIPT.txt`. **Never run the `.bat` yourself**
+(it would inherit the sandbox). The song is in-game **only** after that receipt exists — confirm
+with `python scripts/deploy_bundle.py --verify dist` (`✓ INSTALLED` / `✗`); never claim "installed"
+without it. On a genuinely native host (not a sandbox) you may add `--install-now` to install inline
+and skip the `.bat`.
 
 ## Play it in Minecraft
 
-1. Run `prepare_all.py` for the target profile/world, then fully restart Minecraft if any
-   jar in `mods/` changed.
-2. In-game: `/reload` → `/function <ns>:setup` (wait for "built") → press the
-   **[播放]/[play]** sign-button. Pressing play auto-runs `/tick rate 80`.
+> Prerequisites: **Java Edition** (not Bedrock — datapacks/`/function`/`/tick rate`/Fabric mods
+> don't exist there), and a world with **cheats/OP on** (needed for `/reload`, `/tick rate 80`,
+> `/function`; no cheats → Open to LAN → Allow Cheats: ON).
 
-> **No sound?** 9 times out of 10 it's the resourcepack not enabled, RedPiano/Fabric API
-> missing from `mods/`, Minecraft not restarted after jar changes, or tick rate reverted — see
-> the triage box at the top of [QUICKSTART.md](QUICKSTART.md).
+1. Run `prepare_all.py` for the target profile/world, have the **user double-click
+   `dist\DEPLOY_TO_GAME.bat`** to install (see the handoff section above), then fully restart
+   Minecraft if any jar in `mods/` changed.
+2. In-game, **in this exact order** (same as [SKILL.md](SKILL.md) step 4 / [QUICKSTART.md](QUICKSTART.md) step 4):
+   1. `/reload` — register the datapack functions.
+   2. **`/tick rate 80` — ⚠ YOU must type this manually.** The machine does **NOT** self-set the
+      tick rate (auto-set via a command block was tested and does **not** work). Without it,
+      playback is **~4× too slow** and melody-cut timing is off.
+   3. **Confirm the resourcepack** — the installer already enabled `qzpno_mv` in `options.txt`;
+      in **Options → Resource Packs** verify `qzpno_mv` is on the right (selected) side.
+   4. `/function <ns>:setup` (wait for "built") → press the **[播放]/[play]** sign-button.
+
+> **No sound?** Run `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir
+> <world>/datapacks --mc-version <ver> --ns <ns>` first — it prints a ✓/✗ checklist with a fix
+> under each ✗. 9 times out of 10 it's the resourcepack not enabled, `/tick rate 80` not typed,
+> RedPiano/Fabric API missing (or a **version-mismatched** mod jar) in `mods/`, or Minecraft not
+> restarted after jar changes — see the triage box at the top of [QUICKSTART.md](QUICKSTART.md).
 
 ## What's in this folder
 
@@ -74,7 +114,10 @@ RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
 |---|---|
 | `scripts/build_machine.py` | the build CLI (this is the entry point you run) |
 | `scripts/build_particles.py` | optional: music-synced particle/command tracks (see docs/PARTICLES.md) |
-| `scripts/prepare_all.py` | preferred handoff CLI: datapack + resourcepack install/enable + RedPiano jar build/install + Fabric API install |
+| `scripts/prepare_all.py` | preferred handoff CLI: stages datapack + resourcepack + RedPiano/Fabric API jars into `dist/` and emits `dist\DEPLOY_TO_GAME.bat` (the user double-clicks it to install; verify with `deploy_bundle.py --verify dist`) |
+| `scripts/deploy_bundle.py` | `--verify dist`: checks the `DEPLOY_RECEIPT.txt` handshake — the only proof the `.bat` really installed into the game |
+| `scripts/doctor.py` | `--dist dist [--profile-dir --world-dir --mc-version --ns]`: one-shot "no sound?" health check — numbered ✓/✗ list, a fix under each ✗, final VERDICT; all-green exits 0 |
+| `scripts/midi_report.py` | `--midi <mid> [--form]`: pre-build MIDI quality check (duration / family mix / est. dropped notes / est. footprint / one-line verdict) — run before choosing a form |
 | `scripts/build_resourcepack.py` | version-driven `qzpno_mv` resourcepack repack (`--mc-version`; samples ship separately, see BINARIES.md) |
 | `scripts/mod_build.py` | low-level helper: prints/applies the verified mod toolchain per `--mc-version`; `prepare_all.py` runs the build by default |
 | `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (`VERSION_TABLE` in `redpiano_core.py` is the single source of truth for per-version facts) |

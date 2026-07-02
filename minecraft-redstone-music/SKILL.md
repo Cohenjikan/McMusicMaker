@@ -80,16 +80,49 @@ is a self-contained folder + one Python CLI; see README.md.)
 >
 > **Sound needs version-matched binaries.** The datapack auto-adapts the *commands/format*, but
 > the SOUND needs a **mod jar + `qzpno_mv.zip` that match the MC version**; a mismatch makes the
-> note blocks fall back to **vanilla** tones (faint harp + booming basedrum). Prebuilt binaries
-> ship for **1.21.8** (and are byte-compatible with **1.21.7** — same dp 81 / rp 64). For those,
-> pass `--prebuilt-rp <qzpno_mv.zip>` and `--prebuilt-mod-jar <redpiano.jar>` (they ship beside
-> the skill — see [BINARIES.md](BINARIES.md)) so you need no Gradle/JDK/ffmpeg. For another
-> `1.21.x`, rebuild both (`build_resourcepack.py` for the pack; recompile the mod). A stripped
-> sandbox usually can't build the jar — prefer the prebuilt binary.
+> note blocks fall back to **vanilla** tones (faint harp + booming basedrum). The **data format is
+> shared across 1.21.7 ↔ 1.21.8** (dp 81 / rp 64), so the **same `qzpno_mv.zip` serves both** — but
+> the **mod jar is per-version**: `fabric.mod.json` pins a `"minecraft"` range and Fabric **refuses
+> to load a jar whose range doesn't cover the running game**. The prebuilt `binaries/` folder ships
+> a jar for **each** of 1.21.7 and 1.21.8 — **pick the one that matches the game**
+> (`redpiano-1.0.0-mc1.21.7.jar` for a 1.21.7 game, `…-mc1.21.8.jar` for 1.21.8). Do **not** feed
+> the 1.21.8 jar to a 1.21.7 game (it declares `~1.21.8` → rejected at startup → vanilla tones).
+> For those two versions pass `--prebuilt-rp ../binaries/qzpno_mv.zip` and
+> `--prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc<ver>.jar` (+ `--fabric-api-jar`) so you need no
+> Gradle/JDK/ffmpeg — see [BINARIES.md](BINARIES.md). For any **other** `1.21.x`, no prebuilt jar
+> ships: rebuild the mod (recompile) and, if `rp_format` differs (e.g. 1.21.9 = 69), repack with
+> `build_resourcepack.py`. A stripped sandbox usually can't build the jar — prefer the prebuilt binary.
+>
+> **NEVER hand-write or fake fabric-api / fabric-loader stubs to force the jar to compile.**
+> The Gradle build MUST resolve the **real** fabric-api from `maven.fabricmc.net`. If you can't
+> reach that maven (no network, blocked sandbox), the mod build is **BLOCKED** — report it as
+> blocked and stop; do **not** hand-roll placeholder classes, empty interfaces, or a stub jar to
+> get a green build. A fake dependency + a fake toolchain is a **silent failure the manifest can't
+> catch** (it looks built but the mixin was compiled against nothing and plays no sound — this
+> really happened). Prefer `--prebuilt-mod-jar <redpiano.jar>` when you can't build honestly. When
+> a jar IS produced, sanity-check it before install with `mod_build.py --check-jar` (confirms the
+> real fabric-api was resolved, not a stub) as a pre-deploy gate.
+>
+> **For a 1.21.7 or 1.21.8 game, DO NOT compile the mod at all.** A version-matched jar already
+> ships in `../binaries/` (`redpiano-1.0.0-mc1.21.7.jar` / `…-mc1.21.8.jar`). Inside the sandbox you
+> **do not need and must not** run Gradle — just pass the matching `--prebuilt-mod-jar`. Building
+> the mod in a stripped sandbox is exactly what tempts the fatal fabric-api-stub shortcut above.
 >
 > **Never claim it "works" before an in-game listen.** A recompiled mixin can compile yet be
 > silent or mis-pitched. After the receipt exists, hand off the in-game steps (step 4) and ask
 > the user to confirm they actually hear it. Simplest reliable target = **1.21.8 / 1.21.7**.
+
+**前置门槛 (Pre-flight) — confirm these TWO before step 0 (a "no" here means stop or warn):**
+   - **(a) Java 版, 不是基岩版 (Bedrock).** This whole pipeline is **Java Edition only** — it
+     relies on datapacks, `/function`, `/tick rate`, and a Fabric mod, none of which exist on
+     **Bedrock (Windows 10/11 "Minecraft" app, phones, consoles, Realms-Bedrock)**. If the user
+     is on Bedrock, **say so plainly and stop** — there is no Bedrock path here. Confirm they run
+     the **Java** launcher (Modrinth / official Java launcher / Prism, `.minecraft`/profile folder).
+   - **(b) 目标世界已开作弊 / 有 OP.** `/reload`, `/tick rate 80`, and `/function <ns>:setup` all
+     require **cheats enabled (single-player)** or **OP (server/LAN)**. If the save was created
+     **without cheats**, the quick fix is: pause → **对局域网开放 (Open to LAN)** → **允许作弊: 开
+     (Allow Cheats: ON)** → click Start; commands work until you quit the world. Confirm this now,
+     or the in-game steps in step 4 will silently fail with "无权限/Unknown or incomplete command."
 
 0. **第一句先问:默认预设 还是 自定义?** — BEFORE (or together with) the very first
    input question, the agent MUST surface this choice so the user discovers the ready-made
@@ -105,14 +138,22 @@ is a self-contained folder + one Python CLI; see README.md.)
    at the first interaction — not only in step 5.
 
 1. **收集输入** — ask for these things:
-   - **MIDI 文件** path (`.mid`).
+   - **MIDI 文件** path (`.mid`). **拿到 MIDI 先跑质量预检**, before choosing a form:
+     `python scripts/midi_report.py --midi <mid> [--form <form>]`. It prints a build-time preflight —
+     duration, instrument-family distribution, estimated dropped notes, estimated footprint, and a
+     one-line verdict. **Show that verdict to the user** and let it inform the form choice (step 2):
+     e.g. a long/dense MIDI on `swave`/`straight` may report a large footprint → suggest `inplace`.
    - **存档路径** — the world's `datapacks/` folder, for deployment. If it looks like
      `<profile>/saves/<world>/datapacks`, infer `<profile>` from it.
    - **Minecraft profile root** (or confirm the inferred one). The resourcepack must land in
      `<profile>/resourcepacks/qzpno_mv.zip`; a datapack path alone is not enough.
-   - **Resourcepack source**: either `--samples-root` (full source repo: usually `../poc`,
-     because that folder contains `samples_manifest_*.json` + `samples_*/*.ogg`) or a
-     prebuilt `qzpno_mv.zip` that matches the target MC resourcepack format.
+   - **Resourcepack source**: either `--samples-root` (full source repo: the repo-root `poc/`
+     folder, which contains `samples_manifest_*.json` + `samples_*/*.ogg`) or a prebuilt
+     `qzpno_mv.zip` that matches the target MC resourcepack format. Two paths, one folder: the
+     **auto-detect** default is `../../poc` (anchored to `scripts/`, so `scripts/../../poc` =
+     repo-root `poc/`); if you pass `--samples-root` **by hand it's relative to your shell's
+     cwd** — from the repo root that same folder is just `./poc` (written `../poc` only in
+     examples that run one dir deeper). When unsure, pass an absolute path.
    - **Mod status**: inspect `<profile>/mods/`, but do not stop there. Default behavior is to
      build/install RedPiano and install/reuse/download the matching Fabric API automatically;
      only the final Minecraft restart and listen test remain user actions.
@@ -141,8 +182,12 @@ is a self-contained folder + one Python CLI; see README.md.)
      installs them — see step 4). It does not copy into `<profile>` from a sandbox.
    - **resourcepack** — for 1.21.8/1.21.7 pass the prebuilt `--prebuilt-rp <qzpno_mv.zip>`.
      For another version, `build_resourcepack.py --mc-version <ver> --samples-root <dir>`
-     repacks it (rp_format + pack.mcmeta shape from the version table). Note: a stripped
-     sandbox's `ffmpeg` may lack WAV/vorbis — prefer the prebuilt pack to avoid rebuilding.
+     repacks it (rp_format + pack.mcmeta shape from the version table). This script is **pure
+     stdlib**: it only **copies already-encoded `.ogg`** files into the zip — no ffmpeg, no
+     transcoding. Its prerequisite is a samples folder that already holds
+     `samples_manifest_*.json` + `samples_*/*.ogg` (encoding those from raw audio is a separate
+     upstream `poc/` sampling step, not part of this skill). So the only "can't build the pack"
+     case is missing `.ogg` samples, not a stripped ffmpeg — if you lack them, use `--prebuilt-rp`.
    - **mod** — for 1.21.8/1.21.7 pass the prebuilt `--prebuilt-mod-jar <redpiano.jar>`. A
      stripped sandbox usually cannot run Gradle/JDK, so prefer the prebuilt jar. For another
      version a retarget is number-only (`mod_build.py --write` + a Gradle build on a native
@@ -163,6 +208,39 @@ is a self-contained folder + one Python CLI; see README.md.)
    `--skip-*` flags unless the user explicitly asks for a partial artifact.
    If `prepare_all.py` exits nonzero, fix the missing dependency or report blocked — do not
    summarize it as complete.
+
+   **▸ 打包分发场景 — golden command (Fabric 1.21.7, offline, prebuilt binaries).** This is the
+   exact shape for the common handoff: you received a repo-snapshot with a sibling `binaries/`
+   folder and the user runs **Fabric 1.21.7**. Run it **from the `minecraft-redstone-music/`
+   directory**, so `../binaries/…` resolves. Every path here is real — `--world-dir` and
+   `--profile-dir` **must be the user's actual game paths (ask them first)**; the two shown are
+   only placeholders. All binaries are passed explicitly, so **no Modrinth / network is needed**:
+
+   ```bash
+   python scripts/prepare_all.py \
+       --midi <mid> \
+       --form swave \
+       --ns  mysong \
+       --origin 0 0 255 \
+       --mc-version 1.21.7 \
+       --world-dir  "<profile>/saves/<world>/datapacks" \
+       --profile-dir "<profile>" \
+       --prebuilt-rp      ../binaries/qzpno_mv.zip \
+       --prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar \
+       --fabric-api-jar   ../binaries/fabric-api-0.129.0+1.21.7.jar \
+       --dist dist
+   ```
+
+   Notes: the **mod jar is the `mc1.21.7` one** (the `mc1.21.8` jar declares `~1.21.8` and Fabric
+   would reject it on a 1.21.7 game); `qzpno_mv.zip` is the same for 1.21.7/1.21.8. If the shipped
+   jar is still named `…-mc1.21.7-UNVERIFIED.jar`, use that filename verbatim (the `-UNVERIFIED`
+   just means "listen once to confirm"); optionally gate it first with
+   `python scripts/mod_build.py --mc-version 1.21.7 --check-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar`
+   (exit 0 = bytecode-clean, safe to install). For a **1.21.8** game, swap `--mc-version 1.21.8` and
+   the mod jar to `../binaries/redpiano-1.0.0-mc1.21.8.jar` (+ a 1.21.8 fabric-api jar). Every flag
+   above is real on the current `prepare_all.py` — confirm any variant with
+   `python scripts/prepare_all.py --help`.
+
    **Then deliver the one manual step and stop claiming more than the receipt proves:**
    - Tell the user (point at the exact path): **「双击 `dist\DEPLOY_TO_GAME.bat`（在 Windows
      资源管理器里，不要让 AI 代跑）就能装进游戏」**. That native double-click copies the
@@ -181,10 +259,15 @@ is a self-contained folder + one Python CLI; see README.md.)
         confirms it's on the right (selected) side in Options → Resource Packs.
      5. `/function <ns>:setup` — build the physical machine + console at the origin.
      6. press the **[play]** sign/button.
-   > **⚠ 「完全没声」排查顺序:①`dist\DEPLOY_RECEIPT.txt` 在不在(不在=根本没部署,让用户双击
-   > `.bat`);② `qzpno_mv` 是否在 Options → Resource Packs 右侧「已选用」(其 `pack_format`
+   > **⚠ 「完全没声」先跑一键体检 `doctor.py`, 再看这三项.** The fastest triage is
+   > `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir <world>/datapacks
+   > --mc-version <ver> --ns <ns>` — it prints a numbered ✓/✗ checklist (receipt present?
+   > `qzpno_mv` enabled with the matching `pack_format`? mod + fabric-api in `mods/`? datapack in
+   > the world? tick-rate reminder) with a **fix line under every ✗** and a final **VERDICT**;
+   > all-green = exit 0. Then, in order: ①`dist\DEPLOY_RECEIPT.txt` 在不在(不在=根本没部署,让用户
+   > 双击 `.bat`);② `qzpno_mv` 是否在 Options → Resource Packs 右侧「已选用」(其 `pack_format`
    > 必须匹配 MC 版本:1.21.8/1.21.7 = **64**,不匹配 MC 会静默禁用 → 全静音);③ 有没有手动敲
-   > `/tick rate 80`。**
+   > `/tick rate 80`。
    > Bare `scripts/build_machine.py` is datapack-only; for a playable result use
    > `prepare_all.py` (it stages the resourcepack + mod and emits the native installer).
 

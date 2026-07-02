@@ -5,7 +5,8 @@ RedPiano (Family A) skill.
 Implements CONTRACT.md §2 *exactly*. This module is **standalone** — pure stdlib,
 no project deps — so it can be imported by ``redpiano_core.py`` and the generators
 without pulling in any geometry. The designer (``poc/layout_designer.html``) exports
-~26 fields; only a subset is consumed by the two v1 generators (``inplace`` / ``swave``).
+~26 fields; only a subset is consumed by the v1 generators (``inplace`` / ``swave`` /
+``straight`` / ``custom`` / ``multilane``).
 Anything a generator does not consume, but is SET to a non-default value, is rejected
 loudly (no silent drop). Anything that is exported only as designer preview/metadata
 is whitelisted and ignored.
@@ -70,7 +71,7 @@ FIELD_TABLE = {
     "start_z":       (0,                 _BOTH),
     "start_y":       (255,               _BOTH),
     "start_dir":     ("+X",              _BOTH),   # only +X implemented (§2.4)
-    "signal_tracks": (None,              _MULTILANE),  # parallel repeater chains (dz; dx/dy 3D unimpl)
+    "signal_tracks": (None,              _MULTILANE),  # parallel repeater chains; consumes full 3D offset {dx,dy,dz} (multilane.py emit_chain)
     # ── inplace-only ──────────────────────────────────────────────────────
     "palette_noteblocks": (DERIVED,      _INPLACE),  # preview hint; real size derived
     "PCOLS":              (16,           _INPLACE),
@@ -110,7 +111,7 @@ FIELD_CONSUMED = {k: v[1] for k, v in FIELD_TABLE.items()}
 # rejection regardless of value.
 _IGNORABLE = frozenset(k for k, c in FIELD_CONSUMED.items() if c == "ignore")
 
-# the v1 forms: inplace + the marching-pulse family (swave / straight / custom)
+# the v1 forms: inplace + the marching-pulse family (swave / straight / custom) + multilane
 _VALID_FORMS = _ALLF
 
 
@@ -148,7 +149,8 @@ def load_params(path_or_dict, form):
 
     Implements CONTRACT.md §2.2. Steps:
       1. accept a JSON file path or an already-parsed dict;
-      2. validate ``form`` is one of {inplace, swave} (custom/other -> RedPianoError);
+      2. validate ``form`` is one of {inplace, swave, straight, custom, multilane}
+         (any other -> RedPianoError);
       3. apply defaults from the field table for the chosen form;
       4. required-field check: a ``form`` in the dict must match the ``form`` arg;
          ``method`` must be 'redpiano';
@@ -279,10 +281,41 @@ def assert_supported(params, form):
             f"start_dir must be one of {' / '.join(VALID_DIRS)} (got {_get('start_dir')!r})"
         )
 
-    # signal_tracks: multilane now consumes the FULL 3D offset (dx/dy/dz). Validate shape.
+    # signal_tracks: multilane now consumes the FULL 3D offset (dx/dy/dz). Validate the
+    # shape AND each element — a bad JSON (e.g. [1,2,3] instead of a list of objects)
+    # would otherwise sail through here and crash multilane.py L194 with a raw
+    # AttributeError ('int' object has no attribute 'get'), breaking the "clean one-line
+    # error, never a traceback" contract. Reject non-dict / non-numeric offsets loudly.
     sig = _get("signal_tracks")
-    if sig is not None and not isinstance(sig, (list, tuple)):
-        raise RedPianoError("signal_tracks must be a list of {dx,dy,dz} offset objects")
+    if sig is not None:
+        if not isinstance(sig, (list, tuple)):
+            raise RedPianoError("signal_tracks must be a list of {dx,dy,dz} offset objects")
+        for i, sg in enumerate(sig):
+            if not isinstance(sg, dict):
+                raise RedPianoError(
+                    f"signal_tracks[{i}] must be a {{dx,dy,dz}} object, got "
+                    f"{type(sg).__name__}"
+                )
+            for axis in ("dx", "dy", "dz"):
+                if axis not in sg:
+                    continue
+                val = sg[axis]
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    raise RedPianoError(
+                        f"signal_tracks[{i}].{axis} must be a number, got "
+                        f"{type(val).__name__}"
+                    )
+
+    # form=custom REQUIRES a non-empty waypoints route — fail fast here (step 3) instead
+    # of letting the build run MIDI-parse + melody-cut planning and only crash mid-way in
+    # the generator, which violates the documented "fail fast custom" contract (§4).
+    if form == "custom":
+        wps = _get("waypoints")
+        if not isinstance(wps, (list, tuple)) or not wps:
+            raise RedPianoError(
+                "custom form requires params['waypoints'] to be a non-empty list of "
+                "route points ({x,z} or [x,z]) — draw a route in the designer"
+            )
 
     # marching-pulse (swave/straight/custom) unimplemented features
     if form in _MARCH:
@@ -365,6 +398,28 @@ if __name__ == "__main__":
     # assert_supported: multilane
     expect_raise(lambda: assert_supported(load_params({}, "swave") | {"chord_mode": "multilane"}, "swave"),
                  "multilane", "chord_mode multilane")
+
+    # K1: signal_tracks per-element validation — a bad JSON must raise RedPianoError
+    # (naming the offending index) rather than crash the multilane generator with a
+    # raw AttributeError.
+    expect_raise(lambda: assert_supported(load_params({"signal_tracks": [1, 2, 3]}, "multilane"), "multilane"),
+                 "signal_tracks[0]", "signal_tracks bare ints")
+    expect_raise(lambda: assert_supported(load_params({"signal_tracks": [{"dz": 2}, "nope"]}, "multilane"), "multilane"),
+                 "signal_tracks[1]", "signal_tracks non-dict element")
+    expect_raise(lambda: assert_supported(load_params({"signal_tracks": [{"dx": "5"}]}, "multilane"), "multilane"),
+                 "signal_tracks[0].dx", "signal_tracks non-numeric offset")
+    # a well-formed signal_tracks passes
+    assert_supported(load_params({"signal_tracks": [{"dx": 5, "dy": 3, "dz": 10}, {"dz": 2}]}, "multilane"), "multilane")
+    print("ok: signal_tracks per-element validation")
+
+    # K2: custom REQUIRES non-empty waypoints — fail fast in assert_supported
+    expect_raise(lambda: assert_supported(load_params({"form": "custom"}, "custom"), "custom"),
+                 "waypoints", "custom missing waypoints")
+    expect_raise(lambda: assert_supported(load_params({"form": "custom", "waypoints": []}, "custom"), "custom"),
+                 "waypoints", "custom empty waypoints")
+    assert_supported(load_params({"form": "custom",
+                                  "waypoints": [{"x": 0, "z": 0}, {"x": 8, "z": 0}]}, "custom"), "custom")
+    print("ok: custom waypoints fail-fast in assert_supported")
     # a clean normalized dict passes assert_supported
     assert_supported(load_params({"XRUN": 6}, "swave"), "swave")
     assert_supported(load_params({"PCOLS": 24}, "inplace"), "inplace")

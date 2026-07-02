@@ -79,6 +79,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     for n in notes:
         if n.get("vel", 1.0) >= 0.04:
             bycell[round(n["t"] / U)].append(n)
+    if not bycell:
+        # notes 非空但全部 vel<0.04 -> bycell 为空, 会静默生成 0 音符空机器. 硬失败.
+        raise RedPianoError(f"{len(notes)} 个音符全部低于力度阈值 0.04 — nothing to build")
     trig = sorted(bycell)
     lane_voices = [dict() for _ in range(NLANE)]
     lane_counts = [0] * NLANE
@@ -346,7 +349,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     deployed = dp.deploy(deploy_dir) if deploy_dir else None
 
-    duration_s = (notes and max(n["t"] + n.get("dur", 0.0) for n in notes)) or 0.0
+    # 时长按实际触发的 trig 时间跨度算, 不含被力度阈值丢弃的音符 (与 swave/inplace 一致)
+    duration_s = (trig[-1] - trig[0]) * U if len(trig) > 1 else 0.0
     nnote = sum(1 for vv in occ.values() if vv.startswith("minecraft:note_block"))
     return {
         "note_count": sum(lane_counts),

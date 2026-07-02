@@ -19,14 +19,25 @@ Supported (green) band: 1.21..1.21.10 — number-only retarget (no Java source e
 mod needs a real Java source-port (the <1.21 scoreboard config API) + Java 17 at 1.20.4 —
 out of this skill's auto scope; this helper prints that checklist instead of writing.
 
+It can also VERIFY a freshly-built jar before you trust it: `--check-jar <jar>` guards
+against a "hand-written fabric-api stub" build (which compiles but crashes at startup with
+NoSuchFieldError) by inspecting fabric.mod.json + disassembling the ServerTickEvents field
+reference. See check_jar() below.
+
 Pure stdlib. Examples:
   python scripts/mod_build.py --mc-version 1.21.9            # print the toolchain
   python scripts/mod_build.py --mc-version 1.21.9 --write    # apply to the mod build files
+  python scripts/mod_build.py --mc-version 1.21.8 \
+      --check-jar mod/redpiano/build/libs/redpiano-1.0.0.jar  # verify a built jar
 """
 
 import argparse
+import json
 import os
 import re
+import shutil
+import subprocess
+import zipfile
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +51,10 @@ MAPPINGS = "officialMojang"   # constant — staying on Mojang official keeps po
 # Verified Fabric toolchain per MC version (cross-checked fabricmc.net + meta API, June 2026).
 # loader is forward-compatible (a recent stable runs older MC), so the project anchor 0.17.3
 # is used across the whole green band (>=0.17.0 also satisfies 1.21.9's bundled MixinExtras).
-# fabric_api is the exact "+<mc>" build. loom must match the MC era. java is 21 across green.
+# fabric_api is the exact "+<mc>" build. loom must be an EXACT published plugin version —
+# Gradle cannot resolve an era label like "1.10" (bit the 1.21.7 rebuild; 1.10.5 is
+# build-proven for 1.21.5..1.21.8). The 1.7/1.8/1.9/1.11 rows are still era-level: look up
+# the exact patch on fabricmc.net before a --write build there. java is 21 across green.
 # port_tier: "numbers" = pure number bump; "verify:*" = number bump + one genSources check.
 MOD_TOOLCHAIN = {
     "1.21":   {"loom": "1.7",    "loader": "0.17.3", "fabric_api": "0.102.0+1.21",   "java": 21, "port_tier": "numbers", "notes": ""},
@@ -48,9 +62,9 @@ MOD_TOOLCHAIN = {
     "1.21.2": {"loom": "1.8",    "loader": "0.17.3", "fabric_api": "0.106.1+1.21.2",  "java": 21, "port_tier": "numbers", "notes": ""},
     "1.21.3": {"loom": "1.8",    "loader": "0.17.3", "fabric_api": "0.114.1+1.21.3",  "java": 21, "port_tier": "numbers", "notes": ""},
     "1.21.4": {"loom": "1.9",    "loader": "0.17.3", "fabric_api": "0.119.4+1.21.4",  "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.5": {"loom": "1.10",   "loader": "0.17.3", "fabric_api": "0.128.2+1.21.5",  "java": 21, "port_tier": "numbers", "notes": "loom 1.10 needs Gradle 8.12"},
-    "1.21.6": {"loom": "1.10",   "loader": "0.17.3", "fabric_api": "0.128.2+1.21.6",  "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.7": {"loom": "1.10",   "loader": "0.17.3", "fabric_api": "0.129.0+1.21.7",  "java": 21, "port_tier": "numbers", "notes": ""},
+    "1.21.5": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.5",  "java": 21, "port_tier": "numbers", "notes": "loom 1.10 era needs Gradle 8.12+"},
+    "1.21.6": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.6",  "java": 21, "port_tier": "numbers", "notes": ""},
+    "1.21.7": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.129.0+1.21.7",  "java": 21, "port_tier": "numbers", "notes": "jar rebuilt+--check-jar verified 2026-07-02 (listen pending)"},
     "1.21.8": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.136.1+1.21.8",  "java": 21, "port_tier": "numbers", "notes": "ANCHOR — matches build.gradle byte-for-byte"},
     "1.21.9": {"loom": "1.11",   "loader": "0.17.3", "fabric_api": "0.134.1+1.21.9",  "java": 21, "port_tier": "verify:getEntityWorld",
                "notes": "yarn getWorld->getEntityWorld; under Mojang mappings verify the equivalent in genSources. fabric-api resource-loader rework."},
@@ -160,6 +174,185 @@ def _write(mc_version, mod_dir, set_mc_range):
     return profile, tc, changed
 
 
+# --- --check-jar: guard against a "hand-written fabric-api stub" jar -----------------
+# Background (the June-2026 GLM footgun): in the sandbox, gradle sometimes could NOT reach
+# maven.fabricmc.net, and a build that hand-writes a local fabric-api STUB compiles fine
+# but ships a jar whose ServerTickEvents.END_SERVER_TICK field points at a *nested-class*
+# Event (descriptor `LServerTickEvents$Event;`) instead of the real top-level
+# `Lnet/fabricmc/fabric/api/event/Event;`. That jar loads then crashes at startup with
+# `NoSuchFieldError END_SERVER_TICK`. Gradle succeeds, mtime/size change, so the only tell
+# was the in-game crash. --check-jar catches it before the game ever launches.
+
+# The one field reference that distinguishes a real fabric-api from a stub.
+_STE_OWNER = "net/fabricmc/fabric/api/event/lifecycle/v1/ServerTickEvents"
+_STE_FIELD = "END_SERVER_TICK"
+_STE_GOOD_DESC = "Lnet/fabricmc/fabric/api/event/Event;"  # real top-level Event
+_REDPIANO_CLASS = "com/redpiano/RedPiano.class"           # the entrypoint that registers it
+
+
+def _find_javap():
+    """Locate javap via JAVA_HOME then PATH. Returns a path or None (own small probe — do
+    not import prepare_all here, that's not this helper's file)."""
+    exe = "javap.exe" if os.name == "nt" else "javap"
+    jh = os.environ.get("JAVA_HOME")
+    if jh:
+        cand = os.path.join(jh, "bin", exe)
+        if os.path.isfile(cand):
+            return cand
+    return shutil.which("javap")
+
+
+def _check_fabric_mod_json(jar, mc_version):
+    """(a) Read fabric.mod.json from the jar: id must be 'redpiano', and the declared
+    `depends.minecraft` range must be compatible with --mc-version. Returns a list of
+    problem strings (empty = ok)."""
+    problems = []
+    try:
+        with zipfile.ZipFile(jar) as z:
+            with z.open("fabric.mod.json") as f:
+                fmj = json.load(f)
+    except KeyError:
+        return [f"{os.path.basename(jar)}: no fabric.mod.json inside (not a Fabric mod jar?)"]
+    except (zipfile.BadZipFile, json.JSONDecodeError, OSError) as e:
+        return [f"{os.path.basename(jar)}: cannot read fabric.mod.json ({e})"]
+
+    if fmj.get("id") != "redpiano":
+        problems.append(f"fabric.mod.json id={fmj.get('id')!r}, expected 'redpiano'")
+
+    mc_dep = (fmj.get("depends") or {}).get("minecraft")
+    if mc_dep is None:
+        problems.append("fabric.mod.json depends.minecraft missing")
+    elif not _mc_range_matches(mc_dep, mc_version):
+        problems.append(f"fabric.mod.json depends.minecraft={mc_dep!r} does not cover "
+                        f"--mc-version {mc_version} (rebuild/--set-mc-range for this target)")
+    return problems
+
+
+def _mc_range_matches(dep, mc_version):
+    """Tiny compatibility check for the fabric depends.minecraft form the mod actually
+    uses. Handles '*', an exact string, and the '~1.21.x' (same minor, patch >=) tilde
+    range that --set-mc-range writes. Conservative: unknown syntax -> treat as matching so
+    we never reject a valid-but-unusual range (id + bytecode are the real guards)."""
+    dep = str(dep).strip()
+    if dep in ("*", mc_version):
+        return True
+    if dep.startswith("~"):
+        base = dep[1:]
+        b, v = base.split("."), mc_version.split(".")
+        # tilde on a.b.c pins a.b and allows patch >= c (Fabric's ~ semantics).
+        if len(b) >= 2 and len(v) >= 2 and b[:2] == v[:2]:
+            try:
+                bp = int(b[2]) if len(b) > 2 else 0
+                vp = int(v[2]) if len(v) > 2 else 0
+                return vp >= bp
+            except ValueError:
+                return True
+        return False
+    if dep in (">=" + mc_version, mc_version + "+"):
+        return True
+    return True  # unknown syntax: don't false-reject
+
+
+def _check_bytecode(jar, javap):
+    """(b) javap-disassemble RedPiano.class and verify the ServerTickEvents.END_SERVER_TICK
+    field reference uses the real top-level Event descriptor, not a nested stub one.
+    Returns (problems, checked): checked=False means the class/ref wasn't found to inspect."""
+    tmp = None
+    try:
+        # extract RedPiano.class to a temp dir so javap has a plain file to read.
+        import tempfile
+        tmp = tempfile.mkdtemp(prefix="rpcheck_")
+        try:
+            with zipfile.ZipFile(jar) as z:
+                z.extract(_REDPIANO_CLASS, tmp)
+        except KeyError:
+            return ([f"{_REDPIANO_CLASS} not found in jar (entrypoint missing?)"], False)
+        clsfile = os.path.join(tmp, *_REDPIANO_CLASS.split("/"))
+        try:
+            out = subprocess.run([javap, "-p", "-c", "-v", clsfile],
+                                 capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            return ([f"javap failed to run on {_REDPIANO_CLASS}: {e}"], False)
+        if out.returncode != 0:
+            return ([f"javap exited {out.returncode} on {_REDPIANO_CLASS}: "
+                     f"{(out.stderr or '').strip()[:200]}"], False)
+        return _scan_javap(out.stdout)
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _scan_javap(text):
+    """Parse javap -v output for the END_SERVER_TICK Fieldref and validate its descriptor.
+    javap renders it as e.g.
+      #36 = Fieldref  #13.#35  // net/.../ServerTickEvents.END_SERVER_TICK:Lnet/.../Event;
+    Returns (problems, checked)."""
+    # match the resolved '// owner.FIELD:descriptor' comment on a Fieldref line.
+    pat = re.compile(r"Fieldref.*//\s*(\S+)\.%s:(\S+)" % re.escape(_STE_FIELD))
+    for line in text.splitlines():
+        m = pat.search(line)
+        if not m:
+            continue
+        owner, desc = m.group(1), m.group(2)
+        if desc != _STE_GOOD_DESC:
+            return ([f"{_STE_FIELD} field descriptor is {desc!r} (owner {owner}), expected "
+                     f"{_STE_GOOD_DESC!r} — this is the hand-written fabric-api STUB "
+                     f"footgun (nested-class Event) that crashes at startup with "
+                     f"NoSuchFieldError. Rebuild against the real maven.fabricmc.net "
+                     f"fabric-api, do NOT hand-write a stub."], True)
+        return ([], True)
+    # RedPiano.class exists but never references END_SERVER_TICK: nothing to validate here.
+    return ([], False)
+
+
+def check_jar(jar, mc_version):
+    """Verify a compiled RedPiano jar is not poisoned by a fake fabric-api stub, BEFORE the
+    game launches. Three checks:
+      (a) fabric.mod.json: id=='redpiano' and depends.minecraft covers --mc-version;
+      (b) javap-disassemble RedPiano.class and require the ServerTickEvents.END_SERVER_TICK
+          reference to use the real top-level `Lnet/fabricmc/fabric/api/event/Event;`
+          descriptor (a stub uses a nested `LServerTickEvents$Event;` -> NoSuchFieldError);
+      (c) if javap is unavailable, WARN 'bytecode NOT verified' rather than fake-green.
+    Returns 0 (ok, possibly with an honest bytecode WARN) or 1 (a real problem)."""
+    if not os.path.isfile(jar):
+        print(f"error: jar not found: {jar}", file=sys.stderr)
+        return 1
+
+    print(f"=== check-jar {os.path.basename(jar)} (target MC {mc_version}) ===")
+    problems = []
+
+    # (a) manifest
+    man_problems = _check_fabric_mod_json(jar, mc_version)
+    problems += man_problems
+    if not man_problems:
+        print("  ok  fabric.mod.json: id=redpiano, minecraft range covers target")
+
+    # (b)/(c) bytecode via javap
+    javap = _find_javap()
+    if javap is None:
+        print("  WARN bytecode NOT verified — no javap on JAVA_HOME/PATH; cannot confirm "
+              "the ServerTickEvents.END_SERVER_TICK descriptor is the real fabric-api "
+              "(a stub jar would still crash at startup). Install a JDK to fully verify.")
+    else:
+        bc_problems, checked = _check_bytecode(jar, javap)
+        problems += bc_problems
+        if bc_problems:
+            pass  # reported below
+        elif checked:
+            print(f"  ok  bytecode: END_SERVER_TICK -> {_STE_GOOD_DESC} (real fabric-api)")
+        else:
+            print("  WARN bytecode NOT verified — RedPiano.class did not reference "
+                  "END_SERVER_TICK to inspect (entrypoint changed?); stub check skipped.")
+
+    if problems:
+        print("  --- FAILED ---")
+        for p in problems:
+            print(f"  ERROR {p}", file=sys.stderr)
+        return 1
+    print("  jar OK (still needs ONE in-game listen — bytecode-clean != mixin-correct).")
+    return 0
+
+
 def build_argparser():
     p = argparse.ArgumentParser(
         prog="mod_build.py",
@@ -175,11 +368,18 @@ def build_argparser():
     p.add_argument("--set-mc-range", action="store_true", dest="set_mc_range",
                    help="ALSO set fabric.mod.json minecraft range to ~<version>. Only do "
                         "this for a version you have actually tested in-game.")
+    p.add_argument("--check-jar", default=None, dest="check_jar", metavar="JAR",
+                   help="verify a built jar (fabric.mod.json + bytecode) is not a "
+                        "fake-fabric-api stub before trusting it. Exits 1 on a real "
+                        "problem, 0 if clean (or honestly WARNs when javap is absent).")
     return p
 
 
 def main(argv=None):
     args = build_argparser().parse_args(argv)
+    if args.check_jar:
+        # jar verification is standalone (no toolchain print/write); returns 0/1.
+        return check_jar(args.check_jar, args.mc_version)
     try:
         if args.write:
             mod_dir = args.mod_dir or default_mod_dir()
@@ -220,6 +420,45 @@ if __name__ == "__main__":
             except RedPianoError as e:
                 assert needle in str(e), (v, str(e))
         print("ok: green-band toolchain rows resolve; yellow/red raise with reason")
+
+        # --check-jar (a) fabric.mod.json path + (c) javap-missing WARN path, via a
+        # constructed minimal zip (no real jar / gradle needed for the self-test).
+        import tempfile
+        # depends.minecraft range matcher
+        assert _mc_range_matches("*", "1.21.8")
+        assert _mc_range_matches("~1.21.8", "1.21.8")
+        assert _mc_range_matches("~1.21.1", "1.21.8")      # same minor, patch >=
+        assert not _mc_range_matches("~1.21.9", "1.21.8")  # patch too high
+        assert not _mc_range_matches("~1.20.4", "1.21.8")  # different minor
+        # javap Fieldref scanner: good vs stub descriptor
+        good = ("  #36 = Fieldref  #13.#35  // net/fabricmc/fabric/api/event/lifecycle/"
+                "v1/ServerTickEvents.END_SERVER_TICK:Lnet/fabricmc/fabric/api/event/Event;")
+        assert _scan_javap(good) == ([], True), _scan_javap(good)
+        stub = ("  #36 = Fieldref  #13.#35  // net/fabricmc/fabric/api/event/lifecycle/"
+                "v1/ServerTickEvents.END_SERVER_TICK:LServerTickEvents$Event;")
+        prob, checked = _scan_javap(stub)
+        assert checked and prob and "stub" in prob[0].lower(), (prob, checked)
+        assert _scan_javap("no fieldref here") == ([], False)
+        with tempfile.TemporaryDirectory() as td:
+            # good manifest -> no manifest problems
+            okjar = os.path.join(td, "ok.jar")
+            with zipfile.ZipFile(okjar, "w") as z:
+                z.writestr("fabric.mod.json", json.dumps(
+                    {"id": "redpiano", "depends": {"minecraft": "~1.21.8"}}))
+            assert _check_fabric_mod_json(okjar, "1.21.8") == []
+            # wrong id + non-covering range -> two problems
+            badjar = os.path.join(td, "bad.jar")
+            with zipfile.ZipFile(badjar, "w") as z:
+                z.writestr("fabric.mod.json", json.dumps(
+                    {"id": "notredpiano", "depends": {"minecraft": "~1.20.4"}}))
+            bp = _check_fabric_mod_json(badjar, "1.21.8")
+            assert any("id=" in p for p in bp) and any("minecraft" in p for p in bp), bp
+            # no fabric.mod.json at all
+            emptyjar = os.path.join(td, "empty.jar")
+            with zipfile.ZipFile(emptyjar, "w") as z:
+                z.writestr("readme.txt", "x")
+            assert _check_fabric_mod_json(emptyjar, "1.21.8"), "missing fmj should problem"
+        print("ok: --check-jar fabric.mod.json (id/range) + javap descriptor scan")
         print("mod_build self-test PASSED")
         sys.exit(0)
     sys.exit(main())

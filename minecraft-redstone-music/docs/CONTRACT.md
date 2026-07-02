@@ -365,12 +365,13 @@ implements it** → if SET to a non-default, `load_params` MUST raise (§2.3).
 | `max_poly` | int | optional | `7` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
 | `lane_dz` | int | optional | `2` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
 | `lane_offsets` | list \| null | optional | `null` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
+| **custom-only** | | | | | |
+| `waypoints` | list[[x,z]] \| null | optional | `null` | custom | `form=custom` route; **required** (non-empty) on custom (§2.3), rejected on other forms |
 | `side_view` | bool | optional | `false` | none (designer-only) | render toggle, not a build param — ignored |
 | **slice-only (Family B, OUT OF SCOPE)** | | | | | |
 | `audio_file` | str \| null | optional | `null` | none (slice) | hard-fail if `method=slice` |
 | `audio_duration` | num | optional | `0` | none (slice) | " |
 | `tick_rate` | int | optional | `20` (slice) | none (slice) | " |
-| `waypoints` | list[[x,z]] \| null | optional | `null` | none-yet | `form=custom` only; not in v1 |
 | `result` / `bbox_cells` | object | optional | — | none (designer metadata) | echoed preview metrics; **ignored on load** (not authoritative) |
 
 > `result`, `bbox_cells`, `side_view`, and `slice_note` are designer *preview/metadata* and

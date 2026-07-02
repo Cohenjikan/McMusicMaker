@@ -7,9 +7,19 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 
 ---
 
-## ⚠️ 没声?按顺序查这 3 项 (No sound? Check these 3, in order)
+## ⚠️ 没声?第一步跑 doctor.py, 再按顺序查这 3 项 (No sound? Run doctor.py first, then check these 3)
 
-> Nine times out of ten it is one of these. Check **in this order** before debugging anything else.
+> **First, run the one-shot health check** — it catches almost every "no sound" cause at once:
+>
+> ```bash
+> python scripts/doctor.py --dist dist --profile-dir "<profile>" \
+>     --world-dir "<profile>/saves/<world>/datapacks" --mc-version 1.21.7 --ns <ns>
+> ```
+>
+> It prints a numbered ✓/✗ checklist (deploy receipt? `qzpno_mv` enabled + `pack_format` matches?
+> RedPiano + fabric-api in `mods/`? datapack in the world? tick-rate reminder), a **fix under each
+> ✗**, and a final **VERDICT** line; all-green exits 0. Fix whatever it flags, then — if still
+> silent — walk these three **in order** (nine times out of ten it is one of them):
 >
 > 0. **⚠ 你真的部署进游戏了吗?(在沙箱里跑 AI 时最常见、最隐蔽的原因)**
 >    如果构建是由 AI 工具(Trae 等)在沙箱里做的,它写 `C:\Minecraft` 会被重定向到一个镜像,
@@ -25,8 +35,11 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 >    忘了 = 播放约 **4 倍慢** + 旋律截断(melody-cut)时序失准。**你必须自己在游戏里手动敲
 >    `/tick rate 80`**(在按[播放]之前)。机器**不会**自动设置它(用命令方块自动设的方案已测试,
 >    **不生效**)。
-> 3. **RedPiano 模组 jar 是否在 `mods/` 且已重启 MC?**
+> 3. **RedPiano 模组 jar 是否在 `mods/`、版本对得上、且已重启 MC?**
 >    换 jar 必须**完整重启** Minecraft(`/reload` 不够)。还需 Fabric Loader + Fabric API + Java 21。
+>    **模组 jar 必须匹配游戏版本**:`fabric.mod.json` 里钉了 `minecraft` 范围,不覆盖当前游戏就被
+>    Fabric **拒载** → 变回 vanilla 音色。1.21.7 游戏用 `redpiano-1.0.0-mc1.21.7.jar`,1.21.8 用
+>    `…-mc1.21.8.jar`;**别把 1.21.8 那颗装进 1.21.7**(它声明 `~1.21.8`,会被拒)。见 [BINARIES.md](BINARIES.md)。
 >
 > 注:在 **1.21.5+**(含默认的 1.21.8),控制台告示牌的文本现用 **SNBT** 方言(修掉了旧引号格式
 > 在新版渲染成字面文本的潜伏 bug);方言在 1.21.5 自动切换。
@@ -53,10 +66,27 @@ So the flow is split:
 inherit the sandbox and install into the mirror), and **do NOT** hand-write a `deploy.ps1` —
 `prepare_all.py` handles path encoding, unicode world names, options.txt, and mod checks.
 On a genuinely native host (not a sandbox) you may add `--install-now` to install inline.
-After any mod jar change, fully restart Minecraft (`/reload` is not enough for mods). The
-world must allow command blocks / cheats.
+After any mod jar change, fully restart Minecraft (`/reload` is not enough for mods).
 
-## 1. (optional) Design a layout
+**Two prerequisites before you start (a "no" means stop or warn):**
+- **Java Edition only, not Bedrock.** Datapacks, `/function`, `/tick rate`, and the Fabric mod
+  do not exist on **Bedrock** (Win10/11 "Minecraft" app, mobile, console). If you're on Bedrock,
+  this tool cannot help — you need the **Java** launcher. 
+- **The world must have cheats/OP on.** `/reload`, `/tick rate 80`, `/function` need
+  **cheats (single-player)** or **OP (server)**. No cheats? Pause → **Open to LAN** → **Allow
+  Cheats: ON** → Start; commands then work until you quit the world.
+
+## 1a. (pre-check) Inspect the MIDI before choosing a form
+
+```bash
+python scripts/midi_report.py --midi path/to/song.mid [--form swave]
+```
+
+It reports duration, instrument-family mix, estimated dropped notes, estimated footprint, and a
+one-line verdict — use it to pick a form (a long/dense song may push `swave`/`straight` to a large
+footprint, favoring `inplace`).
+
+## 1b. (optional) Design a layout
 
 Open **`designer/layout_designer.html`** in a browser. Load your MIDI, pick a form
 (`inplace`/`swave`/`straight`/`custom`/`multilane`), tune the parameters, and **Export
@@ -77,7 +107,7 @@ python scripts/prepare_all.py \
     --world-dir "<profile>/saves/<world>/datapacks" \
     --profile-dir "<profile>" \
     --dist dist \
-    [--samples-root ../poc | --prebuilt-rp path/to/qzpno_mv.zip] \
+    [--samples-root path/to/poc | --prebuilt-rp path/to/qzpno_mv.zip] \
     [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
 ```
 
@@ -85,9 +115,26 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 `dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
 
 - `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
-- **1.21.8 / 1.21.7:** pass the prebuilt `--prebuilt-rp` + `--prebuilt-mod-jar` (ship beside
-  the skill) — no Gradle/JDK/ffmpeg needed. In a full source checkout, `--samples-root`
-  auto-detects `../../poc`; the mod jar is built only if you have Gradle + JDK 21.
+- **1.21.8 / 1.21.7:** pass the prebuilt `--prebuilt-rp` + `--prebuilt-mod-jar` (ship in the
+  sibling `binaries/` folder) — no Gradle/JDK/ffmpeg needed. **Pick the mod jar by game version**:
+  `qzpno_mv.zip` serves both, but the jar does not — `redpiano-1.0.0-mc1.21.7.jar` for a 1.21.7
+  game, `…-mc1.21.8.jar` for 1.21.8. Golden offline command for **Fabric 1.21.7**, run from the
+  `minecraft-redstone-music/` directory (`../binaries/…` resolves):
+
+  ```bash
+  python scripts/prepare_all.py --midi <mid> --form swave --ns mysong --origin 0 0 255 \
+      --mc-version 1.21.7 \
+      --world-dir "<profile>/saves/<world>/datapacks" --profile-dir "<profile>" \
+      --prebuilt-rp      ../binaries/qzpno_mv.zip \
+      --prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar \
+      --fabric-api-jar   ../binaries/fabric-api-0.129.0+1.21.7.jar \
+      --dist dist
+  ```
+
+  (If the shipped jar is still `…-mc1.21.7-UNVERIFIED.jar`, use that name verbatim.) In a full
+  source checkout instead, `--samples-root` auto-detects `../../poc` (anchored to `scripts/`, i.e.
+  repo-root `poc/`; a hand-passed `--samples-root` is relative to your shell's cwd, so use `./poc`
+  from the repo root or an absolute path); the mod jar is built only if you have Gradle + JDK 21.
 - If a required dependency is unavailable, `prepare_all.py` exits nonzero. Fix it and rerun;
   do not treat a partial build as complete.
 

@@ -153,6 +153,9 @@ function Copy-Tree($src, $dst) {
 
 # 1) datapack -> <world>/datapacks/<ns>
 if ($HasDatapack) {
+    if ([string]::IsNullOrWhiteSpace($World)) {
+        throw "本包含 datapack 但没有目标世界目录（$World 为空）。请用带 --world-dir 的 prepare_all 重新生成本安装器，再双击。"
+    }
     $dpSrc = Join-Path $Dist ("datapack\" + $Ns)
     $dpDst = Join-Path $World $Ns
     if (Test-Path $dpDst) { Remove-Item -Recurse -Force $dpDst }
@@ -268,11 +271,18 @@ Write-Host "   4. /function $Ns`:setup"
 Write-Host "   5. 按 [play] 牌子/按钮"
 Write-Host ''
 """
+    # ns/world/profile/token 都被替换进 PowerShell 单引号字符串。值里若含 '（'O'Brien' 世界名、
+    # it's-a-test 之类完全合法的 Windows 文件夹名）会提前闭合单引号 -> .ps1 语法崩溃甚至注入。
+    # PowerShell 单引号串里转义 ' 的办法是把它加倍成 ''。数字/布尔占位符（HAS_*/DRIVE/RECEIPT）
+    # 是我们自己生成的固定值, 无需转义。
+    def _psq(s):
+        return s.replace("'", "''")
+
     repl = {
-        "@@NS@@": ns, "@@MCVER@@": mc_version, "@@TOKEN@@": token,
-        "@@WORLD@@": world, "@@PROFILE@@": profile,
+        "@@NS@@": _psq(ns), "@@MCVER@@": _psq(mc_version), "@@TOKEN@@": _psq(token),
+        "@@WORLD@@": _psq(world), "@@PROFILE@@": _psq(profile),
         "@@HAS_DP@@": has_dp, "@@HAS_RP@@": has_rp, "@@HAS_MODS@@": has_mods,
-        "@@REL@@": rel, "@@DRIVE@@": drive, "@@RECEIPT@@": RECEIPT_NAME,
+        "@@REL@@": _psq(rel), "@@DRIVE@@": _psq(drive), "@@RECEIPT@@": RECEIPT_NAME,
     }
     for k, v in repl.items():
         tpl = tpl.replace(k, v)
@@ -320,6 +330,15 @@ def build_deploy_bundle(dist_dir, *, ns, world_datapacks_dir, profile_dir, mc_ve
     Returns a dict with the token and the generated file paths. Performs NO write
     into the Minecraft profile — that is the emitted script's job, run natively."""
     token = token or new_token()
+    # Conservative ns check: a datapack namespace is required to be [a-z0-9_-] by Minecraft
+    # itself, so any other char is already invalid — and rejecting here also removes the ' /
+    # whitespace injection surface for the generated .ps1 ($Ns is spliced into paths + a
+    # PS single-quoted string). Fail loud rather than emit a bundle that crashes on run.
+    import re as _re
+    if not ns or not _re.fullmatch(r"[a-z0-9_-]+", ns):
+        raise RuntimeGuardError(
+            f"invalid datapack namespace {ns!r}: must be non-empty and only [a-z0-9_-] "
+            "(Minecraft's own rule for a datapack namespace).")
     dist_dir = os.path.abspath(dist_dir)
     # dist/ MUST live on the real disk. If it resolves under the VMCache mirror, the .bat
     # (run natively) would not find the staged artifacts. Refuse rather than mislead.
@@ -377,6 +396,12 @@ def verify_receipt(dist_dir, token=None):
     if not os.path.isfile(receipt):
         return False, (f"未找到回执 {receipt} —— 说明还没有真正部署到游戏。"
                        f"请让【用户本人】在资源管理器里双击 {os.path.join(dist_dir, BAT_NAME)}。")
+    # fail-closed: 没有 token 可核对时(.deploy_token 缺失且未显式传入), 无法确认这份回执
+    # 归属本次构建。绝不能因为"回执文件存在"就放行 —— 那样任何一份残留旧回执都会被误判为
+    # 本次成功部署, 击穿"回执是唯一可信证明"的前提。
+    if not token:
+        return False, (f".deploy_token 缺失, 无法确认回执 {receipt} 归属本次构建。"
+                       f"请重新 prepare + 让【用户本人】双击 {BAT_NAME} 部署本次构建。")
     body = open(receipt, encoding="utf-8", errors="replace").read()
     # line-exact token match (a substring test could false-match a longer token)
     lines = [ln.strip() for ln in body.splitlines()]
@@ -426,6 +451,34 @@ def _enable_pack_in_options(profile_dir, entry="file/qzpno_mv.zip"):
     return changed, f"{entry} {'enabled' if changed else 'already enabled'} in options.txt"
 
 
+def _probe_write_hit_vmcache_mirror(target_dir, token):
+    """Python port of the .ps1 self-check: write a probe file into ``target_dir`` and see
+    whether it leaked into a Trae VMCache mirror (``%APPDATA%/TRAE SOLO CN/VMCache/*/drive/
+    <drive>/<rel>/``). Returns True iff the write was silently redirected into the mirror.
+
+    The probe file is always cleaned up (finally). This is the ONLY reliable way to tell
+    from inside the sandbox whether a write really reached the real disk."""
+    probe = os.path.join(target_dir, ".mcmm_probe.txt")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        with open(probe, "w", encoding="ascii") as f:
+            f.write(token)
+        vm_base = os.path.join(os.environ.get("APPDATA", ""), "TRAE SOLO CN", "VMCache")
+        if not os.path.isdir(vm_base):
+            return False
+        drive, rel = _rel_from_drive(target_dir)
+        for entry in os.listdir(vm_base):
+            mirror = os.path.join(vm_base, entry, "drive", drive, rel, ".mcmm_probe.txt")
+            if os.path.isfile(mirror):
+                return True
+        return False
+    finally:
+        try:
+            os.remove(probe)
+        except OSError:
+            pass
+
+
 def install_now(dist_dir, *, world_datapacks_dir, profile_dir, ns, manifest, token,
                 mc_version):
     """Native-only inline install (for callers who pass --install-now on a real host).
@@ -455,6 +508,20 @@ def install_now(dist_dir, *, world_datapacks_dir, profile_dir, ns, manifest, tok
             src = os.path.join(dist_dir, rel)
             shutil.copy2(src, os.path.join(mods_dir, os.path.basename(src)))
             copied.append(f"mod:{os.path.basename(src)}")
+    # Self-check BEFORE writing the receipt: even though --install-now is documented as
+    # native-only, nothing physically stops an agent from passing it inside the sandbox with a
+    # real C:\Minecraft path — the copytree above would then land in the VMCache mirror while
+    # this (workspace) receipt still writes, forging a "native host" receipt. Probe the real
+    # write target the same way the .ps1 does; if it leaked into the mirror, refuse to write the
+    # receipt so the deploy handshake cannot be forged.
+    probe_target = (world_datapacks_dir if (manifest.get("datapack") and world_datapacks_dir)
+                    else profile_dir)
+    if probe_target and _probe_write_hit_vmcache_mirror(probe_target, token):
+        raise RuntimeGuardError(
+            f"--install-now write to {probe_target} was redirected into the Trae VMCache "
+            "mirror — nothing reached the real game. Refusing to write a receipt (that would "
+            "forge a 'native host' install). Run inside the sandbox is unsupported; have the "
+            f"user double-click {BAT_NAME} on the real host instead.")
     receipt = os.path.join(dist_dir, RECEIPT_NAME)
     with open(receipt, "w", encoding="utf-8") as f:
         f.write("\n".join([
