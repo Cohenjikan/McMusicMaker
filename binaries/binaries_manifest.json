@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "base_url": "https://raw.githubusercontent.com/Cohenjikan/McMusicMaker/main/binaries",
+  "resourcepack": {
+    "file": "qzpno_mv.zip",
+    "rp_format": 64,
+    "sha256": "a99a62c650e1fa7abd0114a225adfcd56619b3d939186ee14e3fe4f5806b220d",
+    "note": "other 1.21.x: repack pack.mcmeta with build_resourcepack.py --from-zip"
+  },
+  "jars": {
+    "1.21.1": {
+      "file": "redpiano-1.0.0-mc1.21.1.jar",
+      "sha256": "9f752e555c083b4d47c3798439392c8dad6d44d27f2137a5d8acfbe8814ce4b9",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.10": {
+      "file": "redpiano-1.0.0-mc1.21.10.jar",
+      "sha256": "41a7f95d14b17232fec00f28365999d3673fb548c28a04e46226c42bb161e6e4",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.2": {
+      "file": "redpiano-1.0.0-mc1.21.2.jar",
+      "sha256": "d91824763a8ee32d62a01660c297ec3453e9c534f6bfef2426f662f5cc9ad84c",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.3": {
+      "file": "redpiano-1.0.0-mc1.21.3.jar",
+      "sha256": "9d88888e632e50c39bdb90ca1f49302ba05ff880bad1e5a2b0e6b8a872585a5e",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.4": {
+      "file": "redpiano-1.0.0-mc1.21.4.jar",
+      "sha256": "c4a074f3b07b1330ef0e332c3d8747b81201520ab1e749a902f610e1afc9884e",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.5": {
+      "file": "redpiano-1.0.0-mc1.21.5.jar",
+      "sha256": "cfaa7b7f69f2dc5de3db91feaa32b1fc5e034acb89057a090bbf8ce3bb7fb799",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.6": {
+      "file": "redpiano-1.0.0-mc1.21.6.jar",
+      "sha256": "61d1b7331b467c484f3bd7d38510d1dd4aaa7e1f369f71c1cd6f565ce0757bb9",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.7": {
+      "file": "redpiano-1.0.0-mc1.21.7.jar",
+      "sha256": "babe36a21fe3924d2aba1ae6127fb37f3973cad4a352149e5fc9c8b64107bb86",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21.8": {
+      "file": "redpiano-1.0.0-mc1.21.8.jar",
+      "sha256": "74fe7e4c320ea322e4e4a3e757c2cacfc65a514c6f70dad351e9daf0e042a76b",
+      "bytecode_checked": true,
+      "listened": true
+    },
+    "1.21.9": {
+      "file": "redpiano-1.0.0-mc1.21.9.jar",
+      "sha256": "9fbcdb5d480329743b3c5bcd9e51b9d6693237a6ece7a5956d9303d5b92be3e8",
+      "bytecode_checked": true,
+      "listened": false
+    },
+    "1.21": {
+      "file": "redpiano-1.0.0-mc1.21.jar",
+      "sha256": "15f86259b813b274de9796b8cfbe92e29f0a8cab612db281c5f3f1fa2f7b67c4",
+      "bytecode_checked": true,
+      "listened": false
+    }
+  }
+}

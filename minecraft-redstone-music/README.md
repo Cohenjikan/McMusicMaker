@@ -68,13 +68,15 @@ packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it
 refuses to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a
 missing RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
 
-> **Packaged bundle? The prebuilt binaries are in a sibling `binaries/` folder** (`../binaries/`
-> from this skill). `qzpno_mv.zip` covers **both 1.21.7 and 1.21.8** (shared `rp_format 64`), but
-> the **mod jar is per-version** — Fabric rejects a jar whose `fabric.mod.json` range doesn't cover
-> the running game. Use `--prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar` for a **1.21.7**
-> game, `…-mc1.21.8.jar` for **1.21.8**; do **not** cross them. A `-UNVERIFIED` suffix just means
-> "built, listen once to confirm." Other 1.21.x: no prebuilt jar — recompile. See
-> [BINARIES.md](BINARIES.md) and the golden command in [QUICKSTART.md](QUICKSTART.md) §2.
+> **Packaged bundle? Resolve the binaries with one command.** The prebuilt jars + shared
+> `qzpno_mv.zip` + a `binaries_manifest.json` ship in a sibling `binaries/` folder (`../binaries/`).
+> Run **`python scripts/fetch_binaries.py --mc-version <ver>`** — it picks the version-matched mod
+> jar and the resourcepack from `binaries/` (local-first, sha256-verified; remote once the repo is
+> public) and tells you whether that jar was listened in-game or only bytecode-checked. Pass its
+> outputs as `--prebuilt-rp` / `--prebuilt-mod-jar`. `qzpno_mv.zip` is `rp_format 64` (serves
+> 1.21.7/1.21.8 directly); for another version derive a matching pack with
+> `build_resourcepack.py --from-zip`. No manifest jar for `<ver>`? recompile. See
+> [BINARIES.md](BINARIES.md) and the golden path in [QUICKSTART.md](QUICKSTART.md) §2.
 
 **Install (the user's job, once):** tell the user to **double-click `dist\DEPLOY_TO_GAME.bat` in
 Windows Explorer** — a native process, outside the sandbox — which copies everything into the real
@@ -118,7 +120,8 @@ and skip the `.bat`.
 | `scripts/deploy_bundle.py` | `--verify dist`: checks the `DEPLOY_RECEIPT.txt` handshake — the only proof the `.bat` really installed into the game |
 | `scripts/doctor.py` | `--dist dist [--profile-dir --world-dir --mc-version --ns]`: one-shot "no sound?" health check — numbered ✓/✗ list, a fix under each ✗, final VERDICT; all-green exits 0 |
 | `scripts/midi_report.py` | `--midi <mid> [--form]`: pre-build MIDI quality check (duration / family mix / est. dropped notes / est. footprint / one-line verdict) — run before choosing a form |
-| `scripts/build_resourcepack.py` | version-driven `qzpno_mv` resourcepack repack (`--mc-version`; samples ship separately, see BINARIES.md) |
+| `scripts/fetch_binaries.py` | `--mc-version <ver>`: resolve the version-matched RedPiano jar + shared `qzpno_mv.zip` from the sibling `binaries/` folder (local-first, sha256-verified); `--gen-manifest <dir>` (re)writes the manifest |
+| `scripts/build_resourcepack.py` | version-driven `qzpno_mv` resourcepack repack (`--mc-version`; `--from-zip` derives any 1.21.x pack from one shipped zip, or `--samples-root` builds from scratch — see BINARIES.md) |
 | `scripts/mod_build.py` | low-level helper: prints/applies the verified mod toolchain per `--mc-version`; `prepare_all.py` runs the build by default |
 | `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (`VERSION_TABLE` in `redpiano_core.py` is the single source of truth for per-version facts) |
 | `assets/demo.mid`, `assets/redpiano_map_multi.json` | bundled test MIDI + the 103-block instrument map |

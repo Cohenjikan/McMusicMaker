@@ -115,10 +115,13 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 `dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
 
 - `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
-- **1.21.8 / 1.21.7:** pass the prebuilt `--prebuilt-rp` + `--prebuilt-mod-jar` (ship in the
-  sibling `binaries/` folder) — no Gradle/JDK/ffmpeg needed. **Pick the mod jar by game version**:
-  `qzpno_mv.zip` serves both, but the jar does not — `redpiano-1.0.0-mc1.21.7.jar` for a 1.21.7
-  game, `…-mc1.21.8.jar` for 1.21.8. Golden offline command for **Fabric 1.21.7**, run from the
+- **Resolve the binaries first with one command:** `python scripts/fetch_binaries.py --mc-version
+  <ver>` picks the version-matched mod jar + shared `qzpno_mv.zip` from the sibling `binaries/`
+  folder (local-first, sha256-verified) — no Gradle/JDK/ffmpeg. Pass its outputs as `--prebuilt-rp`
+  + `--prebuilt-mod-jar`. If `<ver>`'s `rp_format` ≠ 64, derive a matching pack first with
+  `build_resourcepack.py --from-zip ../binaries/qzpno_mv.zip --mc-version <ver> --out dist/qzpno_mv.zip`.
+  (`fetch_binaries` picks the right jar for you — Fabric rejects a jar whose `~<ver>` range doesn't
+  cover the game.) Golden offline command for **Fabric 1.21.7**, run from the
   `minecraft-redstone-music/` directory (`../binaries/…` resolves):
 
   ```bash

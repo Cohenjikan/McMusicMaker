@@ -164,6 +164,66 @@ def build_resourcepack(mc_version, samples_root, out_zip, staging_dir=None,
     }
 
 
+def repack_from_zip(mc_version, src_zip, out_zip):
+    """Derive a version-matched resourcepack from an EXISTING qzpno_mv.zip by rewriting
+    ONLY its pack.mcmeta (rp_format + single/minmax shape from the version table) and
+    passing every other entry through byte-for-byte. Returns a stats dict.
+
+    This lets ANY 1.21.x pack be derived from one shipped zip without needing the
+    (separately-licensed) sample folder — the sounds/*.ogg + sounds.json inside the source
+    zip are exactly what the target version needs; only the pack.mcmeta format number/shape
+    differs across versions (e.g. 1.21.8 single rp_format 64 -> 1.21.9 min/max 69). The
+    source zip's own pack.mcmeta is DISCARDED and replaced; the DEFLATE recompress on copy
+    is harmless (a resourcepack has no compression-sensitive entries)."""
+    profile = get_version_profile(mc_version)
+    assert_build_supported(profile)  # green band only (mirror the samples build policy)
+
+    if not os.path.isfile(src_zip):
+        raise RedPianoError(f"--from-zip source not found: {src_zip}")
+    try:
+        with zipfile.ZipFile(src_zip) as zin:
+            names = zin.namelist()
+    except (OSError, zipfile.BadZipFile) as e:
+        raise RedPianoError(f"--from-zip source is not a readable zip ({src_zip}): {e}")
+    # a sanity check that this really is a qzpno pack, not an arbitrary zip.
+    if not any(n.replace("\\", "/").startswith("assets/qzpno/sounds") for n in names):
+        raise RedPianoError(
+            f"--from-zip source {src_zip} has no assets/qzpno/sounds entries — it does not "
+            f"look like a qzpno_mv resourcepack. Point --from-zip at a real qzpno_mv.zip."
+        )
+
+    meta = rp_packmeta(profile)
+    new_meta_bytes = json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8")
+
+    os.makedirs(os.path.dirname(out_zip) or ".", exist_ok=True)
+    if os.path.isfile(out_zip):
+        os.remove(out_zip)
+    copied = 0
+    with zipfile.ZipFile(src_zip) as zin, \
+            zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            arc = info.filename.replace("\\", "/")
+            if arc == "pack.mcmeta":
+                continue  # drop the source pack.mcmeta; we write a fresh one below
+            # pass every other entry through verbatim (per-entry copy; no dir walk needed)
+            zout.writestr(arc, zin.read(info.filename))
+            if not arc.endswith("/"):
+                copied += 1
+        zout.writestr("pack.mcmeta", new_meta_bytes)
+
+    return {
+        "mc_version": mc_version,
+        "rp_format": profile.rp_format,
+        "packmeta_shape": profile.packmeta_shape,
+        "events": None,          # not re-derived; the source's sounds.json is passed through
+        "counts": {},
+        "copied": copied,
+        "out_zip": out_zip,
+        "size_kb": os.path.getsize(out_zip) // 1024,
+        "source": src_zip,
+    }
+
+
 def build_argparser():
     p = argparse.ArgumentParser(
         prog="build_resourcepack.py",
@@ -171,20 +231,33 @@ def build_argparser():
                     "(rp_format + pack.mcmeta shape auto-derived from the version table).")
     p.add_argument("--mc-version", default="1.21.8", dest="mc_version",
                    help="target Minecraft version (drives rp_format; default 1.21.8).")
-    p.add_argument("--samples-root", required=True, dest="samples_root",
-                   help="folder holding samples_manifest_*.json + samples_<inst>/ dirs "
-                        "(ships separately — see BINARIES.md).")
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--samples-root", dest="samples_root",
+                     help="folder holding samples_manifest_*.json + samples_<inst>/ dirs "
+                          "(ships separately — see BINARIES.md). Builds the pack from "
+                          "scratch. Mutually exclusive with --from-zip.")
+    src.add_argument("--from-zip", dest="from_zip",
+                     help="derive from an EXISTING qzpno_mv.zip: rewrite only its "
+                          "pack.mcmeta (rp_format + shape from the version table), pass "
+                          "everything else through. No sample folder needed. Mutually "
+                          "exclusive with --samples-root.")
     p.add_argument("--out", default=os.path.join("build", "qzpno_mv.zip"),
                    help="output .zip path (default build/qzpno_mv.zip).")
     p.add_argument("--allow-partial", action="store_true", dest="allow_partial",
                    help="knowingly ship a subset of instruments when some "
                         "samples_manifest_*.json are missing (those instruments fall back "
-                        "to vanilla in-game). Without this, a missing manifest hard-fails.")
+                        "to vanilla in-game). Without this, a missing manifest hard-fails. "
+                        "(--samples-root mode only.)")
     return p
 
 
 def main(argv=None):
     args = build_argparser().parse_args(argv)
+    if not args.samples_root and not args.from_zip:
+        sys.stderr.write(
+            "error: pass either --samples-root <dir> (build from samples) or "
+            "--from-zip <qzpno_mv.zip> (derive from an existing pack)\n")
+        return 2
     try:
         # Only a literal VMCache-mirror --out is rejected. Building a zip anywhere else
         # (incl. the workspace dist/) is a safe local artifact — never refuse it.
@@ -193,8 +266,11 @@ def main(argv=None):
         sys.stderr.write(f"error: {e}\n")
         return 2
     try:
-        stats = build_resourcepack(args.mc_version, args.samples_root, args.out,
-                                   allow_partial=args.allow_partial)
+        if args.from_zip:
+            stats = repack_from_zip(args.mc_version, args.from_zip, args.out)
+        else:
+            stats = build_resourcepack(args.mc_version, args.samples_root, args.out,
+                                       allow_partial=args.allow_partial)
     except RedPianoError as e:
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -202,9 +278,13 @@ def main(argv=None):
     print("=== qzpno_mv resourcepack ===")
     print(f"  mc-version : {stats['mc_version']}")
     print(f"  rp format  : {shape}{stats['rp_format']}")
-    print(f"  events     : {stats['events']} ogg")
-    for inst, n in stats["counts"].items():
-        print(f"    {inst:6s}: {n}")
+    if stats.get("source"):   # --from-zip mode
+        print(f"  from-zip   : {stats['source']}")
+        print(f"  passed thru: {stats['copied']} entries (only pack.mcmeta rewritten)")
+    else:                     # --samples-root mode
+        print(f"  events     : {stats['events']} ogg")
+        for inst, n in stats["counts"].items():
+            print(f"    {inst:6s}: {n}")
     print(f"  packed -> {stats['out_zip']}  ({stats['size_kb']} KB)")
     print("  note: enable it in Options → Resource Packs. If MC ever disabled it for a "
           "format mismatch, re-enable after this rebuild (no MC restart needed).")
@@ -253,6 +333,50 @@ if __name__ == "__main__":
                                        allow_partial=True)
             assert counts.get("piano") == 1 and "bass" not in counts, (counts, sj)
         print("ok: partial library hard-fails by default; --allow-partial ships the subset")
+
+        # --from-zip: build a minimal source qzpno_mv.zip (a wrong-format pack.mcmeta + one
+        # sounds ogg + sounds.json), then derive a 1.21.8 (single) and a 1.21.9 (min/max)
+        # pack from it. The pack.mcmeta MUST be rewritten to the target format; the ogg +
+        # sounds.json MUST pass through untouched.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as td2:
+            src = os.path.join(td2, "qzpno_mv_src.zip")
+            with zipfile.ZipFile(src, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("pack.mcmeta",
+                           json.dumps({"pack": {"pack_format": 999, "description": "old"}}))
+                z.writestr("assets/qzpno/sounds/piano_c4.ogg", b"OggS-fake-audio")
+                z.writestr("assets/qzpno/sounds.json",
+                           json.dumps({"piano_c4": {"category": "master"}}))
+            # derive for 1.21.8 -> single pack_format 64
+            out8 = os.path.join(td2, "out8.zip")
+            st8 = repack_from_zip("1.21.8", src, out8)
+            assert st8["rp_format"] == 64 and st8["packmeta_shape"] == "single", st8
+            with zipfile.ZipFile(out8) as z:
+                m8 = json.loads(z.read("pack.mcmeta").decode("utf-8"))
+                assert m8["pack"]["pack_format"] == 64 and "min_format" not in m8["pack"], m8
+                assert z.read("assets/qzpno/sounds/piano_c4.ogg") == b"OggS-fake-audio"
+                assert "piano_c4" in json.loads(z.read("assets/qzpno/sounds.json").decode())
+            # derive for 1.21.9 -> min/max 69 (the whole point: any 1.21.x from one zip)
+            out9 = os.path.join(td2, "out9.zip")
+            st9 = repack_from_zip("1.21.9", src, out9)
+            assert st9["rp_format"] == 69 and st9["packmeta_shape"] == "minmax", st9
+            with zipfile.ZipFile(out9) as z:
+                m9 = json.loads(z.read("pack.mcmeta").decode("utf-8"))
+                assert m9["pack"]["min_format"] == 69 and m9["pack"]["max_format"] == 69, m9
+                assert "pack_format" not in m9["pack"], m9
+                assert z.read("assets/qzpno/sounds/piano_c4.ogg") == b"OggS-fake-audio"
+            # a non-qzpno zip is rejected
+            junk = os.path.join(td2, "junk.zip")
+            with zipfile.ZipFile(junk, "w") as z:
+                z.writestr("pack.mcmeta", "{}")
+                z.writestr("readme.txt", "not a pack")
+            try:
+                repack_from_zip("1.21.8", junk, os.path.join(td2, "j.zip"))
+                raise AssertionError("non-qzpno zip should have raised")
+            except RedPianoError as e:
+                assert "does not" in str(e) or "no assets/qzpno" in str(e), str(e)
+        print("ok: --from-zip rewrites pack.mcmeta (1.21.8 single 64 / 1.21.9 min-max 69), "
+              "passes ogg+sounds.json through, rejects a non-qzpno zip")
         print("build_resourcepack self-test PASSED")
         sys.exit(0)
     sys.exit(main())

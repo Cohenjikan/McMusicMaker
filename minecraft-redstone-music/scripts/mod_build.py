@@ -53,23 +53,27 @@ MAPPINGS = "officialMojang"   # constant — staying on Mojang official keeps po
 # is used across the whole green band (>=0.17.0 also satisfies 1.21.9's bundled MixinExtras).
 # fabric_api is the exact "+<mc>" build. loom must be an EXACT published plugin version —
 # Gradle cannot resolve an era label like "1.10" (bit the 1.21.7 rebuild; 1.10.5 is
-# build-proven for 1.21.5..1.21.8). The 1.7/1.8/1.9/1.11 rows are still era-level: look up
-# the exact patch on fabricmc.net before a --write build there. java is 21 across green.
+# build-proven for 1.21.5..1.21.8). 2026-07-03 all-version build pass (Gradle 9.2.1):
+# pre-1.10 era looms are BROKEN under Gradle 9 — 1.7.4 hard-fails applying the plugin
+# (Problems.forNamespace removed in Gradle 9), and 1.8.13 "succeeds" but ships a HOLLOW
+# jar (only MANIFEST.MF inside; --check-jar catches it). loom 1.10.5 builds every
+# 1.21..1.21.8 target fine (loom is not MC-version-pinned), so the whole band pins it.
+# 1.11.8 = latest stable 1.11 era (maven-metadata 2026-07), build-proven for 1.21.9/10.
 # port_tier: "numbers" = pure number bump; "verify:*" = number bump + one genSources check.
 MOD_TOOLCHAIN = {
-    "1.21":   {"loom": "1.7",    "loader": "0.17.3", "fabric_api": "0.102.0+1.21",   "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.1": {"loom": "1.7",    "loader": "0.17.3", "fabric_api": "0.116.12+1.21.1", "java": 21, "port_tier": "numbers", "notes": "LTS-ish; fabric-api still backported"},
-    "1.21.2": {"loom": "1.8",    "loader": "0.17.3", "fabric_api": "0.106.1+1.21.2",  "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.3": {"loom": "1.8",    "loader": "0.17.3", "fabric_api": "0.114.1+1.21.3",  "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.4": {"loom": "1.9",    "loader": "0.17.3", "fabric_api": "0.119.4+1.21.4",  "java": 21, "port_tier": "numbers", "notes": ""},
-    "1.21.5": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.5",  "java": 21, "port_tier": "numbers", "notes": "loom 1.10 era needs Gradle 8.12+"},
-    "1.21.6": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.6",  "java": 21, "port_tier": "numbers", "notes": ""},
+    "1.21":   {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.102.0+1.21",   "java": 21, "port_tier": "numbers", "notes": "jar built+--check-jar verified 2026-07-03 (listen pending); era loom 1.7.4 fails on Gradle 9"},
+    "1.21.1": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.116.12+1.21.1", "java": 21, "port_tier": "numbers", "notes": "LTS-ish; fabric-api still backported. jar built+verified 2026-07-03 (listen pending)"},
+    "1.21.2": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.106.1+1.21.2",  "java": 21, "port_tier": "numbers", "notes": "jar built+verified 2026-07-03 (listen pending); era loom 1.8.13 = hollow jar on Gradle 9"},
+    "1.21.3": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.114.1+1.21.3",  "java": 21, "port_tier": "numbers", "notes": "jar built+verified 2026-07-03 (listen pending)"},
+    "1.21.4": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.119.4+1.21.4",  "java": 21, "port_tier": "numbers", "notes": "jar built+verified 2026-07-03 (listen pending); era loom 1.9.2 untested (pre-1.10 assumed broken on Gradle 9)"},
+    "1.21.5": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.5",  "java": 21, "port_tier": "numbers", "notes": "loom 1.10 era needs Gradle 8.12+. jar built+verified 2026-07-03 (listen pending)"},
+    "1.21.6": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.128.2+1.21.6",  "java": 21, "port_tier": "numbers", "notes": "jar built+verified 2026-07-03 (listen pending)"},
     "1.21.7": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.129.0+1.21.7",  "java": 21, "port_tier": "numbers", "notes": "jar rebuilt+--check-jar verified 2026-07-02 (listen pending)"},
     "1.21.8": {"loom": "1.10.5", "loader": "0.17.3", "fabric_api": "0.136.1+1.21.8",  "java": 21, "port_tier": "numbers", "notes": "ANCHOR — matches build.gradle byte-for-byte"},
-    "1.21.9": {"loom": "1.11",   "loader": "0.17.3", "fabric_api": "0.134.1+1.21.9",  "java": 21, "port_tier": "verify:getEntityWorld",
-               "notes": "yarn getWorld->getEntityWorld; under Mojang mappings verify the equivalent in genSources. fabric-api resource-loader rework."},
-    "1.21.10": {"loom": "1.11",  "loader": "0.17.3", "fabric_api": "0.138.4+1.21.10", "java": 21, "port_tier": "verify:getEntityWorld",
-               "notes": "non-breaking sibling of 1.21.9 (same loom 1.11 era). Same getWorld->getEntityWorld verify note."},
+    "1.21.9": {"loom": "1.11.8",  "loader": "0.17.3", "fabric_api": "0.134.1+1.21.9", "java": 21, "port_tier": "verify:getEntityWorld",
+               "notes": "yarn getWorld->getEntityWorld; compiled clean under Mojang mappings, jar built+verified 2026-07-03 (listen pending). fabric-api resource-loader rework."},
+    "1.21.10": {"loom": "1.11.8", "loader": "0.17.3", "fabric_api": "0.138.4+1.21.10", "java": 21, "port_tier": "verify:getEntityWorld",
+               "notes": "non-breaking sibling of 1.21.9 (same loom 1.11 era). Compiled clean, jar built+verified 2026-07-03 (listen pending)."},
 }
 
 
