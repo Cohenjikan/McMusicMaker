@@ -43,7 +43,7 @@ subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wavp, '-c:a', 'libvo
 # original stem for A/B — match the transcribed stem + window (from notes.json)
 nj = json.load(open(os.path.join(HERE, 'notes.json'), encoding='utf-8'))
 stemname = nj.get('stemname', 'guitar'); start = float(nj.get('start', 0.0))
-STEM = os.path.join(r'C:\Users\Cohen\mc-noteblock-demo\demucs_out\htdemucs_6s\qingtian_audio', stemname + '.wav')
+STEM = os.path.join(r'<external-tool-dir>\mc-noteblock-demo\demucs_out\htdemucs_6s\qingtian_audio', stemname + '.wav')
 sec = maxt + 2.0
 origp = os.path.join(HERE, f'original_{stemname}.ogg')
 if os.path.isfile(STEM):

@@ -22,6 +22,11 @@ poc/_work/
 **/__pycache__/
 *.zip
 *.pyc
+# 根目录测试残渣(临时听音/构建日志, 不入库)
+dyfi.m4a
+dyfi_build.log
+dyfi_dry.log
+*.m4a
 # 衍生音符数据(由版权 MIDI 生成, 不入公开仓库)
 notes_*.json
 # 游戏内部署副本(含 ogg 采样, 体积大, 可重生成)
@@ -32,5 +37,7 @@ mod/redpiano/build/
 mod/redpiano/run/
 mod/redpiano/bin/
 
-# 运行时二进制随库分发(binaries/: 全版本 mod jar + 资源包 + manifest)
-!binaries/qzpno_mv.zip
+# 运行时二进制随库分发(binaries/: 全版本 mod jar + manifest)。
+# 采样资源包 qzpno_mv.zip 版权不明, 恢复"单独分发"原则(DEVLOG §8), 不入库 —
+# 因此不放行任何 *.zip; jar 不受 *.zip/*.mid/*.ogg 规则影响, 照常入库。
+# 若将来某 jar 名撞上忽略规则, 在此加 `!binaries/*.jar` 放行。

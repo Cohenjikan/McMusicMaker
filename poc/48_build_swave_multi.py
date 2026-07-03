@@ -41,7 +41,7 @@ if "--name" in argv:
 if "--melcap" in argv:
     i = argv.index("--melcap"); MELCAP_S = float(argv[i + 1]); del argv[i:i + 2]
 
-SRC = argv[0] if len(argv) > 0 else r"C:/Users/Cohen/Downloads/七里香 周杰伦_爱给网_aigei_com.mid"
+SRC = argv[0] if len(argv) > 0 else r"~/Downloads/七里香 周杰伦_爱给网_aigei_com.mid"
 NS = argv[1] if len(argv) > 1 else "qlxs"
 OX = int(argv[2]) if len(argv) > 2 else 370000
 XRUN = int(argv[3]) if len(argv) > 3 else 3

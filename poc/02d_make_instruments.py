@@ -25,7 +25,7 @@ SOURCES
 Conventions copied from 02c_make_piano_velocity.py: mono, 44100 Hz, ffmpeg libvorbis -q:a 6,
 pitched sustain capped 2.8s with light 10% fade; drums keep natural length, minimal fade.
 
-Run: C:\\Users\\Cohen\\mc-noteblock-demo\\venv-demucs\\Scripts\\python.exe 02d_make_instruments.py
+Run: <external-tool-dir>\\mc-noteblock-demo\\venv-demucs\\Scripts\\python.exe 02d_make_instruments.py
 """
 import os, json, subprocess, urllib.request, urllib.parse
 import numpy as np, soundfile as sf, librosa

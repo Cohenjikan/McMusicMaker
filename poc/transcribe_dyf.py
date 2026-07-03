@@ -24,7 +24,7 @@ Runtime:
     venv / package is missing, those two stems fall back to pyin monophonic.
 
 Reproducible: just run
-  C:/Users/Cohen/mc-noteblock-demo/venv-demucs/Scripts/python.exe transcribe_dyf.py
+  <external-tool-dir>/mc-noteblock-demo/venv-demucs/Scripts/python.exe transcribe_dyf.py
 """
 
 import json
@@ -38,10 +38,10 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Paths / config
 # ---------------------------------------------------------------------------
-STEM_DIR = r"C:\Users\Cohen\mc-noteblock-demo\demucs_out\htdemucs_6s\dyfi"
-ANALYSIS_JSON = r"C:\Users\Cohen\mc-noteblock-demo\stems_analysis_dyfi.json"
-OUT_DIR = r"C:\Users\Cohen\Desktop\McMusicMaker\poc"
-BP_PYTHON = r"C:\Users\Cohen\mc-noteblock-demo\venv-bp\Scripts\python.exe"
+STEM_DIR = r"<external-tool-dir>\mc-noteblock-demo\demucs_out\htdemucs_6s\dyfi"
+ANALYSIS_JSON = r"<external-tool-dir>\mc-noteblock-demo\stems_analysis_dyfi.json"
+OUT_DIR = r"<repo>\poc"
+BP_PYTHON = r"<external-tool-dir>\mc-noteblock-demo\venv-bp\Scripts\python.exe"
 
 SR = 22050  # analysis sample rate for librosa work (downsample from 44.1k)
 

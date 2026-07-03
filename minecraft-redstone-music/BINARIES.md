@@ -2,17 +2,24 @@
 
 This package (`minecraft-redstone-music/`) is a **datapack generator + docs**. It needs **no
 binaries to RUN** — `scripts/build_machine.py` emits a datapack from a MIDI with only Python +
-`mido`. The two large binaries below are needed **only in Minecraft, to make the note blocks
-sound** — they are intentionally **not inside this skill folder** (large, built from
-separately-licensed samples), but they **do ship in the repo snapshot**, in a sibling
-`binaries/` folder (`../binaries/`) indexed by a `binaries_manifest.json`. Resolve them for your
-version with **`python scripts/fetch_binaries.py --mc-version <ver>`** (local-first, sha256-verified).
+`mido`. The binaries below are needed **only in Minecraft, to make the note blocks sound**.
 
-| Binary | Goes in | Why it's needed | version-key |
-|---|---|---|---|
-| **RedPiano mod jar** (`redpiano-1.0.0-mc<ver>.jar`) | profile `mods/` (restart MC) | turns a note-block press into the correct instrument sample, emitted centered on every player | **one jar per MC version** (see below) |
-| **`qzpno_mv.zip` resourcepack** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp_format 64** — covers **1.21.7 AND 1.21.8** |
-| **Fabric API jar** (`fabric-api-<v>+mc<ver>.jar`) | profile `mods/` (restart MC) | the mod's runtime dependency; RedPiano refuses to load without it | one per MC version |
+Two of them ship in the repo (the **mod jar** — one per version — and an offline **Fabric API**
+copy); the **`qzpno_mv.zip` resourcepack does NOT** — its sampled instruments are of **unclear
+license**, so it is **distributed separately, never committed to this repo** (this restores the
+"copyright material stays out of the repo" rule from DEVLOG §8). You **supply your own**
+resourcepack — build it from a `qzpno_mv.zip` you already have (`--from-zip`) or from sample
+folders (`--samples-root`); see the "Sampled resourcepack" section below.
+
+| Binary | Ships in repo? | Goes in | Why it's needed | version-key |
+|---|---|---|---|---|
+| **RedPiano mod jar** (`redpiano-1.0.0-mc<ver>.jar`) | ✅ yes (`binaries/`) | profile `mods/` (restart MC) | turns a note-block press into the correct instrument sample, emitted centered on every player | **one jar per MC version** (see below) |
+| **`qzpno_mv.zip` resourcepack** | ❌ **no — samples ship separately** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp_format 64** base — build/derive per version |
+| **Fabric API jar** (`fabric-api-<v>+mc<ver>.jar`) | ✅ offline copy (`binaries/`, Apache-2.0) | profile `mods/` (restart MC) | the mod's runtime dependency; RedPiano refuses to load without it | one per MC version |
+
+> Resolve the **mod jar** for your version with **`python scripts/fetch_binaries.py --mc-version
+> <ver>`** (local-first, sha256-verified). For the **resourcepack**, that same command prints exactly
+> how to build/supply your own — it never pretends to ship one.
 
 > Without these, a generated datapack still builds and the machine still *runs*, but you'll hear
 > vanilla note-block tones at best (no mod) or **total silence** (resourcepack not enabled / wrong
@@ -22,34 +29,38 @@ version with **`python scripts/fetch_binaries.py --mc-version <ver>`** (local-fi
 
 ## The bundled `binaries/` folder (in-repo, version-universal)
 
-The **`binaries/`** folder now ships **inside the repo snapshot**, a sibling of
+The **`binaries/`** folder ships **inside the repo snapshot**, a sibling of
 `minecraft-redstone-music/` (`<root>/binaries/`, so from inside this skill folder it is
-`../binaries/`). It holds **every green-band jar we have**, the shared resourcepack, and a
-**`binaries_manifest.json`** that indexes them with sha256 hashes and per-jar verified-state:
+`../binaries/`). It holds **every green-band mod jar we have**, an offline Fabric API copy, and a
+**`binaries_manifest.json`** that indexes them with sha256 hashes and per-jar verified-state. The
+sampled `qzpno_mv.zip` is **not** here — the manifest carries it only as a *pointer* (`in_repo:
+false`), because its samples are unclear-license and ship separately.
 
 | File in `binaries/` | For | Notes |
 |---|---|---|
-| `binaries_manifest.json` | (index) | schema-1 manifest: `base_url`, the resourcepack entry, and one `jars.<ver>` row per shipped jar (file + sha256 + `bytecode_checked` + `listened`). `fetch_binaries.py` reads it. |
-| `qzpno_mv.zip` | **all 1.21.x** | resourcepack, `rp_format 64`. Serves 1.21.7/1.21.8 directly; for other versions **derive** a matching pack with `build_resourcepack.py --from-zip` (only `pack.mcmeta` changes). |
+| `binaries_manifest.json` | (index) | schema-1 manifest: `base_url`, one `jars.<ver>` row per shipped jar (file + sha256 + `bytecode_checked` + `listened`), and a `resourcepack` **pointer** (`in_repo: false`, no sha) naming the pack you must supply. `fetch_binaries.py` reads it. |
 | `redpiano-1.0.0-mc<ver>.jar` | **that `<ver>` only** | one mod jar per version; `fabric.mod.json` pins `"minecraft":"~<ver>"`. |
-| `fabric-api-*+mc<ver>.jar` | that `<ver>` | optional offline copy of the Fabric API. Normally `prepare_all.py` auto-downloads this from Modrinth (public) — `fetch_binaries.py` does **not** manage it. |
+| `fabric-api-*+mc<ver>.jar` | that `<ver>` | offline copy of the Fabric API (**Apache-2.0**, from Modrinth / `maven.fabricmc.net`). Normally `prepare_all.py` auto-downloads this from Modrinth (public) — `fetch_binaries.py` does **not** manage it. |
+| ~~`qzpno_mv.zip`~~ | — | **NOT in the repo.** Unclear-license samples ship separately; build/derive your own (see "Sampled resourcepack" below). |
 
-### Rule: `fetch_binaries.py` auto-selects the jar; the resourcepack is shared
+### Rule: `fetch_binaries.py` auto-selects the jar; you supply the resourcepack
 
 Don't hand-pick the jar. Run **`python scripts/fetch_binaries.py --mc-version <ver>`** and it
-resolves the right jar + `qzpno_mv.zip` from `binaries/` (sha256-verified). Why a jar must match:
-Fabric reads `fabric.mod.json`'s `"minecraft"` range and **refuses to load a jar whose range
-doesn't cover the running game** — so the `~1.21.8` jar is rejected on a 1.21.7 game (→ vanilla
-tones), and vice-versa. `fetch_binaries` picks the covering one for you.
+resolves the right jar from `binaries/` (sha256-verified). Why a jar must match: Fabric reads
+`fabric.mod.json`'s `"minecraft"` range and **refuses to load a jar whose range doesn't cover the
+running game** — so the `~1.21.8` jar is rejected on a 1.21.7 game (→ vanilla tones), and
+vice-versa. `fetch_binaries` picks the covering one for you.
 
 - **Manifest has a jar for `<ver>`** → `fetch_binaries` returns it (exit 0). Pass it as
   `--prebuilt-mod-jar`. Its VERDICT flags whether that jar was **listened in-game** or only
   **check-jar clean** (listen once after installing).
 - **No jar for `<ver>`** → `fetch_binaries` exits nonzero and points you to build one
   (`mod_build.py --mc-version <ver> --write` + Gradle), then `--gen-manifest` to register it.
-- **resourcepack** → the same `qzpno_mv.zip` works for any version at rp 64; if `<ver>`'s rp_format
-  differs (e.g. 1.21.9 = 69), derive a matching pack with
-  `build_resourcepack.py --from-zip ../binaries/qzpno_mv.zip --mc-version <ver> --out <derived.zip>`.
+- **resourcepack** → `fetch_binaries` reports it as `separate` (○, **not** a failure — the exit code
+  hinges on the jar alone) and prints the self-supply commands. Have your own `qzpno_mv.zip`? derive
+  a version-matched pack with `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version
+  <ver> --out <derived.zip>`; a base rp-64 pack serves 1.21.7/1.21.8 directly, other versions get a
+  rewritten `pack.mcmeta`.
 
 ### Honesty: only 1.21.8 has been listened in-game
 
@@ -63,11 +74,12 @@ the same thing (see below).
 ### Private now, remote later (same manifest)
 
 The repo is currently **PRIVATE**, so anonymous raw downloads don't work — `fetch_binaries.py` is
-**local-first**: on a repo snapshot every binary is already in `binaries/`, so it just sha256-verifies
-them (no network). The manifest already bakes in a public `base_url`
+**local-first**: on a repo snapshot every **mod jar** is already in `binaries/`, so it just
+sha256-verifies them (no network). The manifest bakes in a public `base_url`
 (`raw.githubusercontent.com/Cohenjikan/McMusicMaker/main/binaries`); once the repo is **public**, the
-**same** `fetch_binaries` call transparently downloads any missing binary from there and verifies its
-hash. Nothing about the workflow changes when that happens.
+**same** `fetch_binaries` call transparently downloads any missing **jar** from there and verifies its
+hash. The **resourcepack is never fetched** (it's not in the repo, public or not) — you always supply
+your own; that's the one part of the workflow that requires a local pack.
 
 > ⚠ **Never cross jars across versions manually.** If you bypass `fetch_binaries` and pass the wrong
 > jar, its `~<ver>` range makes Fabric **reject it at startup** — the mod never loads and note blocks
@@ -93,23 +105,25 @@ problem (e.g. the fake-fabric-api nested-`Event` stub footgun) — do not instal
 
 ---
 
-## Easiest: `fetch_binaries.py`, then use the prebuilt binaries
+## Easiest: `fetch_binaries.py` for the jar, then build your resourcepack
 
-If you received this package as a repo snapshot, the **prebuilt jars + `qzpno_mv.zip` + manifest
-ship in the sibling `binaries/` folder** (`../binaries/` from inside this skill). One command
-resolves the two you need for a target version, with no Gradle/JDK/ffmpeg:
+If you received this package as a repo snapshot, the **prebuilt mod jars + manifest ship in the
+sibling `binaries/` folder** (`../binaries/` from inside this skill). One command resolves the jar
+you need for a target version, with no Gradle/JDK:
 
 ```bash
 python scripts/fetch_binaries.py --mc-version <ver>
 ```
 
-It sha256-verifies the version's jar + the shared `qzpno_mv.zip` from `binaries/` (local hit =
-instant, no network) and prints a VERDICT. Then pass them to `prepare_all.py` as `--prebuilt-rp`
-/ `--prebuilt-mod-jar` (Fabric API stays on the public Modrinth auto-download; pass
-`--fabric-api-jar` only offline). If `<ver>`'s `rp_format` ≠ 64, first derive a matching pack with
-`build_resourcepack.py --from-zip` (next section). See the version-parameterized golden path in
-[SKILL.md](SKILL.md) step 4. That's all — skip the build steps below unless the manifest lacks a
-jar for your version.
+It sha256-verifies the version's **jar** from `binaries/` (local hit = instant, no network), reports
+the **resourcepack** as `separate` (you supply it), and prints a VERDICT. Then pass the jar to
+`prepare_all.py` as `--prebuilt-mod-jar` (Fabric API stays on the public Modrinth auto-download; pass
+`--fabric-api-jar` only offline), and pass **your own** resourcepack as `--prebuilt-rp`. To make that
+resourcepack: if you have a `qzpno_mv.zip`, derive a version-matched pack with
+`build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver>` (a base rp-64 pack serves
+1.21.7/1.21.8 directly); otherwise build from sample folders with `--samples-root` (next section).
+See the version-parameterized golden path in [SKILL.md](SKILL.md) step 4. Skip the mod-build steps
+below unless the manifest lacks a jar for your version.
 
 **Maintainer note — registering a new jar:** drop `redpiano-1.0.0-mc<ver>.jar` into `binaries/`
 and run `python scripts/fetch_binaries.py --gen-manifest ../binaries`. It rescans the folder and
@@ -119,7 +133,9 @@ rewrites `binaries_manifest.json` (parsing `<ver>` from each filename, re-hashin
 ## Building them yourself (from the source repo)
 
 Both are produced from the **McMusicMaker source repository** (this skill folder is a packaged
-*subset* of it; the mod source and sample pipeline are **not** copied in here).
+*subset* of it; the mod source and sample pipeline are **not** copied in here). The **mod jar**
+already ships prebuilt in `binaries/`; the **resourcepack** never ships and always requires this
+build step (or a `qzpno_mv.zip` you already have).
 
 ### 1. RedPiano mod jar
 - Source: `mod/redpiano/` in the source repo. It's a **Fabric/Loom** mod whose **verified default
@@ -139,21 +155,40 @@ Both are produced from the **McMusicMaker source repository** (this skill folder
   jar already ships in `../binaries/`. Do not compile the mod inside a stripped/offline sandbox
   (see the "never hand-write a fabric-api stub" rule in [SKILL.md](SKILL.md)).
 
-### 2. `qzpno_mv.zip` resourcepack
-- **Easiest — derive from the shipped zip (no samples):** for any version whose `rp_format` ≠ 64,
-  `scripts/build_resourcepack.py --from-zip ../binaries/qzpno_mv.zip --mc-version <ver> --out
-  <derived.zip>` rewrites **only** `pack.mcmeta` (rp_format + single/minmax shape from the version
-  table) and passes every `.ogg` + `sounds.json` through unchanged. This is the normal path — one
-  shipped zip → any 1.21.x pack, no licensed sample folder needed.
-- **From scratch (needs samples):** `scripts/build_resourcepack.py --samples-root <dir>` builds the
-  zip from per-instrument sample folders (`samples_piano` / `samples_bass` / `samples_lead` /
-  `samples_pad` / `samples_drums`). **The samples are large/licensed and are NOT in the repo** —
-  supply your own, or just use `--from-zip` above. (`--samples-root` and `--from-zip` are mutually
-  exclusive.)
-- Either way the builder is **version-driven**: `--mc-version` reads the right `rp_format` +
-  `pack.mcmeta` shape from the version table in `scripts/redpiano_core.py`. For **1.21.8** that's
-  **`rp_format = 64`**; 1.21.9 emits **69** with the `min_format`/`max_format` shape. Flags:
-  `--mc-version`, `--samples-root` | `--from-zip`, `--out` (and `--selftest`).
+### 2. `qzpno_mv.zip` sampled resourcepack — **you supply the samples** (not in this repo)
+
+The 103-block sampled resourcepack is **not distributed with this repo**: its samples are of
+**unclear license**, so per the "copyright material stays out of the repo" rule (DEVLOG §8) it ships
+**separately**. You provide it, one of two ways:
+
+- **Have your own `qzpno_mv.zip` already? — derive from it (no sample folder):**
+  `scripts/build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out <derived.zip>`
+  rewrites **only** `pack.mcmeta` (rp_format + single/minmax shape from the version table) and passes
+  every `.ogg` + `sounds.json` through unchanged. One zip → any 1.21.x pack. For 1.21.7/1.21.8 (both
+  rp 64) you can use the zip as-is.
+- **Build from scratch (needs sample folders):** `scripts/build_resourcepack.py --samples-root <dir>`
+  builds the zip from per-instrument folders (`samples_piano` / `samples_bass` / `samples_lead` /
+  `samples_pad` / `samples_drums`), each with a `samples_manifest_<inst>.json`. It only **copies
+  already-encoded `.ogg`** (no ffmpeg). (`--samples-root` and `--from-zip` are mutually exclusive.)
+
+**Sample licensing — know what you're bundling.** These are the sources the original pack was built
+from; obtain them yourself under their own terms (none are redistributed here):
+
+| Instrument | Source in the original pack | License | You must |
+|---|---|---|---|
+| **drums** | VCSL / Karoryfer real samples (kick/snare/hihat/tom/crash) | **CC0** (public domain) | free to use; no attribution required |
+| **piano** | Salamander Grand Piano | **CC-BY** | **credit the author** if you redistribute |
+| **bass / lead / pad** | numpy-synthesized (no external library) | your own synthesis output | regenerate or replace freely |
+
+> The `piano` slice is the reason the shipped `qzpno_mv.zip` is treated as unclear-license for
+> *redistribution* — Salamander's CC-BY attribution obligation was never packaged into the zip. If
+> you build your own pack, either honor CC-BY for the piano samples or swap in a CC0 / self-owned
+> piano set. drums are CC0 and bass/lead/pad are synthetic, so those carry no redistribution burden.
+
+The builder is **version-driven** either way: `--mc-version` reads the right `rp_format` +
+`pack.mcmeta` shape from the version table in `scripts/redpiano_core.py`. For **1.21.8** that's
+**`rp_format = 64`**; 1.21.9 emits **69** with the `min_format`/`max_format` shape. Flags:
+`--mc-version`, `--samples-root` | `--from-zip`, `--out` (and `--selftest`).
 
 ## Other Minecraft versions
 
@@ -162,8 +197,9 @@ from `scripts/redpiano_core.py`'s version table (the one source of truth). The *
 is 1.21 .. 1.21.10**; **1.21.8 is the verified default & anchor** (user-tested in-game), not the only
 option. Within that band the datapack `pack_format`, the resourcepack `rp_format`, and the
 `pack.mcmeta` shape all derive automatically — including **1.21.9** via the `min_format`/`max_format`
-`pack.mcmeta` form. For the **resourcepack**, `fetch_binaries.py` gives you the rp-64 base zip and
-`build_resourcepack.py --from-zip` derives any other version's pack from it — no samples needed.
+`pack.mcmeta` form. For the **resourcepack**, supply your own base `qzpno_mv.zip` (not in the repo)
+and `build_resourcepack.py --from-zip <your qzpno_mv.zip>` derives any other version's pack from it
+by rewriting only `pack.mcmeta` — no re-encoding needed.
 
 The **mod jar** is the one surface that still needs a **recompile** for a version not already in the
 manifest: run `scripts/mod_build.py` to print the verified toolchain (fabric-loom / fabric-loader /

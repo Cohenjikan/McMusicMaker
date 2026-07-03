@@ -26,7 +26,7 @@ if '--melcap' in argv:
     i = argv.index('--melcap'); MELCAP_S = float(argv[i + 1]); del argv[i:i + 2]
 CUT_INSTR = {'pad', 'lead', 'bass'}   # 持续型非钢琴(易拖尾)-> 截断延音让旋律可听; 钢琴(自然衰减)/鼓(短瞬态)不截
 MIN_CUT_GT = 4                        # 截断延迟下限(游戏刻; 80tps -> 0.05s), 防截到attack没声
-SRC   = argv[0] if len(argv) > 0 else 'C:/Users/Cohen/Downloads/七里香 周杰伦_爱给网_aigei_com.mid'
+SRC   = argv[0] if len(argv) > 0 else '~/Downloads/七里香 周杰伦_爱给网_aigei_com.mid'
 NS    = argv[1] if len(argv) > 1 else 'qlxm'
 OX    = int(argv[2]) if len(argv) > 2 else 350000
 PCOLS = int(argv[3]) if len(argv) > 3 else 16

@@ -27,7 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 PARAMS = sys.argv[1] if len(sys.argv) > 1 else "params_olk_multilane.json"
-MID    = sys.argv[2] if len(sys.argv) > 2 else r"C:/Users/Cohen/Downloads/【Animenz】One Last Kiss - 新·福音战_爱给网_aigei_com.mid"
+MID    = sys.argv[2] if len(sys.argv) > 2 else r"~/Downloads/【Animenz】One Last Kiss - 新·福音战_爱给网_aigei_com.mid"
 NS     = sys.argv[3] if len(sys.argv) > 3 else "olkml"
 
 P = json.load(open(os.path.join(HERE, PARAMS), encoding="utf-8"))

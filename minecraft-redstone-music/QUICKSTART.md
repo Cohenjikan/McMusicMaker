@@ -115,20 +115,25 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 `dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
 
 - `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
-- **Resolve the binaries first with one command:** `python scripts/fetch_binaries.py --mc-version
-  <ver>` picks the version-matched mod jar + shared `qzpno_mv.zip` from the sibling `binaries/`
-  folder (local-first, sha256-verified) — no Gradle/JDK/ffmpeg. Pass its outputs as `--prebuilt-rp`
-  + `--prebuilt-mod-jar`. If `<ver>`'s `rp_format` ≠ 64, derive a matching pack first with
-  `build_resourcepack.py --from-zip ../binaries/qzpno_mv.zip --mc-version <ver> --out dist/qzpno_mv.zip`.
-  (`fetch_binaries` picks the right jar for you — Fabric rejects a jar whose `~<ver>` range doesn't
-  cover the game.) Golden offline command for **Fabric 1.21.7**, run from the
-  `minecraft-redstone-music/` directory (`../binaries/…` resolves):
+- **Resolve the mod jar with one command:** `python scripts/fetch_binaries.py --mc-version <ver>`
+  picks the version-matched mod jar from the sibling `binaries/` folder (local-first,
+  sha256-verified) — no Gradle/JDK. Pass it as `--prebuilt-mod-jar`. (`fetch_binaries` picks the
+  right jar — Fabric rejects a jar whose `~<ver>` range doesn't cover the game.)
+- **Supply your own resourcepack:** the sampled `qzpno_mv.zip` is **not in the repo** (unclear-license
+  samples, ships separately — see [BINARIES.md](BINARIES.md)). `fetch_binaries` reports it as
+  `separate`, not an error. From a `qzpno_mv.zip` you have, derive a version-matched pack with
+  `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out dist/qzpno_mv.zip`
+  (a base rp-64 pack serves 1.21.7/1.21.8 as-is; other versions get only `pack.mcmeta` rewritten), or
+  build from sample folders with `--samples-root`. Pass the result as `--prebuilt-rp`.
+
+  Golden offline command for **Fabric 1.21.7**, run from the `minecraft-redstone-music/` directory
+  (`../binaries/…` resolves; `--prebuilt-rp` points at the pack you built above):
 
   ```bash
   python scripts/prepare_all.py --midi <mid> --form swave --ns mysong --origin 0 0 255 \
       --mc-version 1.21.7 \
       --world-dir "<profile>/saves/<world>/datapacks" --profile-dir "<profile>" \
-      --prebuilt-rp      ../binaries/qzpno_mv.zip \
+      --prebuilt-rp      dist/qzpno_mv.zip \
       --prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar \
       --fabric-api-jar   ../binaries/fabric-api-0.129.0+1.21.7.jar \
       --dist dist

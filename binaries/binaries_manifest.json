@@ -4,8 +4,9 @@
   "resourcepack": {
     "file": "qzpno_mv.zip",
     "rp_format": 64,
-    "sha256": "a99a62c650e1fa7abd0114a225adfcd56619b3d939186ee14e3fe4f5806b220d",
-    "note": "other 1.21.x: repack pack.mcmeta with build_resourcepack.py --from-zip"
+    "sha256": null,
+    "in_repo": false,
+    "note": "samples are unclear-license and DISTRIBUTED SEPARATELY (not in repo); supply your own via build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"
   },
   "jars": {
     "1.21.1": {

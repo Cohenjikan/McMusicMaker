@@ -6,7 +6,7 @@ import sys, os, json
 import numpy as np
 import librosa
 
-STEMDIR = r'C:\Users\Cohen\mc-noteblock-demo\demucs_out\htdemucs_6s\qingtian_audio'
+STEMDIR = r'<external-tool-dir>\mc-noteblock-demo\demucs_out\htdemucs_6s\qingtian_audio'
 # 每个声部用合适的音域(避免抓到 bleed 低频):vocals/melody 是单音、pyin 最准、最易听出曲子
 RANGES = {'vocals': ('C3', 'C6'), 'guitar': ('E2', 'E6'), 'bass': ('E1', 'G3'),
           'piano': ('A2', 'C6'), 'other': ('C3', 'C6')}

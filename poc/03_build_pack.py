@@ -6,7 +6,7 @@
 import os, json, math, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BRIDGE = r'C:\Users\Cohen\nbviz'
+BRIDGE = r'<external-tool-dir>\nbviz'
 BRIDGE_DP = os.path.join(BRIDGE, 'datapacks')
 BRIDGE_RP = os.path.join(BRIDGE, 'resourcepacks')
 NS = 'qzgtr'

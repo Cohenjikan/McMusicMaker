@@ -603,7 +603,7 @@ profile 层:`mods/redpiano-1.0.0.jar`(103映射, 11.6KB)、`resourcepacks/qzpno_
 4. 游戏内:`/reload` → `/tick rate 80`(**必须手动**,见 §3-坑3) → `/function <NS>:setup`(等绿字 built) → 按 **[直接播放]**(站/飞均可听全曲)或 **[骑行播放]**(spectator 平滑巡游);卡住按 **[停止]**。
 
 ### 架构(三件套)
-- **RedPiano 模组**(`mod/redpiano/src/main/java/com/redpiano/`):mixin 原版 `NoteBlock.triggerEvent`,音符盒坐在"映射方块"上时改播 qzpno 自定义钢琴采样 + 按 note 强制移调。**关键(让它"完美"的修复)**:不在音符盒位置播定位音(玩家一动就出声音球被剪),而是 **`RedPiano.flush()` 在游戏刻末给每个玩家在其自身脚下播该音(`playSeededSound(null, player, ...)` Entity 重载)** → 声音跟随玩家、任意移速不断不糊。刻末统一发还做了**复音增益 ×1/√N**(防大和弦削顶)+ **微抖 ±3音分/±2%**(去复印感);两者经记分板 `rpcfg`(`poly`/`human`)开关。构建:`JAVA_HOME=C:\Users\Cohen\jdk\jdk-21.0.11+10`,gradle 9.2.1 wrapper dist `gradle.bat -p mod/redpiano build`,jar 拷到 `C:\Minecraft\ModrinthApp\profiles\Fabric 1.21.8\mods`,**重启 MC**。
+- **RedPiano 模组**(`mod/redpiano/src/main/java/com/redpiano/`):mixin 原版 `NoteBlock.triggerEvent`,音符盒坐在"映射方块"上时改播 qzpno 自定义钢琴采样 + 按 note 强制移调。**关键(让它"完美"的修复)**:不在音符盒位置播定位音(玩家一动就出声音球被剪),而是 **`RedPiano.flush()` 在游戏刻末给每个玩家在其自身脚下播该音(`playSeededSound(null, player, ...)` Entity 重载)** → 声音跟随玩家、任意移速不断不糊。刻末统一发还做了**复音增益 ×1/√N**(防大和弦削顶)+ **微抖 ±3音分/±2%**(去复印感);两者经记分板 `rpcfg`(`poly`/`human`)开关。构建:`JAVA_HOME=<jdk-安装目录>\jdk-21.0.11+10`,gradle 9.2.1 wrapper dist `gradle.bat -p mod/redpiano build`,jar 拷到 `C:\Minecraft\ModrinthApp\profiles\Fabric 1.21.8\mods`,**重启 MC**。
 - **建造器 `poc/30_build_full.py`(当前整机)**:MIDI→notes→**双轨辐射机**。7 条单音 lane(z 占13)→ **2 条轨 × 3 声部=6**,每轨一个强充能导体同刻辐射【上+±Z】三音(和弦)。两轨共享**同一变延迟中继器骨架**(并集触发刻,delay 1-4)→ 逐刻同列、绝对同步、灯闪一致。直链(未折叠)。健壮播放(setup复位/play/play_ride spectator滑行/stop/toggles)。
 - **资源包 qzpno**:60 段钢琴采样(Salamander CC-BY,20 音×3 力度),`poc/02c_make_piano_velocity.py` 抓取,`poc/gen_redpiano_map.py` 生成 `redpiano_map.json`(块→音→音量)。
 
@@ -621,7 +621,7 @@ profile 层:`mods/redpiano-1.0.0.jar`(103映射, 11.6KB)、`resourcepacks/qzpno_
 
 ### ★ 两套机器家族(同一世界,接手必读 —— 播放方式/tick rate/依赖都不同)
 - **家族 A —— RedPiano 真音符盒"重演"**(本仓库 McMusicMaker):MIDI → 共享骨架红石 → 真音符盒播 qzpno 钢琴采样。**程序化定产**(音色=钢琴,丢原音色)。**需 RedPiano 模组 + `/tick rate 80`**。当前机器 = `qzv2`。
-- **家族 B —— 切片回放"音色复刻"**(旧项目 `C:\Users\Cohen\mc-noteblock-demo`,流水线见其 `PIPELINE.md`):原曲音频 → Demucs `htdemucs_6s` 分 6 轨 → librosa onset → ffmpeg 把**原音频本身**逐 onset 切 ogg → 数据包红石脉冲逐格 `/playsound` 原声片段。**100% 保留原音色 + 天然多乐器** = 开发文档里**远期"MP3 音色级复刻"目标的初步实现**(用户本轮指定"原曲不是 midi")。**无需模组,但需 `/tick rate 20`(默认)**——按 DELAY=2=200ms/cell 设计,残留 tick80 会快 4 倍跑飞。资源包 `<曲>_mv.zip`。
+- **家族 B —— 切片回放"音色复刻"**(旧项目 `<外部工具目录>\mc-noteblock-demo`,流水线见其 `PIPELINE.md`):原曲音频 → Demucs `htdemucs_6s` 分 6 轨 → librosa onset → ffmpeg 把**原音频本身**逐 onset 切 ogg → 数据包红石脉冲逐格 `/playsound` 原声片段。**100% 保留原音色 + 天然多乐器** = 开发文档里**远期"MP3 音色级复刻"目标的初步实现**(用户本轮指定"原曲不是 midi")。**无需模组,但需 `/tick rate 20`(默认)**——按 DELAY=2=200ms/cell 设计,残留 tick80 会快 4 倍跑飞。资源包 `<曲>_mv.zip`。
 - **共存**:qzv2@X=220000/Y=255 与 dyfi@X=70000/Y=-59 坐标与 Y 层都不撞。**切歌必换 tick rate(A=80 / B=20)**。
 
 ### 两首歌的播放命令(各自)
@@ -643,7 +643,7 @@ profile 层:`mods/redpiano-1.0.0.jar`(103映射, 11.6KB)、`resourcepacks/qzpno_
 
 ### 第二首歌构建记(Do You Feel It? — Chaos Chaos,2026-06-22)
 - 来源 bilibili BV1Te411u7S9 原曲(247.9s)。**下载坑**:`playurl` 端点 412 拦 yt-dlp 的 WBI 签名 → 直接打 bilibili API(自造 `buvid3/buvid4` cookie + 取 DASH 音频流 curl 下载)绕过;原始音频在桌面 `dyfi.wav`(私人用,**不入任何公开库**)。
-- 一条命令:`C:\Users\Cohen\mc-noteblock-demo\venv-demucs\Scripts\python.exe add_song.py C:\Users\Cohen\Desktop\dyfi.wav dyfi`(幂等跑完 分轨→onset分析→切片→资源包+数据包→部署到 nbviz 桥)。
+- 一条命令:`<外部工具目录>\mc-noteblock-demo\venv-demucs\Scripts\python.exe add_song.py <音频文件>.wav dyfi`(幂等跑完 分轨→onset分析→切片→资源包+数据包→部署到 nbviz 桥)。
 - 自动选轨:5 乐器轨全入(vocals/guitar/bass/drums/piano,onset 469/351/82/750/251,均过能量门)+ `other` 连续垫底。
 - 部署:`dyfi_redstone.zip`→`新的世界\datapacks\`;`dyfi_mv.zip`(44MB/1769段ogg)→profile `resourcepacks\` 并已写入 `options.txt`。(桥 `nbviz\datapacks`、`nbviz\resourcepacks` 非 junction 到本 profile,故手动 copy;songs.json 注册项 add_song 已写。)
 
@@ -659,7 +659,7 @@ profile 层:`mods/redpiano-1.0.0.jar`(103映射, 11.6KB)、`resourcepacks/qzpno_
    - ⬜ **转谱重演路(家族 A 扩展)**:MP3→Demucs→逐轨**转谱**→多乐器**真音符盒**乐队重演 + 逐轨音色匹配(mixin 已按垫底块定音色,天然支持多乐器)。受转谱精度限、人声只能改编为乐器。验证实验:对同时有 MP3+钢琴 MIDI 的曲子比"钢琴+贝斯+pad 重演"是否更丰满。**缺 polyphonic 转谱器**(basic-pitch 未装;现有 librosa 仅单音 pyin)。
 
 ### 备份 / 仓库
-GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢琴完美态)。版权 MIDI/notes/ogg/deployed 经 `.gitignore` 排除。不可再生输入本地备份在 `C:\Users\Cohen\McMusicMaker_backup\v1-perfect\`。世界存档(833MB)用户暂不备份。
+GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢琴完美态)。版权 MIDI/notes/ogg/deployed 经 `.gitignore` 排除。不可再生输入本地备份在 `<本地备份目录>\McMusicMaker_backup\v1-perfect\`。世界存档(833MB)用户暂不备份。
 
 > 以下为历史开发记录(排查链、规格),接手细节见各 §。
 
@@ -673,7 +673,7 @@ GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢�
 - **mixin 原版 `NoteBlock.triggerEvent`**(`NoteBlockMixin.java`):发声时读**正下方方块**,对照 `RedPianoMap`(60 条)→ 命中则用**强制移调** `pitch=NoteBlock.getPitchFromNote(note)` + 该方块映射的 qzpno 自定义音效 + 自定义音量 `playSeededSound(...RECORDS...)` + 喷 NOTE 粒子、取消原版。**100% 真音符盒**(真贴图/真粒子/真"垫底定音色"机制),只把硬编码的 16 条乐器表解锁成任意大。
   - 关键源码发现:原版 triggerEvent 里自定义头颅音效 `isTunable()=false` → pitch 锁 1.0,**这正是头颅不移调的原因**;我们绕过、强制按 note 移调。
 - **60 映射**=`RedPianoMap.java`(由 `poc/gen_redpiano_map.py` 生成):20 采样段(每 3 半音 C1-A5)× 3 力度 → 60 个不同垫底方块 → 60 个 qzpno 音效。`gen` 里 `LAYER_VOL` 控音量(**>1 扩大可听半径**,因音符盒声音位置性衰减;当前 1.4/1.7/2.0)。
-- **工具链**(已跑通):JDK21(`C:\Users\Cohen\jdk\jdk-21.0.11+10`)+ gradle 8.12 + fabric-loom 1.10.5 + officialMojangMappings + fabric-api 0.136.1。`gradle build` 出 jar → Modrinth mods 文件夹;**改 jar 必须重启 MC**。
+- **工具链**(已跑通):JDK21(`<jdk-安装目录>\jdk-21.0.11+10`)+ gradle 8.12 + fabric-loom 1.10.5 + officialMojangMappings + fabric-api 0.136.1。`gradle build` 出 jar → Modrinth mods 文件夹;**改 jar 必须重启 MC**。
 
 **机器建造器**(均**天上 Y=255** —— 真音符盒必须上方空气才发声):
 - `21_build_realnb.py`(**松散版**,5980长×31宽):Method B 变延迟(tick80) + 3排/lane(脉冲线/分接中继器直插/音符盒) + 红石灯进度带 + 音色展示台(中文木牌) + 2物理按钮 + 数据包跟随相机。
@@ -689,7 +689,7 @@ GitHub `Cohenjikan/McMusicMaker` 已推全部代码,标签 `v1-perfect`(单钢�
   - **根因(调研+对抗验证,实锤)**:tp 本身不剪音;是 MC `SoundEngine.tickNonPaused()` **每刻**按听者位置重算每个定位音的音量,**听者一旦出了该音的声音球(半径≈16×volume≈22–32格)就当刻 free 掉声道=采样被掐断**。`attenuation_distance` 默认 16 且**不随 volume 放大**(只放大球半径不放大近场响度,故 vol 调大无削波代价但中远场仍陡降)。**解释了"老相机能听/新相机断"**:老相机每格走~1格(滑行)始终在声音球内;25 每**发声列**跳,休止处一次跳 50–100 格出球 → 掐断。⇒ **跟随相机(不管红石驱动与否)都治不了音频**。
   - **修复(已改 + 已编译 + 已部署 jar)**:`NoteBlockMixin.java` 保留真音符盒(粒子/方块/机制)与移调,但**去掉音符盒位置的定位音**,改为**服务端给每个玩家在其自身脚下播该音**(`if (level instanceof ServerLevel server) for (ServerPlayer p: server.players()) server.playSeededSound(null, p.xyz, holder, RECORDS, e.volume, pitch, 0L)`)。听者永远在声音球中心 → 距离剔除永不触发 → **站哪都听得到、全曲不断**,相机退化为纯视觉(tp 不再剪音)。与老命令方块版 `@s ~ ~ ~` 同思路,代价=无空间声像(音乐播放器恰好无所谓)。**构建**:JAVA_HOME=jdk-21,gradle 9.2.1(`~/.gradle/wrapper/dists/gradle-9.2.1-bin/.../gradle.bat -p mod/redpiano build`,~1min,依赖已缓存)→ 拷 `build/libs/redpiano-1.0.0.jar` 到 Modrinth mods → **重启 MC**。**✓ 已确认(2026-06-22):用户「这一次确实完美了」,全程无断音。** 折叠方案**永久搁置**(以玩家为中心发声后,机器长度不再影响听感,折叠失去理由)。**项目达 v1-perfect。** 后续菜单(均为锦上添花,非修复):① 提交+备份锁定成果(最高优先,见交接)② 多乐器/乐队(mixin 已按垫底块定音色,天然支持)③ 复音求和增益防糊(全居中满音量叠加,峰值7音无余量)④ OLK 高音补 2 band 修钳音 ⑤ 灯带按音高着色(piano-roll 观感)。
 - **★ v1-perfect 已锁定 + 增益/抖动/骑行(2026-06-22 晚)**:
-  - **备份**:GitHub 推送 `v1-perfect` 标签(`c8df184`)+ 后续提交;.gitignore 排除版权 MIDI/notes/ogg/deployed;本地 `C:\Users\Cohen\McMusicMaker_backup\v1-perfect\`(MIDI+notes+map+jar+README)。**世界存档 833MB 未自动备份**(建议另拷)。
+  - **备份**:GitHub 推送 `v1-perfect` 标签(`c8df184`)+ 后续提交;.gitignore 排除版权 MIDI/notes/ogg/deployed;本地 `<本地备份目录>\McMusicMaker_backup\v1-perfect\`(MIDI+notes+map+jar+README)。**世界存档 833MB 未自动备份**(建议另拷)。
   - **复音求和增益 + 微抖动(模组, 命令方块可开关)**:`RedPiano` 改为**刻末 ServerTickEvents 统一发声**——一刻 N 个音 → 音量 ×1/√N(等功率, 防大和弦削顶);每触发按 (pos,gametime) 确定性种子做 ±3 音分 / ±2% 微抖(去逐比特"复印感")。两者读记分板 `rpcfg`(假人 `poly`/`human`, 缺省开),`25` 建 rpcfg + 两个开关按钮。
   - **★ 移动掉音质根因 + 修复(实体绑定声音)**:中心化声音锚定在"发声那刻的玩家世界坐标",**玩家移动过快会跑出自己刚发出的音的声音球 → 衰减/被剪 → 跟随时听感糊**。修复:`playSeededSound(null, p, ...)`(**Entity 重载**)把每个音**绑定到玩家实体**→ 声音跟着玩家走、永远在球心 → **任意移速都不断不糊**(站定与原等价)。相机/骑行从此纯视觉。
   - **骑行巡游(datapack `25`)**:`play_ride` 召唤隐形 `armor_stand`(Tags=rpride,NoGravity)→ `ride @a mount` → tick 里 `tp @s ~RIDE_SPEED ~ ~` 恒速 +X 平滑推进(RIDE_SPEED=LEN/全曲刻),`ridestop` 下马清除。配实体绑定声音 = 平滑骑行 + 完美音质。第三个按钮 [骑行播放]。

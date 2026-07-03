@@ -15,7 +15,7 @@ import sys, os, json, shutil
 from collections import defaultdict
 import mido
 
-MIDI = sys.argv[1] if len(sys.argv) > 1 else r"C:/Users/Cohen/Downloads/龙卷风_爱给网_aigei_com.mid"
+MIDI = sys.argv[1] if len(sys.argv) > 1 else r"~/Downloads/龙卷风_爱给网_aigei_com.mid"
 NS = sys.argv[2] if len(sys.argv) > 2 else 'qzljf'
 TPS = 20
 SOUND_NS = 'qzpno'           # 复用现有钢琴资源包

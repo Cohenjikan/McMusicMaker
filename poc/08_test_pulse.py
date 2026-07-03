@@ -4,7 +4,7 @@
 Run: <venv-demucs python> 08_test_pulse.py
 """
 import os, json, shutil
-BRIDGE = r'C:\Users\Cohen\nbviz'
+BRIDGE = r'<external-tool-dir>\nbviz'
 NS = 'qztest'
 OX, OZ, Y, DELAY = 30000, 0, -59, 2
 BASE, RFACING, BATCH = 'white_wool', 'west', 2500

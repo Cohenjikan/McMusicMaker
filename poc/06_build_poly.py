@@ -7,7 +7,7 @@ import os, sys, json, math, shutil
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BRIDGE = r'C:\Users\Cohen\nbviz'
+BRIDGE = r'<external-tool-dir>\nbviz'
 NS = 'qzpno'
 OX, OZ = 25000, 0                 # 远离 qzgtr(20000)/nbviz(10000)/olk(0)
 Y, DELAY, LANE_DZ = -59, 2, 4

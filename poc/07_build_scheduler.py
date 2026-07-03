@@ -9,7 +9,7 @@ import os, sys, json, shutil
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BRIDGE = r'C:\Users\Cohen\nbviz'
+BRIDGE = r'<external-tool-dir>\nbviz'
 NS = 'qzpno'
 VEL_FLOOR = 0.04
 REVERB = [(3, 0.40), (8, 0.18)]        # (刻延迟, 音量系数) 回声 tap:+0.15s / +0.40s

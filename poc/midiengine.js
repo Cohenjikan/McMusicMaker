@@ -452,7 +452,7 @@
 if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.main === module) {
   var fs = require('fs');
   var MidiEngine = module.exports;
-  var SRC = process.argv[2] || 'C:/Users/Cohen/Downloads/七里香 周杰伦_爱给网_aigei_com.mid';
+  var SRC = process.argv[2] || '~/Downloads/七里香 周杰伦_爱给网_aigei_com.mid';
   var buf = fs.readFileSync(SRC);
   var res = MidiEngine.parse(buf);
   var notes = res.notes;

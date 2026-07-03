@@ -1,7 +1,7 @@
 # McMusicMaker — 工程整理说明
 
 > 本文件夹是 **McMusicMaker**（红石音乐"真实重构"项目）的**完整工程副本**，
-> 于 **2026-06-21** 从 `C:\Users\Cohen\nbviz` 散落各处的内容整理汇集而成。
+> 于 **2026-06-21** 从 `<外部工具目录>\nbviz` 散落各处的内容整理汇集而成。
 > GitHub：https://github.com/Cohenjikan/McMusicMaker
 
 整理方式为**复制**——原文件在 `nbviz` 里**原位保留未动**，本副本不影响原 git 仓库，
@@ -73,8 +73,8 @@ McMusicMaker 之外还有两个**音乐相关但不同**的项目，是被本项
 
 | 项目 | 原位置 | 说明 |
 |---|---|---|
-| `mc-noteblock-demo` | `C:\Users\Cohen\mc-noteblock-demo`（在 nbviz 外） | Demucs 分轨 + onset 切片回放 后端（add_song.py / build_qingtian_v7.py） |
-| `nbviz-studio` | `C:\Users\Cohen\nbviz\nbviz-studio` | 上面那个切片回放后端的 PySide6 GUI 前端 |
+| `mc-noteblock-demo` | `<外部工具目录>\mc-noteblock-demo`（在 nbviz 外） | Demucs 分轨 + onset 切片回放 后端（add_song.py / build_qingtian_v7.py） |
+| `nbviz-studio` | `<外部工具目录>\nbviz\nbviz-studio` | 上面那个切片回放后端的 PySide6 GUI 前端 |
 
 如需把整个红石音乐生态（含以上老方案 + media 里的 rickroll 母带）一并归档，可另行整理。
 
