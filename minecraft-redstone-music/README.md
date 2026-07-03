@@ -37,8 +37,10 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
 - `--ns` datapack namespace (also the scoreboard name). `--origin X Z Y` is the world build
   origin (note the order: **X Z Y**). `--mc-version` is any version in the supported auto band
   **1.21 … 1.21.10** (defaults to the verified `1.21.8` anchor); pack_format, function-folder name,
-  `pack.mcmeta` shape and sign-NBT dialect all auto-derive from the version table. An unknown
-  version still **hard-fails** ("never guess").
+  `pack.mcmeta` shape and sign-NBT dialect all auto-derive from the version table. Outside this
+  band the auto-build `raise`s (it only auto-builds green) — that's the cue to switch to the
+  **craftsman path** ([docs/VERSION_TACTICS.md](docs/VERSION_TACTICS.md)): the skill still helps
+  you build a working machine by hand on any version, it just isn't automated.
 - The datapack is written to `build/<ns>/`. Add `--world-dir "<world>/datapacks"` to deploy it
   straight into a world (otherwise copy `build/<ns>/` there yourself). Deploy is opt-in.
 - The script prints a stats report **and the exact in-game next steps**. Read them back to the user.

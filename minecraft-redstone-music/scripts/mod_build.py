@@ -96,11 +96,15 @@ def toolchain_for(mc_version):
                 f"ScoreHolder/ReadOnlyScoreInfo scoreboard API to the older "
                 f"Scoreboard.getOrCreatePlayerScore()/Score API, and use Java 17 at 1.20.4. "
                 f"This is out of the skill's auto scope (see docs/MOD_ARCHITECTURE.md §6). "
-                f"No number-only toolchain row exists."
+                f"No number-only toolchain row exists. Auto build doesn't support this "
+                f"version, but the skill can still help: read docs/VERSION_TACTICS.md "
+                f"(§2.B + §6 mod-porting table) and take the craftsman path."
             )
         raise RedPianoError(
             f"mc_version {mc_version}: no mod toolchain row (supported mod band is "
-            f"1.21..1.21.10). See docs/MOD_ARCHITECTURE.md §6 to port further."
+            f"1.21..1.21.10). See docs/MOD_ARCHITECTURE.md §6 to port further. Auto build "
+            f"doesn't support this version, but the skill can still help: read "
+            f"docs/VERSION_TACTICS.md and take the craftsman path."
         )
     return profile, tc
 

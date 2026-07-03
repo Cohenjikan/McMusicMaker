@@ -178,7 +178,10 @@ def get_version_profile(mc_version):
     if row is None:
         raise RedPianoError(
             f"unknown mc_version {mc_version}; add it to VERSION_TABLE "
-            f"(source dp/rp format from https://minecraft.wiki/w/Pack_format)"
+            f"(source dp/rp format from https://minecraft.wiki/w/Pack_format). "
+            f"Auto-build doesn't know this version, but the skill can still help: "
+            f"read docs/VERSION_TACTICS.md and take the craftsman path (plan/build/"
+            f"verify it yourself for a single delivery)."
         )
     if not row["has_tick_rate"]:
         # The hard floor: no /tick rate (added 1.20.3) -> the game is locked at 20 TPS
@@ -188,8 +191,10 @@ def get_version_profile(mc_version):
             f"mc_version {mc_version} predates the /tick rate command (added 1.20.3) and "
             f"`return` control flow; the RedPiano timing model runs the game at {TPS} TPS "
             f"and the samples are tuned for it, so on {mc_version} playback would be "
-            f"{TPS // 20}x too slow with no way to correct it. 1.20.3 is the hard floor — "
-            f"use 1.21.8 (the verified default)."
+            f"{TPS // 20}x too slow with no way to correct it. 1.20.3 is the hard floor "
+            f"for AUTO-build — but the skill can still help: read docs/VERSION_TACTICS.md "
+            f"(§2.C offers Carpet-mod /tick rate to recover tick80, or a tick20/vanilla-"
+            f"timbre downgrade) and take the craftsman path, or use 1.21.8 for the auto path."
         )
     if row["confidence"] == "low":
         log.warning("mc_version %s has LOW-confidence format data: %s",
@@ -212,7 +217,9 @@ def assert_build_supported(profile):
             f"below 1.21 (the scoreboard config API changed; it needs a small Java "
             f"source-port + Java 17). This skill's supported auto range is 1.21..1.21.10 — "
             f"use a 1.21.x version, or port+recompile the mod per docs/MOD_ARCHITECTURE.md "
-            f"§6 and remove this guard."
+            f"§6 and remove this guard. Auto-build doesn't support this version, but the "
+            f"skill can still help: read docs/VERSION_TACTICS.md (§2.B is exactly this "
+            f"1.20.3..1.20.6 band) and take the craftsman path."
         )
 
 

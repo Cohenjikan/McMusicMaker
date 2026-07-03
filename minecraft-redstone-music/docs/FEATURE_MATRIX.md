@@ -68,12 +68,18 @@ resourcepack + mod-build config** all read from a single `VERSION_TABLE` in
 `scripts/redpiano_core.py` (`get_version_profile` is the only accessor; nothing else hardcodes
 a format number). See `CONTRACT.md` §3 and `MOD_ARCHITECTURE.md` §6.4.
 
+> **This tier table is the AUTOMATION (fast-path) range, not the skill's whole reach.** A ⛔
+> row means the *automated build* refuses — it is **not** the skill giving up on the version.
+> Anything outside the green auto band is handed to the craftsman path in
+> [`docs/VERSION_TACTICS.md`](VERSION_TACTICS.md), which builds a working machine per-delivery
+> (or downgrades / bows out honestly). Auto-refusal ≠ skill-refusal throughout.
+
 | version band | tier | what works |
 |---|---|---|
 | **1.21 .. 1.21.10** (1.21, .1, .2, .3, .4, .5, .6, .7, .8, .9) | 🟢 green | full auto: datapack + resourcepack + mod-build config self-sync from `--mc-version`. **1.21.8 = verified default & anchor** (user-tested in-game). |
 | **1.20.3 .. 1.20.6** | 🟡 yellow | datapack/resourcepack adapt automatically, **but the RedPiano mod needs a real Java source-port** (the pre-1.21 scoreboard config API, + Java 17 at 1.20.4) — **out of auto scope**. `assert_build_supported()` refuses the mod-touching builds (`build_machine` / `build_particles` / `build_resourcepack`). |
-| **≤ 1.20.2** | ⛔ refused | **hard refuse** — no `/tick rate` (added 1.20.3) and no `return`; the tick80 timing model (80 TPS, samples tuned for it, repeater geometry baked at 0.025 s/cell) cannot work → 4×-too-slow, unfixable. **1.20.3 is the hard floor.** |
-| unknown version | ⛔ refused | still **hard-fails** ("never guess", CONTRACT §1.9). |
+| **≤ 1.20.2** | ⛔ auto-refused | **automated build hard-refuses** — no `/tick rate` (added 1.20.3) and no `return`; the tick80 timing model (80 TPS, samples tuned for it, repeater geometry baked at 0.025 s/cell) cannot work on the auto path → 4×-too-slow, unfixable *by automation*. **1.20.3 is the hard floor for the fast path.** **Auto-build refusal ≠ skill refusal** — the version is not a dead end: switch to the craftsman path in [`docs/VERSION_TACTICS.md`](VERSION_TACTICS.md) (Carpet `/tick rate 80`, tick20 downgrade, or vanilla-timbre mode). |
+| unknown version | ⛔ auto-refused | automated build still **hard-fails** ("never guess", CONTRACT §1.9). **Auto-build refusal ≠ skill refusal** — hand it to the craftsman path in [`docs/VERSION_TACTICS.md`](VERSION_TACTICS.md) (its §4 five-question self-check locates the tactics for any unknown version). |
 
 Per-version facts auto-derive from `VERSION_TABLE` (the **1.21.8** anchor row is dp 81 / rp 64):
 
