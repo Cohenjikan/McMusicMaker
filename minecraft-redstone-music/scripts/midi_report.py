@@ -15,10 +15,19 @@ What it reports (see the thresholds printed at the bottom of every run):
   * after quantizing to U=0.025s cells, the peak same-cell polyphony and the share of
     notes predicted DROPPED over each form's per-cell cap (inplace 12 / swave 6 /
     multilane 7 — the real generator constants)
-  * predicted cell count and a ROUGH footprint estimate per form (each formula is
-    marked "估算" — it is a planning aid, the generator owns the real geometry)
+  * sounding-cell count AND the full marching-timeline cell count (occupied + the
+    repeater cells that carry the rests between notes — the real footprint driver), plus
+    a per-form forceload-CHUNK estimate derived from the SAME geometry the generators
+    build. The estimate has no --origin (it runs BEFORE the user picks one) and MC
+    chunking is origin-relative, so it predicts the STRADDLING (worst, and most common)
+    origin rather than the exact chunk-aligned best case; measured accuracy is within a
+    few chunks of real builds at any non-aligned origin, and it never UNDER-predicts.
+    Each estimate is compared to the forceload soft cap: over-cap forms are RED-flagged
+    (build hard-rejects them without --force-cap) and long songs are steered to inplace
+    (its footprint barely grows).
   * a one-line VERDICT pointing at the best-fit form, or a warning if a dense
-    arrangement is predicted to drop enough notes to be worth re-arranging first.
+    arrangement is predicted to drop enough notes to be worth re-arranging first, or if
+    the chosen form would exceed the forceload soft cap.
 
 This tool NEVER builds or deploys anything and is read-only. It exits 0 even when it
 recommends re-arranging (a report is not itself a failure); only a usage error exits 2.
@@ -55,6 +64,12 @@ CUT_INSTR = frozenset({"pad", "lead", "bass"})  # sustaining families (melody-cu
 # report thresholds (documented in the output so the judgement is auditable)
 DROP_WARN_PCT = 10.0               # >this share dropped over the cap -> recommend re-arrange
 SHIFT_WARN_PCT = 25.0             # >this share octave-shifted -> note the pitch approximation
+FOOTPRINT_NEAR_CAP_PCT = 70.0     # >this share of the forceload soft cap -> yellow warning
+
+# duration rules-of-thumb where a folded/lane form starts hitting the forceload soft
+# cap (empirical, tick80). Printed as a planning hint; the per-form estimate is authoritative.
+DUR_HINT_SWAVE_S = 6 * 60         # swave (folded S-wave) ~<=6 min before it tops out
+DUR_HINT_MULTILANE_S = 4 * 60     # multilane (straight) ~<=4 min before it tops out
 
 
 def _count_tempo_events(midi_path):
@@ -87,6 +102,37 @@ def _band_span(inst):
     if not bands:
         return None
     return (min(bands), max(bands))
+
+
+def _timeline_cells(trig):
+    """Count the FULL shared-timeline cells the marching generators emit for the
+    sorted quantized trigger ticks ``trig`` — EXACT replica of the cells[] builder in
+    generators/swave.py + generators/multilane.py (trigger-tick union -> repeater
+    skeleton). This is the real footprint driver: the machine spans every rest between
+    triggers as repeater cells, so a SPARSE long song has FAR more cells than occupied
+    (trigger) cells. Returns (total_cells, rep_cells, trig_cells).
+
+    This is why the old n_cells (occupied) footprint underestimated sparse long songs
+    ~40x: it counted only the 120 sounding cells, not the ~3000 repeater cells that
+    carry the silence between them.
+    """
+    if not trig:
+        return 0, 0, 0
+    offset = 1 if trig[0] == 0 else 0
+    n_rep = 0
+    n_trig = 0
+    prev = 0
+    for t0 in trig:
+        t = t0 + offset
+        g = t - prev
+        # G ticks of gap -> ceil(G/4) repeater cells of delay <=4 (min 1), then 1 trig
+        reps = (g // 4) + (1 if g % 4 else 0)
+        if reps == 0:
+            reps = 1
+        n_rep += reps
+        n_trig += 1
+        prev = t
+    return n_rep + n_trig, n_rep, n_trig
 
 
 def analyze(notes, imap):
@@ -127,12 +173,29 @@ def analyze(notes, imap):
     bycell = defaultdict(int)
     for n in audible:
         bycell[round(n["t"] / U)] += 1
-    n_cells = len(bycell)
+    n_cells = len(bycell)                 # OCCUPIED (sounding) cells
     peak_poly = max(bycell.values()) if bycell else 0
+    # FULL marching-timeline cells (occupied + repeater-spacer cells across rests) —
+    # the real footprint driver for swave/multilane (see _timeline_cells docstring).
+    trig = sorted(bycell)
+    timeline_cells, _rep_cells, _trig_cells = _timeline_cells(trig)
     # predicted dropped notes over each cap = sum over cells of max(0, cell_count - cap)
     drops = {}
     for form, cap in FORM_CAP.items():
         drops[form] = sum(max(0, c - cap) for c in bycell.values())
+
+    # distinct resolved (block, note_value) palette — drives the inplace footprint
+    # (inplace lays ONE note block per distinct sound, on a 16-wide grid; it does NOT
+    # span the timeline, so its footprint stays tiny + roughly constant for long songs).
+    palette = set()
+    for n in audible:
+        fam = n["family"]
+        try:
+            r = imap.resolve(int(n["midi"]), float(n.get("vel", 0.7)), fam)
+        except (KeyError, IndexError):
+            continue
+        palette.add((r.block, r.note_value))
+    palette_size = len(palette)
 
     # band-span table (for the pitch-range context) + per-family in/out-of-range
     band_spans = {}
@@ -152,47 +215,94 @@ def analyze(notes, imap):
         "fam_shift": {k: tuple(v) for k, v in fam_shift.items()},
         "clamp_hits": clamp_hits,
         "n_cells": n_cells,
+        "timeline_cells": timeline_cells,
+        "palette_size": palette_size,
         "peak_poly": peak_poly,
         "drops": drops,
         "band_spans": band_spans,
     }
 
 
-def _footprint_estimates(n_cells, rep):
-    """ROUGH per-form footprint estimates (each marked 估算). The generators own the
-    real geometry; these are order-of-magnitude planning aids only.
+def _span_chunks_worst(n_blocks):
+    """Max number of 16-wide chunks an ``n_blocks``-long span can occupy, over ALL
+    origin offsets. A span of B blocks touches at least ``(B-1)//16 + 1`` chunks (when
+    chunk-aligned) and AT MOST ``(B-1)//16 + 2`` (when it straddles a chunk boundary).
 
-      swave     : folded S-wave. cells run XRUN=3 in X then step Z (ZMAX=4 amplitude),
-                  so X span ~ ceil(cells/ (2*XRUN)) * XRUN and Z span ~ ZMAX*track. 估算.
-      inplace   : a palette of DISTINCT (block,note) note blocks laid on a PCOLS=16 grid
-                  with ROWGAP=3 rows -> ~16 wide x ceil(distinct/16)*3 deep. Uses the
-                  distinct-note-block count when known, else the cell count as a ceiling. 估算.
-      multilane : MAXPOLY=7 straight lanes at lane_dz=2 -> Z ~ 7*2, X ~ cells (one +X
-                  cell per trigger). This is the widest/longest -> most chunks. 估算.
+    midi_report has NO origin (it is a pre-build preflight — the user has not yet picked
+    an --origin), and MC's ``coord >> 4`` chunking is origin-relative, so the SAME machine
+    occupies 1 more chunk-row per axis at almost every origin than at the exact chunk-
+    aligned one. The OLD estimate implicitly assumed origin (0,0) (``range(-1, tl)`` /
+    ``i*2 >> 4``), which is the degenerate BEST case: it matched real only when the build
+    happened to sit at a chunk boundary, and UNDER-predicted ~2x at every other origin
+    (V1: multilane 381 predicted vs 760 built — silently within the 360 cap yet really
+    over it). We predict the STRADDLING (worst, and by far most common) case so the
+    estimate never under-reports the footprint the user will actually get."""
+    return (n_blocks - 1) // 16 + 2
+
+
+def _footprint_estimates(rep):
+    """Per-form forceload-CHUNK estimates, derived from the SAME geometry the generators
+    build. Returns {form: (chunks, x_blocks, z_blocks)}.
+
+    Two footprint drivers, both origin-honest:
+      * swave/multilane footprint is driven by the FULL marching timeline
+        (``timeline_cells`` = occupied + repeater-spacer cells), NOT the occupied-cell
+        count. A sparse long song has ~25x more timeline cells than sounding cells, so the
+        old n_cells model underestimated its footprint ~40x.
+      * chunk counts use ``_span_chunks_worst`` (straddling case) per axis, because the
+        report has no origin and MC chunking is origin-relative: the aligned-origin count
+        the old model used under-predicted ~2x at nearly every real origin.
+
+      swave     : folded S-wave, XRUN=3 forward then step Z, ZMAX=4 amplitude, dual-track.
+                  X advances 2*XRUN blocks per (2*XRUN + 2*(ZMAX-1))-cell fold period; the
+                  dual-track Z band is ~21 blocks. Forceload = bbox padded ±2 (grid.bbox).
+      inplace   : a palette of DISTINCT (block,note) note blocks on a PCOLS=16 x ROWGAP=3
+                  grid -> tiny + roughly CONSTANT regardless of song length. This is the
+                  long-song escape hatch (its footprint does not grow with the timeline).
+      multilane : MAXPOLY=7 straight lanes; one +X column per timeline cell. Footprint =
+                  the occupied-chunk set (the generator forceloads set((x>>4,z>>4)), NO ±2
+                  pad): x-chunks over the (source + tl columns) span * z-chunks over the
+                  13-block 7-lane band. Widest/longest.
     """
     import math
-    # swave 估算
+    tl = rep.get("timeline_cells", rep.get("n_cells", 0))
+
+    # ── multilane: occupied-chunk set (matches the generator, NO bbox pad) ─────────
+    #   columns occupy x in [OX-1 (source) .. OX+tl-1] -> tl+1 blocks wide; 7 lanes at
+    #   lane_dz=2 -> z 0..12 -> 13 blocks. Worst-case straddle per axis (see _span_...).
+    ml_lane_dz, ml_lanes = 2, 7
+    ml_x_blocks = tl + 1                       # source column + one per timeline cell
+    ml_z_blocks = (ml_lanes - 1) * ml_lane_dz + 1   # 13
+    ml_chunks = max(1, _span_chunks_worst(ml_x_blocks) * _span_chunks_worst(ml_z_blocks))
+
+    # ── swave: folded S-wave; X from the fold period, Z band ~21 blocks (dual-track) ─
     XRUN, ZMAX = 3, 4
-    sw_x = max(XRUN, math.ceil(n_cells / max(1, 2 * XRUN)) * XRUN)
-    sw_z = ZMAX * 2 + 3           # dual-track amplitude + separation (rough)
-    # inplace 估算 — palette breadth: distinct note-block estimate (fallback = cells)
-    distinct = rep.get("distinct_blocks", n_cells)
+    period = 2 * XRUN + 2 * (ZMAX - 1)        # cells per full S fold (12 by default)
+    x_per_period = 2 * XRUN                    # net X advance per fold (6 by default)
+    sw_x = max(XRUN, math.ceil(tl / max(1, period)) * x_per_period)
+    sw_z_blocks = 21                           # observed dual-track Z span (default ZMAX=4)
+    # forceload = grid.bbox() padded -2/+2 on each axis -> span grows by 4 blocks per axis.
+    sw_chunks = max(1, _span_chunks_worst(sw_x + 4) * _span_chunks_worst(sw_z_blocks + 4))
+
+    # ── inplace: distinct-palette grid, does NOT span the timeline ────────────────
+    P = max(1, rep.get("palette_size", rep.get("n_cells", 1)))
     PCOLS, ROWGAP = 16, 3
-    ip_x = min(PCOLS, distinct)
-    ip_z = math.ceil(distinct / PCOLS) * ROWGAP
-    # multilane 估算 — one +X cell per trigger, 7 lanes deep
-    ml_x = n_cells
-    ml_z = 7 * 2
+    PROWS = (P + PCOLS - 1) // PCOLS
+    ip_x_blocks = min(PCOLS, P)
+    ip_z_blocks = (PROWS - 1) * ROWGAP + 1
+    # bbox incl. the console at PBX=OX-3 (WX0 = min(OX, PBX-10)-2), matches the generator
+    ip_wx0 = min(0, -3 - 10) - 2
+    ip_wx1 = ip_x_blocks - 1 + 2
+    ip_wz0 = min(0, -3) - 2
+    ip_wz1 = ip_z_blocks - 1 + 2
+    ip_chunks = max(1, ((ip_wx1 // 16) - (ip_wx0 // 16) + 1)
+                    * ((ip_wz1 // 16) - (ip_wz0 // 16) + 1))
+
     return {
-        "swave": (sw_x, sw_z),
-        "inplace": (ip_x, ip_z),
-        "multilane": (ml_x, ml_z),
+        "swave": (sw_chunks, sw_x, sw_z_blocks),
+        "inplace": (ip_chunks, ip_x_blocks, ip_z_blocks),
+        "multilane": (ml_chunks, ml_x_blocks, ml_z_blocks),
     }
-
-
-def _chunks(x_blocks, z_blocks):
-    """Rough chunk count for an X-by-Z block footprint (16 blocks/chunk each axis)."""
-    return max(1, (x_blocks // 16 + 1)) * max(1, (z_blocks // 16 + 1))
 
 
 def _pct(part, whole):
@@ -239,7 +349,8 @@ def print_report(midi_path, notes, imap, rep, tempo_events, form_focus=None):
 
     # quantization + polyphony / predicted drops
     print("")
-    print(f"  quantized cells (U={U:.3f}s): {rep['n_cells']}")
+    print(f"  quantized cells (U={U:.3f}s): {rep['n_cells']} sounding"
+          f"  /  {rep['timeline_cells']} timeline (incl. rest/repeater cells)")
     print(f"  peak same-cell polyphony    : {rep['peak_poly']} notes in one cell")
     print("  predicted DROPPED notes over each form's per-cell cap:")
     for form in ("inplace", "swave", "multilane"):
@@ -250,32 +361,64 @@ def print_report(midi_path, notes, imap, rep, tempo_events, form_focus=None):
         flag = "  <-- would re-arrange" if p > DROP_WARN_PCT else ""
         print(f"   {mark}{form:<10} cap {cap:<2}  drop {d} ({p:.1f}%){flag}")
 
-    # footprint estimates (all 估算)
-    fps = _footprint_estimates(rep["n_cells"], rep)
+    # footprint estimates vs the forceload soft cap (worst-case origin; never under-predicts)
+    fps = _footprint_estimates(rep)
+    cap = core.FORCELOAD_SOFT_CAP
+    near = cap * FOOTPRINT_NEAR_CAP_PCT / 100.0
     print("")
-    print("  rough footprint per form (估算 — generator owns real geometry):")
+    print(f"  estimated footprint per form vs forceload soft cap ({cap} chunks):")
     for form in ("swave", "inplace", "multilane"):
-        xb, zb = fps[form]
-        ch = _chunks(xb, zb)
+        ch, xb, zb = fps[form]
         mark = " <" if form == form_focus else "  "
-        print(f"   {mark}{form:<10} ~{xb} x {zb} blocks  (~{ch} chunks) 估算")
+        if ch > cap:
+            flag = (f"  <-- 会被 build 硬拒 (>{cap} 软上限); 加 --force-cap 才建, "
+                    f"长歌建议改 inplace")
+        elif ch > near:
+            flag = f"  <-- 接近上限 ({_pct(ch, cap):.0f}% of {cap})"
+        else:
+            flag = ""
+        print(f"   {mark}{form:<10} ~{ch} chunks  (~{xb} x {zb} blocks) 估算{flag}")
+    print(f"  时长经验值: swave 约 <= {DUR_HINT_SWAVE_S // 60} 分钟、"
+          f"multilane 约 <= {DUR_HINT_MULTILANE_S // 60} 分钟就会触顶软上限; "
+          f"更长的曲子选 inplace (占地几乎不随时长增长)。")
 
     # ── verdict ──
     print("")
     print("-" * 64)
-    verdict = _verdict(rep, form_focus)
+    verdict = _verdict(rep, form_focus, fps)
     print(f"  VERDICT: {verdict}")
     print("-" * 64)
     print("  thresholds used: vel floor "
           f"{VEL_FLOOR}; per-cell caps inplace=12/swave=6/multilane=7; "
-          f"drop>{DROP_WARN_PCT:.0f}% -> re-arrange; shift>{SHIFT_WARN_PCT:.0f}% -> pitch approximate.")
-    print("  (all numbers use the SAME parse+resolve the build uses; footprints are 估算.)")
+          f"drop>{DROP_WARN_PCT:.0f}% -> re-arrange; shift>{SHIFT_WARN_PCT:.0f}% -> pitch approximate; "
+          f"footprint>{core.FORCELOAD_SOFT_CAP} chunks -> build hard-rejects (--force-cap).")
+    print("  (all numbers use the SAME parse+resolve the build uses; footprint estimates "
+          "predict the worst-case (straddling) origin and never under-report, but the "
+          "generator owns exact geometry — a chunk-aligned origin can come out smaller.)")
 
 
-def _verdict(rep, form_focus):
+def _verdict(rep, form_focus, fps=None):
     """One-line recommendation. Pick the form with the fewest predicted drops as the
     'recommended' one; warn if even that drops more than DROP_WARN_PCT of the audible
-    notes (dense/chordy arrangement -> suggest a simpler MIDI)."""
+    notes (dense/chordy arrangement -> suggest a simpler MIDI). When ``fps`` (footprint
+    chunk estimates) is given, also RED-flag a focus/recommended form that would blow the
+    forceload soft cap and steer toward inplace (the long-song escape hatch)."""
+    cap = core.FORCELOAD_SOFT_CAP
+    fps = fps or _footprint_estimates(rep)
+
+    def _ch(form):
+        return fps[form][0]
+
+    # footprint gate FIRST: a form over the soft cap is HARD-REJECTED at build unless
+    # --force-cap, so warn about it before the drop-based recommendation — this is the
+    # sparse-long-song failure the old n_cells estimate hid entirely.
+    if form_focus and _ch(form_focus) > cap:
+        alt = "inplace" if _ch("inplace") <= cap else min(
+            ("inplace", "swave", "multilane"), key=_ch)
+        return (f"你选的 {form_focus} 预计占地 ~{_ch(form_focus)} chunk > 软上限 {cap} — "
+                f"build 会硬拒 (除非加 --force-cap)。长歌建议改 --form {alt} "
+                f"(预计 ~{_ch(alt)} chunk，占地几乎不随时长增长)。")
+
     # rank forms by predicted drop share (lower = better), tie-break inplace<swave<multilane
     order = ["inplace", "swave", "multilane"]
     best = min(order, key=lambda f: (rep["drops"][f], order.index(f)))
@@ -287,13 +430,19 @@ def _verdict(rep, form_focus):
         fp = _pct(rep["drops"][form_focus], rep["n_audible"])
         focus_note = (f" (你选的 {form_focus} 预计丢音 {fp:.1f}%; "
                       f"{best} 更省音)")
+    # if the DROP-recommended form itself blows the cap, redirect to inplace.
+    cap_note = ""
+    if _ch(best) > cap and _ch("inplace") <= cap:
+        cap_note = (f" 但 {best} 预计占地 ~{_ch(best)} chunk > 软上限 {cap}，"
+                    f"长歌请改 --form inplace (~{_ch('inplace')} chunk)。")
+
     if best_pct > DROP_WARN_PCT:
         return (f"和弦密集，最省音的 {best} 仍预计丢音 {best_pct:.1f}% "
                 f"(峰值同格 {rep['peak_poly']} 音 > cap {FORM_CAP[best]}) — "
-                f"建议换编曲更简单的 MIDI，或减少同时发声的声部。{focus_note}")
+                f"建议换编曲更简单的 MIDI，或减少同时发声的声部。{focus_note}{cap_note}")
     if best_pct > 0:
-        return (f"适合直接构建 (推荐 {best}，预计丢音仅 {best_pct:.1f}%)。{focus_note}")
-    return (f"适合直接构建 (推荐 {best}，预计零丢音)。{focus_note}")
+        return (f"适合直接构建 (推荐 {best}，预计丢音仅 {best_pct:.1f}%)。{focus_note}{cap_note}")
+    return (f"适合直接构建 (推荐 {best}，预计零丢音)。{focus_note}{cap_note}")
 
 
 def build_argparser():
@@ -344,8 +493,16 @@ def _selftest():
     rep = analyze(notes, imap)
     # key fields present
     for k in ("n_total", "dur_s", "midi_min", "midi_max", "fam_counts",
-              "fam_shift", "n_cells", "peak_poly", "drops", "band_spans"):
+              "fam_shift", "n_cells", "timeline_cells", "palette_size",
+              "peak_poly", "drops", "band_spans"):
         assert k in rep, f"missing report field {k!r}"
+    # timeline_cells >= occupied cells (it adds the rest/repeater spacer cells)
+    assert rep["timeline_cells"] >= rep["n_cells"], (rep["timeline_cells"], rep["n_cells"])
+    # footprint estimate returns (chunks, x, z) >=1 per form, and inplace is the smallest
+    fps = _footprint_estimates(rep)
+    for form in FORM_CAP:
+        assert form in fps and len(fps[form]) == 3 and fps[form][0] >= 1, fps
+    assert fps["inplace"][0] <= fps["swave"][0], fps  # inplace never larger than swave
     assert rep["n_total"] == len(notes)
     assert rep["dur_s"] > 0
     assert rep["midi_min"] <= rep["midi_max"]

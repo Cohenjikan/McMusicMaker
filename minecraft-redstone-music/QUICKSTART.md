@@ -14,9 +14,11 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 
 ## 🔊 只想先听个响？走开放音源最小 demo（不用自备采样）
 
-第一次上手、只想验证「真能响」，别急着准备你自己的 MIDI 和采样——用随仓 `assets/demo.mid` + 脚本**当场合成**的开放音源（numpy，无网络/无 ffmpeg），三步就能建出完整 `dist/`：
+第一次上手、只想验证「真能响」，别急着准备你自己的 MIDI 和采样——用随仓 `assets/demo.mid` + 脚本**当场合成**的开放音源（numpy，无网络/无 ffmpeg），三步就能建出完整 `dist/`。**这是开源仓库的默认资源包路径**——本仓库不随附 Salamander 采样，见 [SKILL.md](SKILL.md) 「收集输入」一步的资源包来源①。
 
-> **两条硬前提**：**① 仅 Windows 交付**（`.bat` 安装器）；**② 必须整仓 clone**（脚本依赖 `../binaries/` 等仓库结构，不能只拷本子目录）。合成音色是**能出声的最小验证**，不是精修钢琴采样。
+> **两条硬前提**：**① 仅 Windows 交付**（`.bat` 安装器）；**② 必须整仓 clone**（脚本依赖 `../binaries/` 等仓库结构，不能只拷本子目录）。
+>
+> **⚠ 音色诚实话术（交付时必须告知用户）**：这套 `make_demo_samples.py` 产物是**合成 demo 音色**（numpy 生成的简单波形），**不是** RedPiano 原装的 Salamander 真钢琴采样。能验证「机器真的会响、时序对不对」，但音色比较朴素。想换真钢琴音色，见 [BINARIES.md](BINARIES.md) 「Sampled resourcepack」一节（`--prebuilt-rp` / `--from-zip`）。
 
 > 若 `pip install` 报 UnicodeDecodeError，先执行 `$env:PYTHONUTF8=1`（PowerShell）/ `export PYTHONUTF8=1`（bash）再重试。
 
@@ -156,9 +158,14 @@ python scripts/prepare_all.py \
     --world-dir "<profile>/saves/<world>/datapacks" \
     --profile-dir "<profile>" \
     --dist dist \
-    [--samples-root path/to/poc | --prebuilt-rp path/to/qzpno_mv.zip] \
+    [--samples-root assets/demo_samples | --prebuilt-rp path/to/qzpno_mv.zip] \
     [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
 ```
+
+No resourcepack yet? run `python scripts/make_demo_samples.py` first, then pass
+`--samples-root assets/demo_samples` (see the demo section at the top of this file) — that is
+the working default in this open-source repo; there is no sample-carrying `poc/` folder to
+auto-detect.
 
 This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 `dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
@@ -166,6 +173,14 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 - `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
   `--profile-dir` must be the folder that directly contains `resourcepacks/`, `mods/`, and
   `options.txt` for the version you're targeting.
+  > **⚠ `--world-dir` 必须精确指到 `datapacks` 这一层**——即
+  > `<profile>/saves/<world>/datapacks`,不是 `<world>` 本身、也不是更外层的 `saves/`。指错层
+  > 不会立刻报错(`prepare_all.py` 仍会跑完并生成 `dist/`),但装进游戏后 `/function <ns>:setup`
+  > 会是 "Unknown function"——数据包实际落在了错误的目录,游戏根本读不到。`doctor.py`
+  > 会在部署后把这一条硬性核对出来(`datapack pack.mcmeta missing at ...` 并指向正确路径),
+  > 但省事的做法是**一开始就填对**:从 F3 之外确认路径最简单的办法是在文件管理器里打开
+  > 存档文件夹,`datapacks` 应该是 `<world 文件夹>` 下的一个子文件夹(和 `level.dat`
+  > 同级的兄弟目录),把它的完整路径整个复制粘贴给 agent,不要只给到 `saves/<world>/`。
   > **⚠ Using PCL2 / HMCL with per-version isolation (版本隔离/独立) enabled?** Each version gets
   > its own private folder — point `--profile-dir` at that specific version's folder, typically
   > `.minecraft/versions/<你的版本>/`, **not** the shared `.minecraft` root (which has no
@@ -185,11 +200,12 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
   `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out dist/qzpno_mv.zip`
   (a base rp-64 pack serves 1.21.7/1.21.8 as-is; other versions get only `pack.mcmeta` rewritten), or
   build from sample folders with `--samples-root`. Pass the result as `--prebuilt-rp`.
-- **Or skip the resourcepack entirely:** `--skip-resourcepack` builds without staging one — the
-  **honest effect** is the machine plays either **vanilla note-block timbres** or **total
-  silence** (if `qzpno_mv` sound events are referenced but nothing matching is enabled in the
-  world), not a guarantee of RedPiano's sampled sound. Only use it when a matching `qzpno_mv.zip`
-  is already installed **and enabled** in the target profile.
+- **Or skip the resourcepack entirely:** `--skip-resourcepack` builds without staging one. **诚实
+  后果(取决于装没装模组):** 装了 **RedPiano 模组**时,音符盒会**彻底静音**——模组把原版声音换成
+  `qzpno:` 自定义事件,没有资源包=那个事件没有任何 `.ogg`=无声(**不会**退回原版 harp/bass 音色);
+  **不装模组**时才是原版音符盒音色。它绝不"试一下失败就退回原版"。只在目标 profile 里已装好**并
+  启用**了匹配的 `qzpno_mv.zip` 时才用本开关。换音色/自备包的格式+103 音效契约见
+  [SKILL.md「音色与资源包」](SKILL.md#音色与资源包换音色--默认加载保障) 与 [BINARIES.md](BINARIES.md)。
 
   Golden offline command for **Fabric 1.21.7**, run from the `minecraft-redstone-music/` directory
   (`../binaries/…` resolves; `--prebuilt-rp` points at the pack you built above):
@@ -204,10 +220,12 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
       --dist dist
   ```
 
-  (If the shipped jar is still `…-mc1.21.7-UNVERIFIED.jar`, use that name verbatim.) In a full
-  source checkout instead, `--samples-root` auto-detects `../../poc` (anchored to `scripts/`, i.e.
-  repo-root `poc/`; a hand-passed `--samples-root` is relative to your shell's cwd, so use `./poc`
-  from the repo root or an absolute path); the mod jar is built only if you have Gradle + JDK 21.
+  (If the shipped jar is still `…-mc1.21.7-UNVERIFIED.jar`, use that name verbatim.) No
+  `qzpno_mv.zip` on hand yet? run `python scripts/make_demo_samples.py` and pass
+  `--samples-root assets/demo_samples` instead (see the "🔊 只想先听个响" section at the top of
+  this file) — the open-source repo's `poc/` folder ships **without** samples, so there is **no**
+  working auto-detect fallback to fall back on; the mod jar is built only if you have Gradle +
+  JDK 21.
 - If a required dependency is unavailable, `prepare_all.py` exits nonzero. Fix it and rerun;
   do not treat a partial build as complete.
 
@@ -233,6 +251,10 @@ python scripts/build_machine.py \
   times than `swave`. `--form swave` is the marching-pulse path machine (product default) and
   **has been tested in-game multiple times and confirmed working**.
   `straight`/`custom`/`multilane` are also available — see `docs/FEATURE_MATRIX.md`.
+  > **时长经验值:** `swave`/`multilane` 的占地随歌曲时长增长,容易撞上 360 区块的 forceload
+  > 软上限(超限需 `--force-cap` 才能强建,不保证不断音)。经验值:`swave` 约 **≤6 分钟**、
+  > `multilane` 约 **≤4 分钟** 以内通常安全;更长的歌选 **`inplace`**——占地基本恒定,不随
+  > 时长增长。
 - `--ns` is the datapack namespace **and** the scoreboard objective name.
   > **⚠ Pick a name you haven't used in this world before.** A `datapacks/<ns>/` folder that
   > already exists gets **overwritten wholesale** by a build using the same `--ns`. If you're
@@ -316,7 +338,9 @@ generator source (`scripts/generators/inplace.py`, `swave.py`, `multilane.py`):
   across multiple ticks — `cleanup` kicks off a `clearstep`/`clr/cN`/`cleardone` chain — because a
   single `fill` over a large footprint can exceed the command size limit; give it a moment on a
   big build).
-- Runs `forceload remove all` — releases the forceload tickets the machine registered at `setup`.
+- Runs a **scoped** `forceload remove <this machine's bounding box>` — releases only the forceload
+  tickets this machine registered at `setup`, without touching forceload tickets held by other
+  songs/machines in the same world.
 - Prints a `tellraw` confirmation ("cleaned up." / "tearing down...").
 
 **What it does NOT do:**
@@ -329,6 +353,22 @@ generator source (`scripts/generators/inplace.py`, `swave.py`, `multilane.py`):
 
 **To fully remove a song**, run `cleanup` first (clears the physical blocks, cleanest), then
 delete its folder from `<world>/datapacks/<ns>/` and `/reload`.
+
+### 换歌 / 升级同一个 `--ns`(三步流程,顺序很重要)
+
+如果你要**用同一个 `--ns`** 重新生成/升级这首歌(比如换了 MIDI、调整了参数、或者升级了脚本版本),
+**先拆旧机器再装新的**,顺序是:
+
+1. **游戏里对旧机器跑 `/function <ns>:cleanup`**(趁旧数据包还在、`setup.mcfunction` 还能被
+   `/function` 找到的时候做——数据包一旦被新构建覆盖或删除,旧的 `cleanup` 函数也跟着消失,
+   就没法用它自己拆自己了)。
+2. **再双击新的 `dist\DEPLOY_TO_GAME.bat`**,把新数据包覆盖进 `<world>/datapacks/<ns>/`。
+3. **再 `/reload` + `/function <ns>:setup`** 重新构建。
+
+**为什么顺序不能反**:新的清空盒(bounding box)可能比旧机器**小**——例如旋律变短、`inplace`
+调色板音符数变少。如果先覆盖新数据包再拆,新版本的 `cleanup` 只知道**新**机器自己的包围盒,
+清不到旧机器伸出这个包围盒之外的那部分方块,会在世界里留下一截**残骸**(旧红石/音符盒轨迹)。
+先用旧数据包自带的 `cleanup` 把旧机器完整清空,再铺新的,才不会留死角。
 
 ---
 

@@ -336,10 +336,15 @@ def scoreboard_reset(ns):
     ]
 
 
-def build_load_fn(ns, name, extra_objectives=True):
+def build_load_fn(ns, name, extra_objectives=True, remove_region=None):
     """The `load` function body (poc/45 L171-174): add objectives, BLD=-1, the
-    PLAY/LOOP reset, rpcfg poly/human=1, forceload remove all, schedule clear
-    done, and the loaded tellraw. ``extra_objectives`` toggles the rpcfg block."""
+    PLAY/LOOP reset, rpcfg poly/human=1, a SCOPED forceload remove, schedule clear
+    done, and the loaded tellraw. ``extra_objectives`` toggles the rpcfg block.
+
+    ``remove_region`` = (x0, z0, x1, z1): the machine's own bounding box. ``load`` runs
+    on every /reload, so it MUST NOT撤销 a co-existing song's forceload — the remove is
+    scoped to this machine's bbox. When None (e.g. the self-test), the remove is omitted
+    entirely (still never 'remove all')."""
     out = [
         f"scoreboard objectives add {ns} dummy",
         f"scoreboard players set BLD {ns} -1",
@@ -348,16 +353,17 @@ def build_load_fn(ns, name, extra_objectives=True):
     if extra_objectives:
         out += [
             "scoreboard objectives add rpcfg dummy",
-            "scoreboard players set poly rpcfg 1",
-            "scoreboard players set human rpcfg 1",
+            f"scoreboard players set poly_{ns} rpcfg 1",
+            f"scoreboard players set human_{ns} rpcfg 1",
         ]
     # ``name`` is user-controlled (--song / MIDI filename) and may contain " or \\;
     # build the tellraw payload as a dict and json.dumps it so the text is escaped and
     # the emitted command is always valid JSON. json.dumps(name)[1:-1] yields the
     # escaped body without its surrounding quotes for inline interpolation.
     esc_name = json.dumps(name)[1:-1]
+    if remove_region is not None:
+        out.append(forceload_remove_region(*remove_region))
     out += [
-        "forceload remove all",
         f"schedule clear {ns}:done",
         f'tellraw @a ["",{{"text":"[{ns}] {esc_name} loaded. ","color":"aqua"}},'
         f'{{"text":"need RedPiano mod + qzpno pack. Steps: /tick rate 80 (手动输入) -> /function {ns}:setup -> 启用资源包 -> press [play]."}}]',
@@ -527,10 +533,25 @@ def forceload_add_region(x0, z0, x1, z1):
     return f"forceload add {x0} {z0} {x1} {z1}"
 
 
+def forceload_remove_region(x0, z0, x1, z1):
+    """A single SCOPED 'forceload remove x0 z0 x1 z1' command.
+
+    NEVER emit 'forceload remove all' — it is a GLOBAL command that would撤销 a
+    *second* song's forceload in the same world (co-existing machines互杀: the
+    first song's chunks stop being kept loaded, so it goes silent when the player
+    walks away; every /reload re-triggers it). Removing only THIS machine's own
+    bounding box leaves any other machine's forceload intact. The region passed
+    here MUST match the region that forceload_split/guard ADD, so remove+add stay
+    paired per machine."""
+    return f"forceload remove {x0} {z0} {x1} {z1}"
+
+
 def forceload_split(x0, z0, x1, z1, max_chunks_per_cmd=240):
     """Tile the region into a 2D grid of sub-regions so each 'forceload add' stays under
     ``max_chunks_per_cmd`` chunks, because one forceload command is itself chunk-limited
-    (poc/48 L380-388). Returns ['forceload remove all', add...] (poc uses budget 240).
+    (poc/48 L380-388). Returns ['forceload remove <bbox>', add...] — a SCOPED remove of
+    exactly this machine's bounding box (NOT 'remove all', which would撤销 a co-existing
+    song's forceload). budget 240 per add.
 
     The X stride is sized to fit the full Z span in one row; but when the Z span ALONE
     already exceeds the budget, that leaves an X stride of 1 column whose per-command
@@ -542,7 +563,9 @@ def forceload_split(x0, z0, x1, z1, max_chunks_per_cmd=240):
     # behavior); when Z alone is oversize, xstep collapses to 1 and zstep bounds each add.
     xstep = max(1, max_chunks_per_cmd // max(1, zc))
     zstep = max(1, max_chunks_per_cmd // max(1, min(xstep, zc)))
-    out = ["forceload remove all"]
+    # SCOPED remove of exactly this machine's bbox (paired with the adds below) — never
+    # 'remove all', which would撤销 a co-existing song's forceload in the same world.
+    out = [forceload_remove_region(x0, z0, x1, z1)]
     # Each stride's END must land on a chunk boundary, else an unaligned origin makes
     # adjacent strides START mid-chunk and CO-COUNT the shared boundary chunk-row/column:
     # the per-command chunk count then EXCEEDS the budget (measured 482 > 240 at x0=z0=100)
@@ -571,9 +594,10 @@ def forceload_guard(x0, z0, x1, z1, *, auto_fold=False):
     Folding the *geometry* (plane-fold U-turns) is a generator concern; core only
     splits the forceload *command* itself.
 
-    Returns a list of forceload commands (always ['forceload remove all', add...]).
-    In-place machines are tiny so they pass trivially with a single add; swave can
-    be large.
+    Returns a list of forceload commands (always ['forceload remove <bbox>', add...] —
+    the remove is SCOPED to this machine's bbox, never 'remove all', so a co-existing
+    song's forceload survives). In-place machines are tiny so they pass trivially with a
+    single add; swave can be large.
     """
     chunks = _chunk_count(x0, z0, x1, z1)
     if chunks > FORCELOAD_SOFT_CAP:
@@ -1132,13 +1156,16 @@ if __name__ == "__main__":
 
     # ── forceload guard ──────────────────────────────────────────────────────
     fl = forceload_guard(0, 0, 32, 32)  # tiny -> passes
-    assert fl[0] == "forceload remove all"
-    print("ok: small forceload passes", len(fl), "commands")
+    # SCOPED remove of exactly this bbox — NEVER 'remove all' (co-existing songs互杀 guard).
+    assert fl[0] == "forceload remove 0 0 32 32", fl[0]
+    assert not any("remove all" in c for c in fl), fl
+    print("ok: small forceload passes (scoped remove)", len(fl), "commands")
     expect_raise(lambda: forceload_guard(0, 0, 16000, 16000),  # huge -> hard fail
                  "too large", "oversize forceload hard-fail")
     fl2 = forceload_guard(0, 0, 16000, 16000, auto_fold=True)  # folds instead
-    assert fl2[0] == "forceload remove all" and len(fl2) > 1
-    print("ok: oversize forceload auto-folds into", len(fl2), "commands")
+    assert fl2[0] == "forceload remove 0 0 16000 16000" and len(fl2) > 1
+    assert not any("remove all" in c for c in fl2), "no remove-all in folded forceload"
+    print("ok: oversize forceload auto-folds into", len(fl2), "commands (scoped remove)")
 
     # ── melody-cut plan: relative + absolute + assertion + polyphony WARN ─────
     # two melody cells, sparse -> clean cut

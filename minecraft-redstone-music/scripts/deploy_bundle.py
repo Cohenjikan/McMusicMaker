@@ -143,6 +143,25 @@ Write-Host "  世界      : $World"
 Write-Host "  profile   : $Profile"
 Write-Host ''
 
+# ---- 醒目警告: 游戏正在运行时改 options.txt 会在退出时被游戏覆盖 -> 资源包白启用 ----
+# 只有装资源包这一步会写 options.txt; 但 datapack 也建议关游戏后再 /reload, 所以只要检测到
+# 就统一警告。检测 Minecraft 客户端进程(javaw/java, 命令行含 minecraft)。检测不到就当没开。
+if ($HasRp) {
+    try {
+        $mcProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and ($_.CommandLine -match 'minecraft' -or $_.CommandLine -match 'net\.minecraft') }
+        if ($mcProcs) {
+            Write-Host '######################################################################'
+            Write-Host '  ⚠ 检测到 Minecraft 似乎正在运行！'
+            Write-Host '    本安装器会修改 options.txt 来启用资源包，但【游戏退出时会用内存里的'
+            Write-Host '    旧设置覆盖 options.txt】，你这次的启用就白做了、资源包不会生效。'
+            Write-Host '    >>> 请先【完全退出 Minecraft】(回到启动器/关掉游戏窗口)，再重跑本安装器。<<<'
+            Write-Host '######################################################################'
+            Write-Host ''
+        }
+    } catch { }   # 检测失败不阻断安装, 只是没警告
+}
+
 $copied = @()
 
 function Copy-Tree($src, $dst) {
@@ -336,6 +355,10 @@ def _readme_source(*, ns, world_datapacks_dir, profile_dir):
         "  你用的 AI 工具（Trae 等）跑在沙箱里，它写 C:\\Minecraft 会被悄悄改写到一个\n"
         "  镜像目录，游戏根本读不到。所以真正的“装进游戏”这一步，必须由【你本人】在\n"
         "  沙箱之外的 Windows 上执行。\n\n"
+        "⚠ 先决条件：双击前请【完全退出 Minecraft】\n"
+        "  本安装器会改 options.txt 来启用资源包；如果游戏还开着，退出时它会用内存里的\n"
+        "  旧设置覆盖 options.txt，你这次的资源包启用就白做了、进游戏发现没生效。所以务必\n"
+        "  先回到启动器/关掉游戏窗口，再双击下面的安装器。\n\n"
         "怎么做（就一步）：\n"
         f"  1. 在【Windows 资源管理器】里，双击本文件夹里的  {BAT_NAME}\n"
         "     （不要让 AI 帮你运行它——必须你自己双击）。\n"

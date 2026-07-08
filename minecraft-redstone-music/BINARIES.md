@@ -193,10 +193,12 @@ of **three** ways (the third is the zero-download demo):
 #### Two-tier demo (honest expectations)
 
 - **tier 0 — zero extra deps, just build the machine:** `prepare_all.py ... --skip-resourcepack`
-  builds `dist/` with **no resourcepack**. Be honest about what you'll hear: with no matching
-  `qzpno_mv.zip` enabled in-game you get **vanilla note-block tones, or silence** (if the mod
-  rewrote the sound event to a `qzpno:` id that the world can't resolve) — **not** the sampled
-  instruments. Use this only to confirm the datapack/machine builds.
+  builds `dist/` with **no resourcepack**. Be honest about what you'll hear, and note it depends on
+  whether the **RedPiano mod** is installed: **with the mod** (the normal case) the note blocks are
+  **totally silent** — the mixin cancels the vanilla sound and asks for a `qzpno:` id that has no
+  `.ogg` behind it without the pack; **without the mod** you get **vanilla note-block tones**. Either
+  way it is **not** the sampled instruments, and it never "falls back to vanilla as a graceful
+  degrade" once the mod is in. Use this only to confirm the datapack/machine builds.
 - **tier 1 — open-source samples (recommended demo):** the `make_demo_samples.py` path above —
   `pip install -r requirements-demo.txt` then the three-step chain — gives you an actual **`qzpno_mv.zip`
   full of 103 synthesized voices**, so the mod finds every `qzpno:<id>` and the machine plays a real

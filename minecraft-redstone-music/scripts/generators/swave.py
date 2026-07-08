@@ -243,6 +243,23 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     PATH_ZSPAN = PATH_ZMAX - PATH_ZMIN + 1 if path_z else 1
     TRACK_SEP = (int(track_sep_override) if track_sep_override is not None
                  else PATH_ZSPAN + 3)
+
+    # dual-track geometric self-check: with a Z-mirrored second track, the two tracks'
+    # note-block bands each span PATH_ZSPAN in Z; if TRACK_SEP < PATH_ZSPAN+3 the bands
+    # (plus their above/side note blocks) overlap and Grid.put raises a RAW collision at
+    # cryptic coords. Catch it here with a human-readable message BEFORE any setblock.
+    # The derive default (track_sep_override is None -> PATH_ZSPAN+3) is always safe, so
+    # this only fires on an explicit, too-small designer/params override.
+    SAFE_TRACK_SEP = PATH_ZSPAN + 3
+    if dual_track and n_tracks > 1 and track_sep_override is not None \
+            and TRACK_SEP < SAFE_TRACK_SEP:
+        raise RedPianoError(
+            f"track_sep={TRACK_SEP} is too small for this song: the dual mirror tracks "
+            f"each span {PATH_ZSPAN} blocks in Z, so they need at least "
+            f"track_sep={SAFE_TRACK_SEP} to not collide. Raise track_sep to "
+            f">= {SAFE_TRACK_SEP}, or delete track_sep from params to let the program "
+            f"auto-derive the safe value (PATH_ZSPAN+3).")
+
     TRACK_Z = [OZ + i * TRACK_SEP for i in range(n_tracks)]
 
     # Playhead coords for the particle editor: the track-0 melody note block (chord3's
@@ -388,10 +405,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                        f"scoreboard players set BLD {ns} -1",
                        f"scoreboard players set CLR {ns} -1"]
                       + RESET
-                      + ["forceload remove all",
+                      + [core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
                          "scoreboard objectives add rpcfg dummy",
-                         "scoreboard players set poly rpcfg 1",
-                         "scoreboard players set human rpcfg 1"]
+                         f"scoreboard players set poly_{ns} rpcfg 1",
+                         f"scoreboard players set human_{ns} rpcfg 1"]
                       + SCHED_CLEAR
                       + TRIG_CLEAR
                       + [f'tellraw @a ["",{{"text":"[{ns}] {name} multi-instr mirror '
@@ -502,7 +519,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                           f"fill {fx0} {Y - 2} {WZ0} {fx1} {Y + 3} {WZ1} air")
     dp.write_function(
         "cleardone",
-        [f"scoreboard players set CLR {ns} -1", "forceload remove all",
+        [f"scoreboard players set CLR {ns} -1",
+         core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
          f'tellraw @a "[{ns}] cleaned."'])
     cs = [f"execute if score CLR {ns} matches {k} run function {ns}:clr/c{k}"
           for k in range(clr_segs)]
@@ -522,18 +540,18 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     dp.write_function(
         "cfg/polytoggle",
-        ["scoreboard players set rptmp rpcfg 1",
-         "scoreboard players operation rptmp rpcfg -= poly rpcfg",
-         "scoreboard players operation poly rpcfg = rptmp rpcfg",
-         f'execute if score poly rpcfg matches 1 run tellraw @a "[{ns}] poly gain ON"',
-         f'execute if score poly rpcfg matches 0 run tellraw @a "[{ns}] poly gain OFF"'])
+        [f"scoreboard players set rptmp_{ns} rpcfg 1",
+         f"scoreboard players operation rptmp_{ns} rpcfg -= poly_{ns} rpcfg",
+         f"scoreboard players operation poly_{ns} rpcfg = rptmp_{ns} rpcfg",
+         f'execute if score poly_{ns} rpcfg matches 1 run tellraw @a "[{ns}] poly gain ON"',
+         f'execute if score poly_{ns} rpcfg matches 0 run tellraw @a "[{ns}] poly gain OFF"'])
     dp.write_function(
         "cfg/humantoggle",
-        ["scoreboard players set rptmp rpcfg 1",
-         "scoreboard players operation rptmp rpcfg -= human rpcfg",
-         "scoreboard players operation human rpcfg = rptmp rpcfg",
-         f'execute if score human rpcfg matches 1 run tellraw @a "[{ns}] humanize ON"',
-         f'execute if score human rpcfg matches 0 run tellraw @a "[{ns}] humanize OFF"'])
+        [f"scoreboard players set rptmp_{ns} rpcfg 1",
+         f"scoreboard players operation rptmp_{ns} rpcfg -= human_{ns} rpcfg",
+         f"scoreboard players operation human_{ns} rpcfg = rptmp_{ns} rpcfg",
+         f'execute if score human_{ns} rpcfg matches 1 run tellraw @a "[{ns}] humanize ON"',
+         f'execute if score human_{ns} rpcfg matches 0 run tellraw @a "[{ns}] humanize OFF"'])
 
     # ── 8. deploy is OPT-IN (only when deploy_dir given) ───────────────────────
     deployed_to = None
@@ -546,8 +564,18 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     nplaced = sum(len(trackvoice[t][p]) for t in range(n_tracks) for p in range(3))
     song_s = (trig[-1] - trig[0]) * U if len(trig) > 1 else 0.0
 
-    for w in plan.warnings:
-        pass  # already logged by plan_melody_cuts
+    # dropped notes MUST surface in the WARNINGS block (not just the stat field) so the
+    # user sees them — >10% of placed notes uses a strong prefix. (plan.warnings already
+    # carries melody-cut warnings; drop warning goes FIRST so it is most visible.)
+    warnings = list(plan.warnings)
+    if dropped > 0:
+        total = nplaced + dropped
+        pct = (100.0 * dropped / total) if total else 0.0
+        pfx = "!! " if pct > 10.0 else ""
+        warnings.insert(
+            0,
+            f"{pfx}dropped {dropped} note(s) ({pct:.0f}% of {total}) — over per-cell "
+            f"polyphony cap {CELL_CAP} (raise --dual-track / fewer simultaneous notes)")
 
     stats = {
         "form": form,
@@ -569,7 +597,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "cut_events": len(cut_events_sorted),
         "median_cut_gt": plan.median_delay_gt,
         "instr_distribution": dict(instr_count),
-        "warnings": list(plan.warnings),
+        "warnings": warnings,
         "out_dir": dp.root,
         "deployed_to": deployed_to,
         # single-source-of-truth playhead for the particle editor (track-0 melody notes)

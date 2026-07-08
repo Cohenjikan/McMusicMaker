@@ -415,6 +415,24 @@ def check_reminders():
                  "(/reload is not enough).")
 
 
+def _sample_playsound_event():
+    """Pick one REAL qzpno: sound-event id from the canonical map so the all-green verdict
+    can hand the user a copy-paste in-game声测命令 (/playsound <id> master @s). Prefer a
+    piano mf voice (loud, unmistakable); fall back to any id, then to a hardcoded default
+    if the map can't be loaded (never crash the report over a nicety)."""
+    try:
+        imap = core.InstrumentMap.load()
+    except Exception:
+        return "qzpno:pno_c4_mf"
+    ids = []
+    for inst in imap.instruments.values():
+        ids.extend(inst.get("sound", {}).values())
+    for pref in ("qzpno:pno_c4_mf", "qzpno:pno_c4_f", "qzpno:pno_a4_mf"):
+        if pref in ids:
+            return pref
+    return ids[0] if ids else "qzpno:pno_c4_mf"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # driver
 # ─────────────────────────────────────────────────────────────────────────────
@@ -478,7 +496,11 @@ def print_report(dist_dir, checks, ns_info, mc_info, profile_dir, world_dir):
             print(f"  VERDICT: 已查项全部通过，但有 {n_skip} 项 SKIP（缺参数没查全）— "
                   f"补上 --profile-dir/--world-dir/--mc-version 再体检一次才算彻底。")
         else:
+            ev = _sample_playsound_event()
             print("  VERDICT: 全部通过。若仍没声音，先确认已手动 /tick rate 80 且资源包在右侧已选用。")
+            print(f"           一键验声(进游戏敲): /playsound {ev} master @s ~ ~ ~ 1 1")
+            print(f"             听到钢琴音=资源包生效; 报 \"Unknown sound event: {ev}\" 或没声"
+                  f"=包没启用/格式不符(回到 check ②③)。")
     else:
         print(f"  VERDICT: 第 {first_bad.num} 项失败 — {first_bad.title}。先修这一项"
               f"（见其 → 行），再重跑本体检。")
@@ -599,6 +621,10 @@ def _selftest():
         assert "1. ✓" in out and "5. ✓" in out, out
         # ns inferred from receipt (no --ns passed)
         assert ns in out, out
+        # all-green must hand the user a REAL qzpno: playsound self-test (a live id from the map)
+        assert "/playsound qzpno:" in out, out
+        _ev = _sample_playsound_event()
+        assert _ev in out and _ev.startswith("qzpno:"), (_ev, out)
 
         # ── ✗ case A: NO receipt (delete it) -> check ① BAD, exit 1 ───────────
         distA = os.path.join(root, "distA")

@@ -171,6 +171,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     P = len(order)
     NB = len(beats)
+    # dropped notes MUST surface in WARNINGS (not just the stat field); >10% -> strong prefix.
+    if dropped > 0:
+        placed = sum(len(idxs) for _, idxs in beats)
+        total = placed + dropped
+        pct = (100.0 * dropped / total) if total else 0.0
+        pfx = "!! " if pct > 10.0 else ""
+        dmsg = (f"{pfx}dropped {dropped} note(s) ({pct:.0f}% of {total}) — over per-cell "
+                f"polyphony cap {VOICES} (reduce simultaneous notes)")
+        warnings.insert(0, dmsg)
+        log.warning(dmsg)
     if octave_shifted:
         msg = f"{octave_shifted} notes octave-shifted to fit sample range"
         warnings.append(msg)
@@ -305,11 +315,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     batches = core.batch_setblocks(build_cmds, batch=2000)
     RESET = core.scoreboard_reset(ns)
 
-    dp.write_function("load", core.build_load_fn(ns, name, extra_objectives=True))
+    # load runs on every /reload -> the forceload remove MUST be scoped to THIS machine's
+    # bbox (never 'remove all', which would撤销 a co-existing song's forceload).
+    dp.write_function("load", core.build_load_fn(
+        ns, name, extra_objectives=True, remove_region=(WX0, WZ0, WX1, WZ1)))
 
     dp.write_function(
         "setup",
-        RESET + ["gamemode creative @a", SSTOP, "forceload remove all"]
+        # flbuild already leads with a SCOPED 'forceload remove <bbox>' (never remove all),
+        # so no separate remove is needed here.
+        RESET + ["gamemode creative @a", SSTOP]
         + flbuild
         + [f"tp @a {PBX} {Y + 3} {OZ}",
            f"scoreboard players set BLD {ns} 0",
@@ -366,18 +381,18 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     dp.write_function("stop", stop_lines)
 
     dp.write_function("cfg/polytoggle", [
-        "scoreboard players set rptmp rpcfg 1",
-        "scoreboard players operation rptmp rpcfg -= poly rpcfg",
-        "scoreboard players operation poly rpcfg = rptmp rpcfg",
-        f'execute if score poly rpcfg matches 1 run tellraw @a "[{ns}] 复音增益 ON"',
-        f'execute if score poly rpcfg matches 0 run tellraw @a "[{ns}] 复音增益 OFF"',
+        f"scoreboard players set rptmp_{ns} rpcfg 1",
+        f"scoreboard players operation rptmp_{ns} rpcfg -= poly_{ns} rpcfg",
+        f"scoreboard players operation poly_{ns} rpcfg = rptmp_{ns} rpcfg",
+        f'execute if score poly_{ns} rpcfg matches 1 run tellraw @a "[{ns}] 复音增益 ON"',
+        f'execute if score poly_{ns} rpcfg matches 0 run tellraw @a "[{ns}] 复音增益 OFF"',
     ])
     dp.write_function("cfg/humantoggle", [
-        "scoreboard players set rptmp rpcfg 1",
-        "scoreboard players operation rptmp rpcfg -= human rpcfg",
-        "scoreboard players operation human rpcfg = rptmp rpcfg",
-        f'execute if score human rpcfg matches 1 run tellraw @a "[{ns}] 微抖动 ON"',
-        f'execute if score human rpcfg matches 0 run tellraw @a "[{ns}] 微抖动 OFF"',
+        f"scoreboard players set rptmp_{ns} rpcfg 1",
+        f"scoreboard players operation rptmp_{ns} rpcfg -= human_{ns} rpcfg",
+        f"scoreboard players operation human_{ns} rpcfg = rptmp_{ns} rpcfg",
+        f'execute if score human_{ns} rpcfg matches 1 run tellraw @a "[{ns}] 微抖动 ON"',
+        f'execute if score human_{ns} rpcfg matches 0 run tellraw @a "[{ns}] 微抖动 OFF"',
     ])
 
     cleanup_lines = (["gamerule commandModificationBlockLimit 2147483647"]
@@ -386,7 +401,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     if multi:
         cleanup_lines.append(f"schedule clear {ns}:cutmel")
     cleanup_lines += [f"fill {WX0} {Y - 2} {WZ0} {WX1} {Y + 1} {WZ1} air",
-                      "forceload remove all",
+                      core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
                       f'tellraw @a "[{ns}] cleaned up。"']
     dp.write_function("cleanup", cleanup_lines)
 

@@ -38,7 +38,7 @@ Columns:
 | **inplace-multi** | **yes** — per-note GM family via `imap.family_for`/`imap.resolve` | **yes** — `plan_melody_cuts(absolute=False)`, relative `cutmel` schedule append | yes; **set `multi:true` in params JSON to select** | ✅ **yes** — user "特别好" (《七里香》 `qlxm`, oracle poc/46); functionally complete but tested in-game fewer times than `swave` | `scripts/generators/inplace.py` (`multi=True`) | **production (v1)** |
 | **swave** (marching-pulse mirror S-wave) | **yes** — per-note GM family; dual-track Z-mirror + greedy L/R balance | **yes** — `plan_melody_cuts(absolute=True)`, absolute `cutmel` schedule append at `(T0+OFFSET)*2 + d` | yes (`XRUN`/`ZMAX`/`base_block`/`dual_track_mirror`/`track_sep` consumed) | ✅ **yes — tested in-game multiple times and confirmed working** (《七里香》 `qlxs`, melody-cut timing confirmed by ear across repeated sessions) | `scripts/generators/swave.py` (oracle poc/48) | **production (v1)** |
 | **straight** (long +X marching line) | **yes** | **yes** | yes (marching-family fields) | not separately listened (shares the swave pipeline) | `scripts/generators/swave.py` (`form=straight`) | **production (v1)** — degenerate swave; biggest footprint |
-| **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | geometry-confirmed (collision + timeline self-checks pass; repeater facings N/S/E/W exercised); ear-confirm pending | `scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
+| **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | **partially verified** — collision + timeline self-checks pass and repeater facings N/S/E/W are exercised, but the specific case of a **turn cell coinciding with a wide-side (radiate) chord** has not been verified: the `chord3` side blocks fan out perpendicular to the pulse direction, and at a turn the direction changes, so a dense chord landing exactly on a bend could in principle collide (rare, but possible — the `Grid.put` guard will catch it as a hard error rather than build silently). Ear-confirm also pending. | `scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
 | _lab origin: poc/47_ | yes | no (lab build predates the cut) | argv-driven | its custom-path geometry was verified, then lifted into `swave.py` | `scripts/generators/_experimental/47_build_custom.py` | **[superseded]** — `form=custom` is now v1 via `swave.py`; standalone copy kept for reference |
 | **multilane** (one parallel lane per voice) | **yes** | **yes** (poc/49 absolute cut) | yes (`chord_mode=multilane`, `max_poly`, `lane_dz`, `lane_offsets`, `signal_tracks` full 3D {dx,dy,dz}; all 4 cardinals) | geometry confirmed in-game (`olkml`); ear-confirm pending | `scripts/generators/multilane.py` (`form=multilane`, promoted from poc/49) | **production (v1)** — **soft footprint cap**: over it pass `--force-cap` to build anyway (a straight machine can't plane-fold, but it is **not** a guaranteed audio drop — tested fine at ~428 chunks; use swave for a smaller footprint). Distinct parallel-lane topology |
 | _lab origin: poc/49_ | yes | yes | argv-driven | verified `olkml` | `scripts/generators/_experimental/49_build_multilane.py` | **[superseded]** — promoted into `generators/multilane.py` |
@@ -215,3 +215,21 @@ table marks some cells "no" and some "experimental".
    remains experimental), are not verified end-to-end through the skill, and may consume the
    raw lab argv interface rather than the validated params dict. Use `inplace.py` /
    `swave.py` for v1.
+
+7. **Practical song-length ceilings (empirical, footprint-driven).** These are *rough
+   guidance*, not hard limits — the actual gate is the forceload soft cap (360 chunks,
+   `--force-cap` to override) and in-world server load, both of which scale with the machine's
+   footprint, which scales with song length. As a working rule of thumb:
+   - **swave** (folded mirror S-wave): comfortable up to **≲ 6 min** — the plane-fold keeps the
+     footprint compact, so it takes the longest songs of any marching form.
+   - **multilane** (one straight lane per voice): comfortable up to **≲ 4 min** — it is a
+     straight machine that **cannot** plane-fold, so its footprint grows faster in X; longer
+     songs push past the soft cap (tested fine at ~428 chunks with `--force-cap`, but that is
+     the ceiling, not a target). Use swave for a smaller footprint on long songs.
+   - **inplace** (in-place palette): **essentially length-independent** — the palette is a
+     fixed grid of distinct note blocks re-triggered in place, so a longer song adds schedule
+     entries, not blocks. Footprint stays ~constant (a few chunks) regardless of duration.
+   `straight` shares the swave pipeline but has the biggest footprint (no fold) so it hits the
+   cap soonest; `custom` depends entirely on the drawn route length. All of these are
+   dominated by simultaneous-note density (polyphony drops) and forceload chunks — the build
+   report prints both, and the forceload guard hard-fails past the soft cap unless `--force-cap`.

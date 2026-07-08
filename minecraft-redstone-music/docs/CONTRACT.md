@@ -116,7 +116,7 @@ geometry, so these take the geometry-dependent pieces as arguments:
 def scoreboard_reset(ns: str) -> list[str]
     # ['scoreboard players set PLAY <ns> 0', 'scoreboard players set LOOP <ns> 0']  (poc/45 L170)
 def build_load_fn(ns, name, extra_objectives=True) -> list[str]
-    # objectives add, BLD=-1, RESET, rpcfg poly/human=1, forceload remove all, schedule clear done, tellraw  (poc/45 L171-174)
+    # objectives add, BLD=-1, RESET, rpcfg poly/human=1, scoped forceload remove <bbox>, schedule clear done, tellraw  (poc/45 L171-174)
 def build_tick_dispatch(ns, n_batches) -> list[str]
     # the BLD-counter build driver (poc/45 L177-180)
 def batch_setblocks(setblock_lines: list[str], batch=2000) -> list[list[str]]
@@ -179,7 +179,8 @@ def forceload_add_region(x0, z0, x1, z1) -> str
     # single 'forceload add x0 z0 x1 z1'
 def forceload_split(x0, z0, x1, z1, max_chunks_per_cmd=...) -> list[str]
     # poc/48 L383-388: walk X in xstep*16 strides so each 'forceload add' stays small,
-    # because one forceload command is itself chunk-limited. Returns ['forceload remove all', add...].
+    # because one forceload command is itself chunk-limited. Returns ['forceload remove <bbox>', add...]
+    # (a SCOPED remove of just this machine's region — never 'remove all').
 def forceload_guard(x0, z0, x1, z1, *, auto_fold=False) -> list[str]
 ```
 - Computes `chunks = ((x1//16)-(x0//16)+1) * ((z1//16)-(z0//16)+1)` (poc/48 L559 fold_chunks formula).
@@ -331,7 +332,7 @@ def assert_build_supported(profile: VersionProfile) -> None
 SCHEMA_VERSION = 1
 ```
 
-### 2.1 Field table (full designer export, from `poc/layout_designer.html` L373-387)
+### 2.1 Field table (full designer export, from `designer/layout_designer.html` — the `updateUI` export builder)
 
 `consumed-by` = which generator reads it. `none-yet` = exported by designer but **no generator
 implements it** → if SET to a non-default, `load_params` MUST raise (§2.3).
@@ -360,7 +361,7 @@ implements it** → if SET to a non-default, `load_params` MUST raise (§2.3).
 | `line_width_radiate` | int | optional | `3` | none-yet | radiate chord width; poc fixes 3-wide (above+2 sides). **width≠3 unimplemented** |
 | `fold_gap` | int | optional | `1` | none-yet | plane-fold gap; **not wired in swave/straight/custom** |
 | `dual_track_mirror` | bool | optional | `true` | swave | second track mirror (poc/48 always 2-track mirror) |
-| `track_sep` | int | optional | `3` (derived `PATH_ZSPAN+3`) | swave | inter-track Z separation |
+| `track_sep` | int | optional | omit → backend derives `PATH_ZSPAN+3` (recommended) | swave | inter-track Z separation. **Do NOT ship a literal `3`** — with `dual_track_mirror` the safe minimum is the song-dependent `PATH_ZSPAN+3`, so a fixed `3` collides. Omit the field (designer omits it unless the user manually overrides SEP) and the backend derives the safe value; an explicit override below `PATH_ZSPAN+3` is rejected with a "needs at least N" error, never a raw collision. |
 | `chord_mode` | enum `radiate\|multilane` | optional | `radiate` | swave (radiate) / multilane | `multilane` selects the **multilane form**; rejected on swave/straight/custom (§2.3) |
 | `max_poly` | int | optional | `7` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |
 | `lane_dz` | int | optional | `2` | multilane | consumed by `--form multilane`; rejected on swave/straight/custom |

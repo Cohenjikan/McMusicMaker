@@ -325,15 +325,84 @@ def _read_resourcepack_format(zip_path):
     )
 
 
+def _expected_sound_ids():
+    """The 103 canonical `qzpno:<id>` sound-event ids the RedPiano mod plays — read
+    from the single source of truth (assets/redpiano_map_multi.json, same file the mod's
+    RedPianoMap.java mirrors). Returns a set like {'qzpno:pno_c4_mf', ...}. A supplied
+    --prebuilt-rp whose sounds.json omits any of these leaves those note blocks SILENT
+    in-game (the mixin cancels the vanilla sound and asks for the missing qzpno: event),
+    so the resourcepack check compares against this set."""
+    from redpiano_core import InstrumentMap  # local import: keep module import cheap
+    imap = InstrumentMap.load()
+    ids = set()
+    for inst in imap.instruments.values():
+        for sid in inst.get("sound", {}).values():
+            ids.add(sid)
+    return ids
+
+
+def _resourcepack_event_ids(zip_path):
+    """Read the qzpno sound-event ids DEFINED by a resourcepack zip (its
+    assets/qzpno/sounds.json keys, namespaced as qzpno:<key>). Returns a set, or None
+    if the zip has no readable sounds.json (older/foreign layout — we then skip the
+    coverage warning rather than mis-report every id as missing)."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            names = {n.replace("\\", "/") for n in z.namelist()}
+            target = "assets/qzpno/sounds.json"
+            if target not in names:
+                return None
+            data = json.loads(z.read(target).decode("utf-8"))
+    except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {f"qzpno:{k}" for k in data.keys()}
+
+
+def _warn_missing_events(src):
+    """Compare a prebuilt pack's sounds.json against the 103 canonical ids and print a
+    [warn] listing any missing ones (missing => those blocks are silent in-game). Never
+    raises: a partial-but-format-correct pack is still installable (some voices silent),
+    so this is a warning, not a hard error. Returns the count of missing ids (0 = full)."""
+    try:
+        expected = _expected_sound_ids()
+    except RedPianoError:
+        return 0  # can't load the canonical map (shouldn't happen) — don't block install
+    have = _resourcepack_event_ids(src)
+    if have is None:
+        print("  [warn] 无法读取该资源包的 assets/qzpno/sounds.json — 跳过音效覆盖检查"
+              "（若装了 RedPiano 模组却听不到某些音，多半是这个包缺 qzpno: 音效）。")
+        return 0
+    missing = sorted(expected - have)
+    if missing:
+        shown = ", ".join(missing[:8]) + (" ..." if len(missing) > 8 else "")
+        print(f"  [warn] 该资源包缺少 {len(missing)}/{len(expected)} 个 qzpno: 音效事件"
+              f"（这些音符盒在游戏里会【静音】，不会退回原版音色）: {shown}")
+        print("         想要完整音色: 用 build_resourcepack.py --samples-root <全套采样> 重打包，"
+              "或 python scripts/make_demo_samples.py 造一套开放 demo 音源。")
+    return len(missing)
+
+
 def _copy_prebuilt_resourcepack(src, out_zip, profile):
     lo, hi = _read_resourcepack_format(src)
     if not (lo <= profile.rp_format <= hi):
         actual = str(lo) if lo == hi else f"{lo}..{hi}"
         raise RedPianoError(
-            f"prebuilt resourcepack {src} has rp format {actual}, but MC "
-            f"{profile.mc_version} needs rp {profile.rp_format}; rebuild it with "
-            f"build_resourcepack.py --mc-version {profile.mc_version}"
+            f"这个资源包是格式 {actual}，但 MC {profile.mc_version} 需要 rp 格式 "
+            f"{profile.rp_format} —— 格式不符 MC 会【静默禁用】整个包，导致全静音。\n"
+            f"  修法(任选其一):\n"
+            f"    1) 用它换版本重打包(不用采样文件夹): python scripts/build_resourcepack.py "
+            f"--from-zip \"{src}\" --mc-version {profile.mc_version} --out <derived.zip>，再把 "
+            f"<derived.zip> 作为 --prebuilt-rp 传进来;\n"
+            f"    2) 若手头有全套采样文件夹，直接为本版本重建: python scripts/build_resourcepack.py "
+            f"--mc-version {profile.mc_version} --samples-root <采样目录>。\n"
+            f"  (prebuilt resourcepack {src} has rp format {actual}, MC {profile.mc_version} "
+            f"needs rp {profile.rp_format}.)"
         )
+    # Format is OK (MC will load it). Now warn — not fail — if it does not carry all 103
+    # qzpno: events: a subset pack installs fine but leaves the uncovered blocks silent.
+    _warn_missing_events(src)
     os.makedirs(os.path.dirname(out_zip) or ".", exist_ok=True)
     if os.path.abspath(os.path.normpath(src)) != os.path.abspath(os.path.normpath(out_zip)):
         shutil.copy2(src, out_zip)
@@ -389,8 +458,11 @@ def _run_main(argv=None):
     p.add_argument("--prebuilt-rp", default=None, dest="prebuilt_rp",
                    help="existing qzpno_mv.zip to copy instead of rebuilding from samples.")
     p.add_argument("--skip-resourcepack", action="store_true", dest="skip_resourcepack",
-                   help="explicitly skip the resourcepack step. Use only when you have "
-                        "already installed and enabled a matching qzpno_mv.zip.")
+                   help="explicitly skip the resourcepack step. Consequence: with the RedPiano "
+                        "mod installed, note blocks go COMPLETELY SILENT (the mod remaps sound to "
+                        "a qzpno: custom event with no resourcepack to back it); without the mod, "
+                        "you get vanilla note-block timbres. Only use this if the target profile "
+                        "already has a matching qzpno_mv.zip installed and enabled.")
     p.add_argument("--rp-out", default=DEFAULT_RP_OUT, dest="rp_out",
                    help="LEGACY / compat only. The resourcepack is always staged into the "
                         "workspace dist/ (as qzpno_mv.zip) for the native DEPLOY_TO_GAME.bat; "
@@ -441,6 +513,19 @@ def _run_main(argv=None):
         assert_build_supported(profile)
     except RedPianoError as e:
         sys.stderr.write(f"error: {e}\n")
+        return 2
+
+    # fail fast when --world-dir clearly points at the save/world folder itself
+    # instead of saves/<world>/datapacks underneath it — it is REQUIRED here and
+    # gets baked straight into the generated DEPLOY_TO_GAME.bat, so a wrong folder
+    # silently corrupts the whole install path.
+    _world_base = os.path.basename(os.path.normpath(args.world_dir))
+    if _world_base.lower() != "datapacks":
+        sys.stderr.write(
+            f"error: --world-dir '{args.world_dir}' 看起来指到了存档目录本身，--world-dir "
+            f"必须指到 saves/<世界>/datapacks 这一层 (got a folder named '{_world_base}', "
+            f"expected 'datapacks')\n"
+        )
         return 2
 
     # Resolve resourcepack intent before doing any work. Silent skips were the
@@ -541,7 +626,7 @@ def _run_main(argv=None):
     dp_argv = [py, os.path.join(here, "build_machine.py"),
                "--midi", args.midi, "--form", args.form, "--ns", args.ns,
                "--origin", str(args.origin[0]), str(args.origin[1]), str(args.origin[2]),
-               "--mc-version", args.mc_version, "--out", args.out]
+               "--mc-version", args.mc_version, "--out", args.out, "--staged-run"]
     if args.params:
         dp_argv += ["--params", args.params]
     if args.force_cap:
@@ -574,8 +659,10 @@ def _run_main(argv=None):
         rp_zip = rp_stage
     else:
         print("\n" + "-" * 64)
-        print("  STEP: resourcepack SKIPPED (--skip-resourcepack). No qzpno_mv.zip staged;")
-        print("        the machine will fall back to vanilla note-block tones or silence.")
+        print("  STEP: resourcepack SKIPPED (--skip-resourcepack). No qzpno_mv.zip staged.")
+        print("        诚实后果: 装了 RedPiano 模组时，音符盒会【彻底静音】(模组把声音改成")
+        print("        qzpno: 自定义事件，没有资源包=无音效); 只有【不装模组】时才是原版音色。")
+        print("        仅当目标 profile 里已装好并启用了匹配的 qzpno_mv.zip 时才用本开关。")
         print("-" * 64)
 
     # 3. MOD BUILD-CONFIG (only meaningful if the mod source is present).

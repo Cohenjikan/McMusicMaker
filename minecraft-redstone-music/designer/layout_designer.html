@@ -253,6 +253,9 @@ let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347
        // 播放方法: 'redpiano'(真音符盒重演, 需MIDI+模组) | 'slice'(命令方块切片, 需MP3, 无模组)
        method:'redpiano', audio_file:null, audio_duration:0};
 let waypoints=null, drag=null, selWp=null, history=[], dragSnap=null, pan=null, viewInit=false;
+// 用户是否手动改过双轨间距 SEP。false=沿用后端按歌推导(PATH_ZSPAN+3, 安全)→导出时不写 track_sep;
+// true=用户执意用自定值→导出该值, 并在校验区提示按当前 MIDI 估算的安全下限。
+let sepTouched=false;
 let view={s:1,ox:0,oy:0};
 let synth=null, midiTimeline=null, playCell=null, songName='';   // ⓪ MIDI 实时播放 + 路线光标
 const PX=x=>view.ox+x*view.s, PZ=z=>view.oy+z*view.s;
@@ -400,7 +403,15 @@ function verdict(m){const out=[];
   if(S.form==='swave'){const need=S.rad*2+S.gap+1;
     if(S.zmax<need)out.push(['bad',`ZMAX=${S.zmax} 太小:折间距 < 线宽×2+gap+1=${need} → 音符列重叠/串扰(破坏音乐)`]);}
   if(m.short)out.push(['bad',`自定义路径太短,缺 ${m.short} 个 cell → 加路点拉长路径`]);
-  if(S.dual&&S.sep<S.rad*2+1)out.push(['warn',`双轨间距 SEP=${S.sep} 偏小,两轨音符列可能贴太近`]);
+  // 双轨安全下限 ≈ 本曲脊柱 Z 宽(PATH_ZSPAN) + 3, 与后端 swave.py 的推导/拒收阈值一致
+  // (track_sep < PATH_ZSPAN+3 时后端硬失败)。此处 m.Zband=zmax-zmin+1 即脊柱 Z 宽, 为估算值:
+  // 后端按实际 pos+turns 精确计算, 可能相差 1~2。只在用户手动接管 SEP 时校验/提示;
+  // 没动过则不导出 track_sep, 由后端自动取安全值(不提示误导下限)。
+  if(S.dual){const safeSep=m.Zband+3;
+    if(sepTouched){
+      if(S.sep<safeSep)out.push(['bad',`双轨间距 SEP=${S.sep} < 本曲安全下限 ≈${safeSep}(=脊柱Z宽${m.Zband}+3) → 两轨会撞车。删掉 SEP 交后端自动推导, 或调到 ≥${safeSep}`]);
+      else out.push(['ok',`✓ 双轨间距 SEP=${S.sep} ≥ 安全下限 ≈${safeSep}(手动值; 后端按精确几何最终校验)`]);
+    }else out.push(['ok',`✓ 双轨间距未手动指定 → 导出时省略 track_sep, 后端按本曲自动取安全值(≈${safeSep})`]);}
   if(m.fl>360)out.push(['warn',`forceload ≈ ${m.fl} 区块偏大可能过载;紧凑(≤~210)更稳`]);
   if(!out.length)out.push(['ok','✓ 形状合法:容得下整曲、折间距足够、不破坏音乐']);
   return out;}
@@ -420,8 +431,11 @@ function updateUI(m){
             start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,signal_tracks:null,...aud,  // signal_tracks 仅 multilane 消费, inplace 恒 null(否则后端硬失败)
             result:{X_span:m.Xspan,Z_width:m.Zwidth,grid:`${m.cols}x${m.rows}`,forceload_chunks:m.fl}};
   else{const isML=S.chord_mode==='multilane';
+       // track_sep: 用户没动过 SEP 滑块时 **不导出**(后端按歌推导 PATH_ZSPAN+3, 真正的安全值);
+       // 只有用户手动接管才写他的值。死值 3 曾必炸 dual_track_mirror collision, 故不再无条件导出。
+       const sepFld=(!isML&&sepTouched)?{track_sep:S.sep}:{};
        P={schema_version:SCHEMA_VERSION,song:songName,form:isML?'multilane':S.form,method:S.method,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
-          line_width_radiate:3,fold_gap:1,dual_track_mirror:S.dual,track_sep:S.sep,base_block:S.base,  // 线宽/gap 未接入任何形态(none-yet), 恒写默认 3/1 否则后端拒收
+          line_width_radiate:3,fold_gap:1,dual_track_mirror:S.dual,...sepFld,base_block:S.base,  // 线宽/gap 未接入任何形态(none-yet), 恒写默认 3/1 否则后端拒收
           start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,
           chord_mode:S.chord_mode,...(isML?ml:{}),signal_tracks:isML?sig:null,...aud,
           result:{X_span:m.Xspan,Z_width:m.Zwidth,compression:+m.comp.toFixed(2),turns:m.turns,forceload_chunks:m.fl},
@@ -436,6 +450,8 @@ function updateUI(m){
 function bindRange(r,n,key){const set=v=>{S[key]=+v;r.value=v;n.value=v;render();};r.oninput=()=>set(r.value);n.oninput=()=>set(n.value);}
 bindRange($('xrun'),$('xrunN'),'xrun');bindRange($('zmax'),$('zmaxN'),'zmax');
 bindRange($('rad'),$('radN'),'rad');bindRange($('gap'),$('gapN'),'gap');bindRange($('sep'),$('sepN'),'sep');
+// 用户一旦动 SEP 滑块/数字框, 即视为手动接管 → 导出该值(否则不导出, 让后端推导)。
+['sep','sepN'].forEach(id=>{const el=$(id);if(el)el.addEventListener('input',()=>{sepTouched=true;render();});});
 bindRange($('pcols'),$('pcolsN'),'pcols');bindRange($('rowgap'),$('rowgapN'),'rowgap');
 $('dual').onchange=e=>{S.dual=e.target.checked;render();};
 $('cells').oninput=e=>{S.cells=Math.max(2,+e.target.value||2);render();};
@@ -704,7 +720,9 @@ function applyImportedParams(P){
   S.xrun=num(P.XRUN,S.xrun);S.zmax=num(P.ZMAX,S.zmax);
   S.rad=num(P.line_width_radiate,S.rad);S.gap=num(P.fold_gap,S.gap);
   if(P.dual_track_mirror!==undefined)S.dual=!!P.dual_track_mirror;
-  S.sep=num(P.track_sep,S.sep);
+  // 载入的 JSON 若带 track_sep, 说明是手动指定值 → 标记接管, 保持导出该值; 否则维持"未接管"。
+  if(P.track_sep!==undefined&&P.track_sep!==null){S.sep=num(P.track_sep,S.sep);sepTouched=true;}
+  else sepTouched=false;
   // inplace 字段
   S.pal=Math.max(1,num(P.palette_noteblocks,S.pal));S.pcols=num(P.PCOLS,S.pcols);S.rowgap=num(P.ROWGAP,S.rowgap);
   // 多轨分布(multilane)字段

@@ -73,6 +73,14 @@ _GENERATOR_MODULES = {
 #   assigned via the InstrumentMap so there is a single source of truth.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _err_str(e):
+    """str(exception), with a non-empty fallback. Some mido/mido-dependency errors
+    (e.g. a truncated struct.error) stringify to '' — an empty error message reads
+    as a broken script rather than a bad input file."""
+    s = str(e)
+    return s if s else f"{type(e).__name__} (file may be truncated or corrupt)"
+
+
 def parse_midi_notes(midi_path, imap):
     """Parse ``midi_path`` with mido into the SHARED-INTERFACE NOTE schema.
 
@@ -101,19 +109,42 @@ def parse_midi_notes(midi_path, imap):
     try:
         mf = mido.MidiFile(midi_path, clip=True)
     except (OSError, ValueError, EOFError, IndexError, KeyError) as e:
-        raise RedPianoError(f"could not read MIDI '{midi_path}': {e}")
+        raise RedPianoError(f"could not read MIDI '{midi_path}': {_err_str(e)}")
 
     cur_prog = {}      # channel -> current program (default 0)
     active = {}        # (channel, note) -> (start_seconds, velocity 0..127)
     t = 0.0
     notes = []
+    retrigger_count = 0
     try:
         for msg in mf:  # file-level iterator yields delta seconds, tempo folded
             t += msg.time
             if msg.type == "program_change":
                 cur_prog[msg.channel] = msg.program
             elif msg.type == "note_on" and msg.velocity > 0:
-                active[(msg.channel, msg.note)] = (t, msg.velocity)
+                key = (msg.channel, msg.note)
+                if key in active:
+                    # Retrigger: a note_on for a (channel, note) that is still ON
+                    # (sustain-pedal/legato overlap, or a sloppy MIDI missing the
+                    # note_off). Silently overwriting `active[key]` here used to
+                    # DROP the first segment's audible note entirely. Instead close
+                    # the old segment at the current instant, same as a real note_off,
+                    # then open the new one.
+                    st, vel = active.pop(key)
+                    ch = msg.channel
+                    prog = cur_prog.get(ch, 0)
+                    family = imap.family_for(prog, ch)
+                    drum_type = imap.gm_drum_map.get(msg.note) if family == "drum" else None
+                    notes.append({
+                        "t": round(st, 4),
+                        "dur": round(max(t - st, 0.02), 4),
+                        "midi": int(msg.note),
+                        "vel": round(vel / 127.0, 4),
+                        "family": family,
+                        "drum_type": drum_type,
+                    })
+                    retrigger_count += 1
+                active[key] = (t, msg.velocity)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
                 key = (msg.channel, msg.note)
                 if key in active:
@@ -131,7 +162,7 @@ def parse_midi_notes(midi_path, imap):
                         "drum_type": drum_type,
                     })
     except (OSError, ValueError, EOFError, IndexError, KeyError) as e:
-        raise RedPianoError(f"error while decoding MIDI '{midi_path}': {e}")
+        raise RedPianoError(f"error while decoding MIDI '{midi_path}': {_err_str(e)}")
 
     # Flush notes still ON at end-of-file (missing/lost note_off). Silently dropping
     # them loses real audible notes on sloppy MIDIs; instead close them at the song end
@@ -151,6 +182,10 @@ def parse_midi_notes(midi_path, imap):
             })
         print(f"  WARN: {len(active)} note(s) had no note_off; closed at song end "
               f"(t={t:.2f}s). MIDI may be truncated.")
+
+    if retrigger_count:
+        print(f"  WARN: {retrigger_count} retriggered notes were split "
+              f"(sustain-pedal/legato overlap)")
 
     if not notes:
         raise RedPianoError(
@@ -266,6 +301,9 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
         print(f"    3. /function {args.ns}:setup       (builds the machine in the world)")
         print("    4. enable the qzpno_mv resourcepack in Options -> Resource Packs (or = total silence)")
         print("    5. press the [play] sign/button to perform the song")
+    elif getattr(args, "staged_run", False):
+        out_path = os.path.join(args.out, args.ns)
+        print(f"  staged build (prepare_all manages install) — datapack at: {out_path}")
     else:
         out_path = os.path.join(args.out, args.ns)
         print("  ⛔ NOT INSTALLED IN ANY WORLD — this was a BUILD-ONLY run (no --world-dir).")
@@ -357,7 +395,49 @@ def build_argparser():
     p.add_argument("--force-cap", action="store_true", dest="force_cap",
                    help="allow forceload auto-fold above the soft cap instead of "
                         "hard-failing on an oversize machine.")
+    p.add_argument("--staged-run", action="store_true", dest="staged_run",
+                   help=argparse.SUPPRESS)  # internal: set by prepare_all.py, which
+    # manages install itself — suppresses the misleading "NOT INSTALLED IN ANY
+    # WORLD" banner on what is actually just this pipeline's first stage.
     return p
+
+
+# World height limits (Minecraft 1.18+ world). The machine itself only spans a
+# few blocks above/below the placement Y (mapping block at Y-1/Y-2, note blocks
+# at Y/Y+1, occasional Y+2/Y+3 signage) — use a generous margin so a legitimate
+# origin near the very top/bottom is still caught before any work is wasted.
+WORLD_MIN_Y = -64
+WORLD_MAX_Y = 319
+_ORIGIN_Y_MARGIN = 8
+
+
+def _check_origin_y(origin_y):
+    """Fail fast (human error, no traceback) when --origin's Y would place the
+    machine outside the buildable world height range."""
+    lo = origin_y - _ORIGIN_Y_MARGIN
+    hi = origin_y + _ORIGIN_Y_MARGIN
+    if lo < WORLD_MIN_Y or hi > WORLD_MAX_Y:
+        raise RedPianoError(
+            f"--origin Y={origin_y} puts the machine outside the buildable world "
+            f"height range [{WORLD_MIN_Y}, {WORLD_MAX_Y}] (the machine spans roughly "
+            f"Y {lo}..{hi} around the given Y). Pick an origin Y further from the "
+            f"world's floor/ceiling."
+        )
+
+
+def _check_world_dir(world_dir):
+    """Fail fast when --world-dir clearly points at the save/world folder itself
+    instead of the saves/<world>/datapacks folder underneath it — the #1 in-the-wild
+    mistake that makes the deploy silently land in the wrong place."""
+    if not world_dir:
+        return
+    base = os.path.basename(os.path.normpath(world_dir))
+    if base.lower() != "datapacks":
+        raise RedPianoError(
+            f"--world-dir '{world_dir}' 看起来指到了存档目录本身，--world-dir 必须指到 "
+            f"saves/<世界>/datapacks 这一层 (got a folder named '{base}', expected "
+            f"'datapacks')"
+        )
 
 
 def run(args):
@@ -370,6 +450,12 @@ def run(args):
             "--world-dir and --no-deploy are mutually exclusive (deploy is opt-in; "
             "pass --world-dir to deploy, or neither to build only)"
         )
+
+    # fail fast on a --world-dir that clearly isn't a saves/<world>/datapacks folder.
+    _check_world_dir(args.world_dir)
+
+    # fail fast on an --origin Y outside the buildable world height range.
+    _check_origin_y(args.origin[2])
 
     # default display name = MIDI file stem
     if args.name is None:

@@ -78,11 +78,12 @@ Options -> Resource Packs.
   human shell, ...).
 - **若要注册成 Claude Code skill,必须保留仓库目录结构.** The YAML frontmatter at the top of this
   file lets Claude Code's skill loader discover and trigger this skill by name. But the scripts
-  under `scripts/` resolve sibling paths like `../binaries/` (prebuilt jars) and `../../poc`
-  (sample sources) **relative to the repo root** — so registering the skill only works if
-  `minecraft-redstone-music/` stays inside the full repo tree. **Do not copy just this folder out
-  on its own**; it will build datapacks but silently lose access to the prebuilt binaries and
-  sample sources described in [BINARIES.md](BINARIES.md).
+  under `scripts/` resolve sibling paths like `../binaries/` (prebuilt jars) **relative to the repo
+  root** — so registering the skill only works if `minecraft-redstone-music/` stays inside the full
+  repo tree. **Do not copy just this folder out on its own**; it will build datapacks but silently
+  lose access to the prebuilt binaries described in [BINARIES.md](BINARIES.md). (The open-source
+  repo does **not** ship a sample-carrying `poc/` — get a resourcepack via
+  `scripts/make_demo_samples.py` or your own `qzpno_mv.zip`, see step 1 below.)
 - **交付链只支持 Windows.** The generated installer is `DEPLOY_TO_GAME.bat` — a Windows batch
   file. This skill's install path assumes a Windows machine running Minecraft Java Edition. On a
   non-Windows native host, skip the `.bat` and either use `--install-now` (native, non-sandboxed
@@ -227,23 +228,30 @@ below, then run the build command in step 4.
      **Using PCL2 / HMCL with per-version isolation (版本隔离/独立)?** `--profile-dir` must point
      to that specific version's own folder — typically `.minecraft/versions/<你的版本>/` — **not**
      the shared `.minecraft` root. Full guidance: [QUICKSTART.md](QUICKSTART.md) §"--profile-dir".
-   - **Resourcepack source — pick exactly one of these three:**
-     1. **`--samples-root <dir>`** — a full samples folder you have (the repo-root `poc/` folder,
-        containing `samples_manifest_*.json` + `samples_*/*.ogg`). Two paths, one folder: the
-        **auto-detect** default is `../../poc` (anchored to `scripts/`, so `scripts/../../poc` =
-        repo-root `poc/`); if you pass `--samples-root` **by hand it's relative to your shell's
-        cwd** — from the repo root that same folder is just `./poc` (written `../poc` only in
-        examples that run one dir deeper). When unsure, pass an absolute path.
+   - **Resourcepack source — pick exactly one of these four (开源仓库默认走第①条):**
+     1. **没有自己的音源?先跑 `python scripts/make_demo_samples.py`**(合成 103 个开放音源到
+        `assets/demo_samples/`,纯 numpy,不用网络/ffmpeg,无版权顾虑),再把
+        `--samples-root assets/demo_samples` 传给 `prepare_all.py`。**这是开源仓库的默认路径** ——
+        本仓库不随附 Salamander 采样,`poc/` 里也没有音源文件,所以「自动探测」不是一个可用的默认值。
+        **交付时必须如实告知用户:这是合成 demo 音色,不是 Salamander 真钢琴**;想要真钢琴音色见下面
+        第②条 + [BINARIES.md](BINARIES.md)。完整演示链见
+        [QUICKSTART.md](QUICKSTART.md) 顶部「只想先听个响」小节。
      2. **`--prebuilt-rp <qzpno_mv.zip>`** — a `qzpno_mv.zip` **you already have** (the sampled
         pack ships separately; build/derive one per [BINARIES.md](BINARIES.md), the piano samples
         are Salamander Grand Piano under CC-BY and need attribution if you redistribute — see
         BINARIES.md for the credit line).
-     3. **`--skip-resourcepack`** — build the datapack/mod runtime **without** staging any
-        resourcepack. **Honest effect:** the note blocks will play either **vanilla note-block
-        timbres** (if no `qzpno_mv`-compatible pack is already enabled in the world) **or total
-        silence** (if `qzpno_mv` sound events are referenced but no matching pack is active) —
-        it is **not** a guarantee of RedPiano's sampled sound. Only use this when a matching
-        `qzpno_mv.zip` is already installed **and enabled** in the target profile.
+     3. **`--samples-root <dir>`** — a full samples folder you have of your own (containing
+        `samples_manifest_*.json` + `samples_*/*.ogg`), when it is **not** the demo folder from
+        option ①. Pass an absolute path or one relative to your shell's cwd — there is no
+        working auto-detect fallback in the open-source repo (the old `../../poc` auto-detect
+        assumed a private, sample-carrying checkout; the public repo's `poc/` ships **without**
+        any samples, so omitting `--samples-root` here will fail, not silently find something).
+     4. **`--skip-resourcepack`** — build the datapack/mod runtime **without** staging any
+        resourcepack. **诚实后果(取决于装没装模组):** 装了 **RedPiano 模组**时 → **彻底静音**
+        (模组的 mixin 会取消原版音符盒声音、改播 `qzpno:` 自定义事件，没有资源包=那个事件没有
+        任何 `.ogg` 支撑=无声);**不装模组**时 → 原版 16 种音符盒音色。**它绝不会**"自己退回原版
+        音色当降级"。只有当匹配的 `qzpno_mv.zip` 已经装好**并启用**在目标 profile 时才用本开关。
+        换音色/自备包的正规做法见本文档下方 [「音色与资源包」](#音色与资源包换音色--默认加载保障)。
    - **Mod status**: inspect `<profile>/mods/`, but do not stop there. Default behavior is to
      build/install RedPiano and install/reuse/download the matching Fabric API automatically;
      only the final Minecraft restart and listen test remain user actions.
@@ -270,6 +278,10 @@ below, then run the build command in step 4.
    mandatory extra round-trip when the user already told you what they want (or said "just use the
    default"). The `midi_report.py` verdict (step 1) can steer this — a long/dense MIDI on `swave`
    reports a large footprint, nudging toward `inplace`.
+   > **时长经验值:** `swave`/`multilane` 的占地随歌曲时长增长,长歌容易撞上 360 区块的
+   > forceload 软上限(超限需 `--force-cap` 才能强建,不是保证不断音)。经验值:`swave` 约
+   > **≤6 分钟**、`multilane` 约 **≤4 分钟** 以内通常安全;更长的歌优先选 **`inplace`**——
+   > 它是原地调色板,占地基本恒定,不随时长增长。拿不准就先跑 `midi_report.py` 看估算占地。
 
 3. **备好 mod + 音效包** for the chosen version (any of 1.21..1.21.10) — **start with
    `fetch_binaries.py`**:
@@ -310,15 +322,26 @@ below, then run the build command in step 4.
    generated `.bat`, not written to now. For **1.21.8 / 1.21.7**, pass the prebuilt
    `--prebuilt-mod-jar` (ships in `binaries/`) plus a `--prebuilt-rp` you supply (the sampled
    resourcepack is **not** in the repo — build/derive your own, see step 3), so no Gradle/JDK is
-   needed. In a full source checkout, `--samples-root` auto-detects `../../poc`. Do not add
-   `--skip-*` flags unless the user explicitly asks for a partial artifact.
+   needed. No resourcepack yet? run `python scripts/make_demo_samples.py` and pass
+   `--samples-root assets/demo_samples` (see step 1's resourcepack option ①) — there is **no**
+   working auto-detect fallback in this open-source repo. Do not add `--skip-*` flags unless the
+   user explicitly asks for a partial artifact.
 
    > **⚠ `--origin` order is `X Z Y`, NOT `X Y Z`.** The in-game F3 debug screen shows coordinates
    > as `X Y Z` — copying them in that order swaps height and Z and puts the machine somewhere
    > wrong (often underground or in the wrong spot). Read X, Z, Y off F3 in that order when typing
    > the flag. Full site-picking guidance: [QUICKSTART.md](QUICKSTART.md) §1a/§2.
+   > **新手不必纠结坐标**:走默认预设时直接用 `--origin 0 0 100` 就行——进游戏后机器会出现在
+   > 世界水平坐标 (0, 0)、高度 100 附近(开阔地多半没问题,若那里有地形挡着就往上调高度)。
+   > 或者告诉 agent 你现在站在哪(报一下 F3 上的 X/Z/Y),由 agent 帮你换算成 `--origin` 的
+   > `X Z Y` 顺序——不需要自己心算坐标转换。
    > **⚠ `--ns` must be a name you haven't used before** in this world's `datapacks/` folder — an
    > existing datapack directory with the same namespace gets **overwritten wholesale**.
+   > **多歌共存:** 同一个世界里可以建多首歌(各自不同的 `--ns`),本版本起每首歌的
+   > forceload/开关都按自己的 `--ns` 隔离,不会互相踩掉对方的建筑或播放状态——但**同时只应该
+   > 播放一首**(两首同时播会混音,而且都要人站在附近才不断音)。**旧版本生成的歌**(在这次
+   > forceload 隔离修复之前建的)仍然可能和新歌互相干扰;与新歌共存前,建议先对旧机器跑
+   > `/function <旧ns>:cleanup` 拆除重建,而不是让新旧数据包一起留在 `datapacks/` 里。
    If `prepare_all.py` exits nonzero, fix the missing dependency or report blocked — do not
    summarize it as complete.
 
@@ -336,9 +359,12 @@ below, then run the build command in step 4.
       versions get only `pack.mcmeta` rewritten. (No `qzpno_mv.zip`? build from sample folders with
       `--samples-root` — see BINARIES.md for sample licensing.)
    4. **`prepare_all.py`** as below, with `--prebuilt-rp` / `--prebuilt-mod-jar` pointing at the
-      fetch/derive outputs. Fabric API stays on the Modrinth auto-download (public); pass
-      `--fabric-api-jar` only offline. Optionally gate the jar first with
-      `mod_build.py --mc-version <ver> --check-jar <jar>`.
+      fetch/derive outputs. **Fabric API version note:** `binaries/` only bundles the **1.21.7**
+      Fabric API jar in-repo; for any other `<ver>`, leave `--fabric-api-jar` unset (default
+      `auto`) so `prepare_all.py` downloads the matching build from Modrinth automatically — this
+      needs network. **Offline on a non-1.21.7 version?** you must supply your own matching
+      `--fabric-api-jar <jar>` ahead of time; there is no bundled fallback for it. Optionally gate
+      the mod jar first with `mod_build.py --mc-version <ver> --check-jar <jar>`.
 
    **▸ 打包分发场景 — concrete example (Fabric 1.21.7, offline, prebuilt jar).** The golden
    path above, instantiated for the common handoff: a repo-snapshot with a sibling `binaries/`
@@ -373,7 +399,11 @@ below, then run the build command in step 4.
    just means "listen once to confirm"); optionally gate it first with
    `python scripts/mod_build.py --mc-version 1.21.7 --check-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar`
    (exit 0 = bytecode-clean, safe to install). For a **1.21.8** game, swap `--mc-version 1.21.8` and
-   the mod jar to `../binaries/redpiano-1.0.0-mc1.21.8.jar` (+ a 1.21.8 fabric-api jar). Every flag
+   the mod jar to `../binaries/redpiano-1.0.0-mc1.21.8.jar`, and **drop the `--fabric-api-jar`
+   line entirely** — `binaries/` only ships the **1.21.7** Fabric API jar
+   (`fabric-api-0.129.0+1.21.7.jar`), which does **not** match a 1.21.8 game; omitting the flag
+   lets `prepare_all.py` auto-download the matching build from Modrinth instead (needs network —
+   offline on 1.21.8, supply your own matching jar). Every flag
    above is real on the current `prepare_all.py` — confirm any variant with
    `python scripts/prepare_all.py --help`.
 
@@ -475,6 +505,46 @@ steps by default; this section is a checklist, not a reason to stop and hand wor
 > Bundle/distribute them alongside it — full obtain/build instructions are in
 > **[BINARIES.md](BINARIES.md)**. The text assets that *are* bundled here are
 > `assets/redpiano_map_multi.json` (103-block instrument map) and `assets/demo.mid`.
+
+## 音色与资源包(换音色 · 默认加载保障)
+
+> 一句话详版在 [BINARIES.md](BINARIES.md);QUICKSTART.md 顶部有小白版。这里回答三件最常被担心的事。
+
+**① 默认链路一定会启用资源包吗?会,没有"试一下失败就退回原版"的静默降级。** 默认走
+`prepare_all.py`:它把 `qzpno_mv.zip` 塞进 `dist/`,生成的 **`DEPLOY_TO_GAME.bat`** 在你双击安装时
+会**主动把 `file/qzpno_mv.zip` 写进 `options.txt` 的 `resourcePacks` 数组**(并从
+`incompatibleResourcePacks` 移除),即"强制选用"。它不会"尝试加载、发现不行就悄悄用原版顶替"——
+要么装好并选用,要么在 `.bat`/`doctor.py` 里**明确报错**告诉你哪一步没成。唯一需要你手动确认的
+是进游戏后在 **选项 → 资源包** 里看一眼 `qzpno_mv` 在右侧"已选用"(这一步谁也替不了)。
+> ⚠ **装的时候先完全退出 Minecraft**:`options.txt` 会在游戏退出时被内存里的旧设置覆盖,游戏开着
+> 双击安装器 = 启用被冲掉、进游戏发现没生效。安装器和 `README_部署说明.txt` 现在都会检测并警告。
+
+**② 音色不兼容/资源包缺失会怎样?——装了模组就是"彻底静音",不是退回原版。** 这是必须诚实交代
+的一点:RedPiano 模组的 mixin **取消了原版音符盒声音**,改播 `qzpno:<id>` 自定义音效事件。所以——
+- 装了模组 + 资源包**格式不符**(MC 静默禁用)或**缺失** → 那些 `qzpno:` 事件没有 `.ogg` 支撑 →
+  **完全没声**(不是原版 harp/bass 音色);
+- **只有不装模组**时,音符盒才响原版 16 音色;
+- 想验证到底响没响:`doctor.py` 全绿时会给你一条 **`/playsound qzpno:pno_c4_mf master @s`**,进游戏
+  敲,听到钢琴=资源包生效,报 `Unknown sound event` 或没声=包没启用/格式不符。
+
+**③ 想换音色怎么办?两条正规路径,都不会"锁死一个包"。**
+- **换采样重打包(想要不同真实音色/自己的采样):**
+  `python scripts/build_resourcepack.py --mc-version <ver> --samples-root <你的采样目录> --out my.zip`,
+  再把 `my.zip` 作为 `--prebuilt-rp` 传给 `prepare_all.py`。采样目录结构=每个乐器一个
+  `samples_<inst>/` 文件夹 + 一个 `samples_manifest_<inst>.json`(见 BINARIES.md「Sampled
+  resourcepack」)。没有采样又想先听响:`python scripts/make_demo_samples.py` 合成一套开放 demo 音源。
+- **自备打好的 `.zip`(`--prebuilt-rp <zip>`):** 你的 zip 必须满足两个契约,否则会被拒或部分静音:
+  1. **`pack_format` 要对上目标版本**(1.21/1.21.1=34、1.21.4=46、1.21.5=55、1.21.6=63、
+     **1.21.7/1.21.8=64**、1.21.9/1.21.10=69 且用 `min_format`/`max_format` 形状)。不符会被
+     `prepare_all.py` **硬拒**并教你用 `build_resourcepack.py --from-zip <你的zip> --mc-version <ver>`
+     换版本重打包(只改 `pack.mcmeta`,不用重编码,一个 zip 派生任意 1.21.x)。
+  2. **要覆盖全部 103 个 `qzpno:` 音效事件**(与 `assets/redpiano_map_multi.json` 对齐)。缺哪些,
+     `prepare_all.py` 会 **`[warn]` 列出**(缺的那些音符盒在游戏里静音,不退回原版),但不阻断安装。
+
+**④ 世界升级到新 MC 版本后要重建吗?——只需重跑资源包,机器本体不用重建。** 旧 `qzpno_mv.zip`
+在新版本会因 `pack_format` 不符被 MC 自动禁用(→静音)。修法:`build_resourcepack.py --from-zip
+<旧 qzpno_mv.zip> --mc-version <新版本>` 派生一个新版包,重新装/选用即可;datapack 机器结构本身在
+1.21.x 内不用重建(命令/格式由 `--mc-version` 自适应,重建机器只在需要换 MIDI/形态时才做)。
 
 ## Scope
 

@@ -217,15 +217,18 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
             "multilane footprint %d chunks > soft cap %d; building anyway (--force-cap). "
             "Per-chunk forceload — a large footprint, not a guaranteed audio drop.",
             NCH, core.FORCELOAD_SOFT_CAP)
-    flbuild = ["forceload remove all"] + [
-        f"forceload add {cx * 16} {cz * 16}" for (cx, cz) in chunks
-    ]
-
     allx = [k[0] for k in occ]
     allz = [k[2] for k in occ]
     ally = [k[1] for k in occ]
     WX0, WZ0, WX1, WZ1 = min(allx) - 2, min(allz) - 2, max(allx) + 2, max(allz) + 2
     WY0, WY1 = min(ally) - 2, max(ally) + 2
+
+    # SCOPED remove of exactly this machine's bbox (covers every chunk added below) —
+    # NEVER 'forceload remove all', which would撤销 a co-existing song's forceload in the
+    # same world (先歌"玩家一走开就哑"; /reload re-triggers it). remove+add stay paired.
+    flbuild = [core.forceload_remove_region(WX0, WZ0, WX1, WZ1)] + [
+        f"forceload add {cx * 16} {cz * 16}" for (cx, cz) in chunks
+    ]
 
     # 6. datapack — via core.Datapack (version-aware pack_format + folder names)
     dp = core.Datapack(ns, name, out_dir, profile.mc_version,
@@ -261,8 +264,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         [f"scoreboard objectives add {ns} dummy",
          f"scoreboard players set BLD {ns} -1",
          f"scoreboard players set CLR {ns} -1"] + RESET
-        + ["forceload remove all", "scoreboard objectives add rpcfg dummy",
-           "scoreboard players set poly rpcfg 1", "scoreboard players set human rpcfg 1"]
+        + [core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
+           "scoreboard objectives add rpcfg dummy",
+           f"scoreboard players set poly_{ns} rpcfg 1",
+           f"scoreboard players set human_{ns} rpcfg 1"]
         + SCHED_CLEAR + TRIG_CLEAR
         + [f'tellraw @a ["",{{"text":"[{ns}] 多轨分布式直线机 loaded. ","color":"aqua"}},'
            f'{{"text":"需RedPiano+qzpno. 手动 /tick rate 80 -> /function {ns}:setup -> 启用资源包 -> 按 [play]"}}]'])
@@ -327,7 +332,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         fx1 = min(WX1, fx0 + SEG - 1)
         dp.write_function(f"clr/c{k}", f"fill {fx0} {WY0} {WZ0} {fx1} {WY1} {WZ1} air")
     dp.write_function("cleardone",
-        [f"scoreboard players set CLR {ns} -1", "forceload remove all",
+        [f"scoreboard players set CLR {ns} -1",
+         core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
          f'tellraw @a "[{ns}] cleaned."'])
     cs = [f"execute if score CLR {ns} matches {k} run function {ns}:clr/c{k}"
           for k in range(clr_segs)]
@@ -340,18 +346,30 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         + SCHED_CLEAR + TRIG_CLEAR
         + [f"scoreboard players set CLR {ns} 0", f'tellraw @a "[{ns}] tearing down..."'])
     for nm, sc in (("polytoggle", "poly"), ("humantoggle", "human")):
+        scp = f"{sc}_{ns}"   # ns-scoped fake player so two songs don't clobber each other
         dp.write_function(f"cfg/{nm}",
-            ["scoreboard players set rptmp rpcfg 1",
-             f"scoreboard players operation rptmp rpcfg -= {sc} rpcfg",
-             f"scoreboard players operation {sc} rpcfg = rptmp rpcfg",
-             f'execute if score {sc} rpcfg matches 1 run tellraw @a "[{ns}] {sc} ON"',
-             f'execute if score {sc} rpcfg matches 0 run tellraw @a "[{ns}] {sc} OFF"'])
+            [f"scoreboard players set rptmp_{ns} rpcfg 1",
+             f"scoreboard players operation rptmp_{ns} rpcfg -= {scp} rpcfg",
+             f"scoreboard players operation {scp} rpcfg = rptmp_{ns} rpcfg",
+             f'execute if score {scp} rpcfg matches 1 run tellraw @a "[{ns}] {sc} ON"',
+             f'execute if score {scp} rpcfg matches 0 run tellraw @a "[{ns}] {sc} OFF"'])
 
     deployed = dp.deploy(deploy_dir) if deploy_dir else None
 
     # 时长按实际触发的 trig 时间跨度算, 不含被力度阈值丢弃的音符 (与 swave/inplace 一致)
     duration_s = (trig[-1] - trig[0]) * U if len(trig) > 1 else 0.0
     nnote = sum(1 for vv in occ.values() if vv.startswith("minecraft:note_block"))
+    # dropped notes MUST surface in WARNINGS (not just the stat field); >10% -> strong prefix
+    warnings = list(plan.warnings)
+    if dropped > 0:
+        placed = sum(lane_counts)
+        total = placed + dropped
+        pct = (100.0 * dropped / total) if total else 0.0
+        pfx = "!! " if pct > 10.0 else ""
+        warnings.insert(
+            0,
+            f"{pfx}dropped {dropped} note(s) ({pct:.0f}% of {total}) — over lane count "
+            f"{NLANE} (raise --max-poly / add lanes, or reduce simultaneous notes)")
     return {
         "note_count": sum(lane_counts),
         "input_notes": len(notes),
@@ -367,7 +385,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "mel_cut_cells": len(mel_ticks),
         "cut_count": len(mel_ticks),
         "median_cut_gt": median_cut_gt,
-        "warnings": list(plan.warnings),
+        "warnings": warnings,
         "deployed": deployed,
         "out": dp.root,
     }
