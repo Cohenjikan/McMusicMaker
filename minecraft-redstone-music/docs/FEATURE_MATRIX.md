@@ -12,7 +12,9 @@ Scope: **Family A only** (RedPiano mod, real note blocks, `/tick rate 80`, resou
 (1.21..1.21.10); 1.21.8 is the verified default/anchor — see [Version adaptiveness](#version-adaptiveness)
 below. Family B (audio slice) is an external repo and out of scope — see the last row.
 
-Date: 2026-06-26.
+Date: 2026-06-26 (swave/inplace in-game-verified status corrected 2026-07-08 — see the
+capability matrix: `swave` has since been tested in-game multiple times and confirmed working;
+`inplace` remains functionally complete but tested in-game fewer times).
 
 ---
 
@@ -32,9 +34,9 @@ Columns:
 
 | form | multi-instr? | melody-cut? | designer params? | in-game verified? | canonical script | status |
 |---|---|---|---|---|---|---|
-| **inplace-single** | no — every note forced to `pno` (3 velocity layers) | no (piano decays naturally; nothing to cut) | yes (`load_params`/`assert_supported`); `multi:false` selects this form | ✅ **yes** — user "完美" (《春娇与志明》, task4, oracle poc/45) | `scripts/generators/inplace.py` (`multi=False`) | **production (v1)** |
-| **inplace-multi** | **yes** — per-note GM family via `imap.family_for`/`imap.resolve` | **yes** — `plan_melody_cuts(absolute=False)`, relative `cutmel` schedule append | yes; **set `multi:true` in params JSON to select** | ✅ **yes** — user "特别好" (《七里香》 `qlxm`, oracle poc/46) | `scripts/generators/inplace.py` (`multi=True`) | **production (v1)** |
-| **swave** (marching-pulse mirror S-wave) | **yes** — per-note GM family; dual-track Z-mirror + greedy L/R balance | **yes** — `plan_melody_cuts(absolute=True)`, absolute `cutmel` schedule append at `(T0+OFFSET)*2 + d` | yes (`XRUN`/`ZMAX`/`base_block`/`dual_track_mirror`/`track_sep` consumed) | ⚠️ **generation-verified only** — capability tested by user (《七里香》 `qlxs`); awaiting final in-game listen to confirm melody-cut timing by ear | `scripts/generators/swave.py` (oracle poc/48) | **production (v1), pending ear-confirm** |
+| **inplace-single** | no — every note forced to `pno` (3 velocity layers) | no (piano decays naturally; nothing to cut) | yes (`load_params`/`assert_supported`); `multi:false` selects this form | ✅ **yes** — user "完美" (《春娇与志明》, task4, oracle poc/45); functionally complete but tested in-game fewer times than `swave` | `scripts/generators/inplace.py` (`multi=False`) | **production (v1)** |
+| **inplace-multi** | **yes** — per-note GM family via `imap.family_for`/`imap.resolve` | **yes** — `plan_melody_cuts(absolute=False)`, relative `cutmel` schedule append | yes; **set `multi:true` in params JSON to select** | ✅ **yes** — user "特别好" (《七里香》 `qlxm`, oracle poc/46); functionally complete but tested in-game fewer times than `swave` | `scripts/generators/inplace.py` (`multi=True`) | **production (v1)** |
+| **swave** (marching-pulse mirror S-wave) | **yes** — per-note GM family; dual-track Z-mirror + greedy L/R balance | **yes** — `plan_melody_cuts(absolute=True)`, absolute `cutmel` schedule append at `(T0+OFFSET)*2 + d` | yes (`XRUN`/`ZMAX`/`base_block`/`dual_track_mirror`/`track_sep` consumed) | ✅ **yes — tested in-game multiple times and confirmed working** (《七里香》 `qlxs`, melody-cut timing confirmed by ear across repeated sessions) | `scripts/generators/swave.py` (oracle poc/48) | **production (v1)** |
 | **straight** (long +X marching line) | **yes** | **yes** | yes (marching-family fields) | not separately listened (shares the swave pipeline) | `scripts/generators/swave.py` (`form=straight`) | **production (v1)** — degenerate swave; biggest footprint |
 | **custom** (drawn waypoint route) | **yes** | **yes** | yes (`waypoints` from the designer 自定义, + marching fields) | geometry-confirmed (collision + timeline self-checks pass; repeater facings N/S/E/W exercised); ear-confirm pending | `scripts/generators/swave.py` (`form=custom`; `_layout_custom` lifted from verified poc/47) | **production (v1)** |
 | _lab origin: poc/47_ | yes | no (lab build predates the cut) | argv-driven | its custom-path geometry was verified, then lifted into `swave.py` | `scripts/generators/_experimental/47_build_custom.py` | **[superseded]** — `form=custom` is now v1 via `swave.py`; standalone copy kept for reference |
@@ -133,6 +135,9 @@ following must be present in-game for a generated machine to make sound:
    rp_format makes MC silently disable the pack → silence. (dp_format and rp_format are
    *different* number lines — on **1.21.8** that is dp = 81, rp = 64; both auto-derive from
    `VERSION_TABLE`. See `CONTRACT.md` §3 and [Version adaptiveness](#version-adaptiveness).)
+   `prepare_all.py --skip-resourcepack` builds without staging this pack; the honest result is
+   **vanilla note-block timbres or total silence**, not RedPiano's sampled sound — only use it
+   when a matching `qzpno_mv.zip` is already installed and enabled.
 3. **An MC version in the supported auto band (1.21..1.21.10)**, selected via `--mc-version`;
    **1.21.8** is the verified default/anchor. `get_version_profile` drives dp_format / rp_format
    / folder names / pack.mcmeta shape from `VERSION_TABLE` (the single source of truth). Unknown

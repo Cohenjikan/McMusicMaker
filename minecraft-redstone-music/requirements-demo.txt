@@ -1,0 +1,17 @@
+# requirements-demo.txt - extra deps for the "hear it first" open-source demo path only.
+#
+# The CORE pipeline (build_machine / prepare_all / build_resourcepack) needs ONLY
+# `mido` (see requirements.txt). This file adds what scripts/make_demo_samples.py needs
+# to SYNTHESIZE the 103 open-source demo sounds from scratch:
+#
+#   numpy       - waveform math
+#   soundfile   - writes .ogg/Vorbis directly (libsndfile is bundled in the wheel; no ffmpeg)
+#
+# Install for the demo path:
+#   pip install -r requirements.txt -r requirements-demo.txt
+#
+# You do NOT need these for the normal workflow where you supply your own qzpno_mv.zip
+# (--prebuilt-rp) or a sample folder (--samples-root); they are ONLY for generating the
+# self-contained demo samples.
+numpy>=1.21
+soundfile>=0.12

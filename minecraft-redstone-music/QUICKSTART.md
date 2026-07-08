@@ -5,6 +5,39 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 **1.21.x up to 1.21.10** works — one `--mc-version` flag adapts `pack_format`, folders,
 `pack.mcmeta` shape, and sign dialect from the version table.
 
+> **Shell note:** every multi-line command block below uses **bash** syntax (trailing `\` for
+> line continuation). On Windows, run these in **Git Bash** (or WSL). If you're in PowerShell,
+> either run `bash` first, or rewrite the command onto one line without the `\` characters —
+> PowerShell's own continuation character is a backtick and mixing the two will break the command.
+
+---
+
+## 🔊 只想先听个响？走开放音源最小 demo（不用自备采样）
+
+第一次上手、只想验证「真能响」，别急着准备你自己的 MIDI 和采样——用随仓 `assets/demo.mid` + 脚本**当场合成**的开放音源（numpy，无网络/无 ffmpeg），三步就能建出完整 `dist/`：
+
+> **两条硬前提**：**① 仅 Windows 交付**（`.bat` 安装器）；**② 必须整仓 clone**（脚本依赖 `../binaries/` 等仓库结构，不能只拷本子目录）。合成音色是**能出声的最小验证**，不是精修钢琴采样。
+
+> 若 `pip install` 报 UnicodeDecodeError，先执行 `$env:PYTHONUTF8=1`（PowerShell）/ `export PYTHONUTF8=1`（bash）再重试。
+
+```bash
+cd minecraft-redstone-music
+pip install -r requirements.txt -r requirements-demo.txt        # demo 多两个轻量包 numpy/soundfile
+
+python scripts/fetch_binaries.py --mc-version 1.21.7            # 1) 解析随仓模组 jar
+python scripts/make_demo_samples.py                            # 2) 合成 103 个开放音源采样 -> assets/demo_samples/
+python scripts/prepare_all.py \
+    --midi assets/demo.mid --form swave --ns demo --origin 0 0 255 \
+    --mc-version 1.21.7 \
+    --world-dir "<profile>/saves/<你的世界>/datapacks" --profile-dir "<profile>" \
+    --dist dist \
+    --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.7.jar" \
+    --fabric-api-jar "../binaries/fabric-api-0.129.0+1.21.7.jar" \
+    --samples-root assets/demo_samples                          # 3) 端到端 -> dist/ + 安装器
+```
+
+跑完**你本人双击** `dist\DEPLOY_TO_GAME.bat` 安装，再按下面主清单进游戏（`/tick rate 80`、启用资源包、`/function demo:setup` → 播放）。换其它绿档版本：把三处 `1.21.7` 一起改掉并**去掉** `--fabric-api-jar` 行（改为联网自动拉取）。完整版与说明见根 [`README.md`](../README.md) 的「5 分钟先听个响」小节。**这是构建级验证；游戏内实听按下面清单完成。**
+
 ---
 
 ## ⚠️ 没声?第一步跑 doctor.py, 再按顺序查这 3 项 (No sound? Run doctor.py first, then check these 3)
@@ -35,11 +68,18 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 >    忘了 = 播放约 **4 倍慢** + 旋律截断(melody-cut)时序失准。**你必须自己在游戏里手动敲
 >    `/tick rate 80`**(在按[播放]之前)。机器**不会**自动设置它(用命令方块自动设的方案已测试,
 >    **不生效**)。
+>    > **⚠ `/tick rate 80` 会加速整个世界**——不只是音乐机器,作物生长、刷怪、生物 AI、
+>    > 所有红石电路全部跟着变快。多人/联机世界请谨慎使用。**听完记得敲 `/tick rate 20`
+>    > 改回来**,否则世界会一直保持高速运行。
 > 3. **RedPiano 模组 jar 是否在 `mods/`、版本对得上、且已重启 MC?**
->    换 jar 必须**完整重启** Minecraft(`/reload` 不够)。还需 Fabric Loader + Fabric API + Java 21。
+>    换 jar 必须**完整重启** Minecraft(`/reload` 不够)。还需 Fabric Loader + Fabric API + Java 21——
+>    **先照官方安装器装好 Fabric Loader**: <https://fabricmc.net/use/installer/>。
 >    **模组 jar 必须匹配游戏版本**:`fabric.mod.json` 里钉了 `minecraft` 范围,不覆盖当前游戏就被
 >    Fabric **拒载** → 变回 vanilla 音色。1.21.7 游戏用 `redpiano-1.0.0-mc1.21.7.jar`,1.21.8 用
 >    `…-mc1.21.8.jar`;**别把 1.21.8 那颗装进 1.21.7**(它声明 `~1.21.8`,会被拒)。见 [BINARIES.md](BINARIES.md)。
+>    RedPiano 的逻辑是**服务端(server-side)**的(`docs/MOD_ARCHITECTURE.md` §0/§6.4:内部按
+>    `ServerLevel`/`ServerPlayer` 判断)——**单机**跟普通客户端模组一样装(单机的"服务端"就是你本机的
+>    集成服务器);**联机/开服**则模组要装在**服务端**上,客户端装不装不影响声音是否响。
 >
 > 注:在 **1.21.5+**(含默认的 1.21.8),控制台告示牌的文本现用 **SNBT** 方言(修掉了旧引号格式
 > 在新版渲染成字面文本的潜伏 bug);方言在 1.21.5 自动切换。
@@ -86,6 +126,15 @@ It reports duration, instrument-family mix, estimated dropped notes, estimated f
 one-line verdict — use it to pick a form (a long/dense song may push `swave`/`straight` to a large
 footprint, favoring `inplace`).
 
+**Choosing your first song:** if this is your first build, pick a **simple MIDI** — a single
+melodic line or a lightly-arranged piece (solo piano, a simple pop lead) rather than a full
+orchestral score. Dense/complex orchestral MIDIs (many simultaneous instruments/voices) will
+**drop notes** past the per-cell polyphony cap and need octave-shifting to fit the sample range —
+**this is expected behavior, not a bug**, but it means a complex first song is more likely to
+sound "off" than a simple one. Run `midi_report.py` first and read its verdict before you commit
+to a song; a high estimated-dropped-notes count is your cue to either simplify the MIDI or accept
+the tradeoff going in.
+
 ## 1b. (optional) Design a layout
 
 Open **`designer/layout_designer.html`** in a browser. Load your MIDI, pick a form
@@ -115,16 +164,32 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
 `dist/DEPLOY_TO_GAME.bat`. **It does not touch `C:\Minecraft` — that's the `.bat`'s job.**
 
 - `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`.
+  `--profile-dir` must be the folder that directly contains `resourcepacks/`, `mods/`, and
+  `options.txt` for the version you're targeting.
+  > **⚠ Using PCL2 / HMCL with per-version isolation (版本隔离/独立) enabled?** Each version gets
+  > its own private folder — point `--profile-dir` at that specific version's folder, typically
+  > `.minecraft/versions/<你的版本>/`, **not** the shared `.minecraft` root (which has no
+  > `resourcepacks/`/`mods/` of its own in that mode). If `doctor.py` fails **all four** checks
+  > (receipt / resourcepack / options.txt / mods) at once, suspect a wrong `--profile-dir` first —
+  > that's the signature of pointing at a folder that simply isn't the real profile.
 - **Resolve the mod jar with one command:** `python scripts/fetch_binaries.py --mc-version <ver>`
   picks the version-matched mod jar from the sibling `binaries/` folder (local-first,
   sha256-verified) — no Gradle/JDK. Pass it as `--prebuilt-mod-jar`. (`fetch_binaries` picks the
   right jar — Fabric rejects a jar whose `~<ver>` range doesn't cover the game.)
-- **Supply your own resourcepack:** the sampled `qzpno_mv.zip` is **not in the repo** (unclear-license
-  samples, ships separately — see [BINARIES.md](BINARIES.md)). `fetch_binaries` reports it as
-  `separate`, not an error. From a `qzpno_mv.zip` you have, derive a version-matched pack with
+- **Supply your own resourcepack:** the sampled `qzpno_mv.zip` is **not in the repo** — its piano
+  samples are Salamander Grand Piano (**CC-BY**), which requires attribution on redistribution
+  that isn't packaged into the zip, so it ships separately (drums are CC0, bass/lead/pad are
+  synthesized — only piano carries the obligation; see [BINARIES.md](BINARIES.md) for the credit
+  line). `fetch_binaries` reports it as `separate`, not an error. From a `qzpno_mv.zip` you have,
+  derive a version-matched pack with
   `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out dist/qzpno_mv.zip`
   (a base rp-64 pack serves 1.21.7/1.21.8 as-is; other versions get only `pack.mcmeta` rewritten), or
   build from sample folders with `--samples-root`. Pass the result as `--prebuilt-rp`.
+- **Or skip the resourcepack entirely:** `--skip-resourcepack` builds without staging one — the
+  **honest effect** is the machine plays either **vanilla note-block timbres** or **total
+  silence** (if `qzpno_mv` sound events are referenced but nothing matching is enabled in the
+  world), not a guarantee of RedPiano's sampled sound. Only use it when a matching `qzpno_mv.zip`
+  is already installed **and enabled** in the target profile.
 
   Golden offline command for **Fabric 1.21.7**, run from the `minecraft-redstone-music/` directory
   (`../binaries/…` resolves; `--prebuilt-rp` points at the pack you built above):
@@ -164,11 +229,31 @@ python scripts/build_machine.py \
     [--melcap 1.2]
 ```
 
-- `--form inplace` is the **verified MVP** (rock-solid, tiny footprint). `--form swave`
-  is the marching-pulse path machine (product default, in-game listen pending).
+- `--form inplace` is a tiny-footprint MVP, functionally complete but tested in-game fewer
+  times than `swave`. `--form swave` is the marching-pulse path machine (product default) and
+  **has been tested in-game multiple times and confirmed working**.
   `straight`/`custom`/`multilane` are also available — see `docs/FEATURE_MATRIX.md`.
 - `--ns` is the datapack namespace **and** the scoreboard objective name.
+  > **⚠ Pick a name you haven't used in this world before.** A `datapacks/<ns>/` folder that
+  > already exists gets **overwritten wholesale** by a build using the same `--ns`. If you're
+  > rebuilding the *same* song on purpose that's fine; otherwise pick a fresh, unique name.
 - `--origin X Z Y` sets the world build origin (overrides `start_x/z/y` from params).
+  > **⚠ The argument order is `X Z Y` — NOT `X Y Z`.** In-game, the **F3** debug screen shows
+  > coordinates as `X Y Z` (e.g. `X: 120  Y: 71  Z: -340`). If you copy those numbers in that
+  > order straight into `--origin`, you swap **height (Y)** and **Z**, and the machine gets
+  > built at the wrong height (often underground) or the wrong horizontal position. Re-order
+  > them: `--origin <X> <Z> <Y>` — i.e. `--origin 120 -340 71` for the F3 example above.
+  >
+  > **Picking a build site:**
+  > 1. Stand where you want the machine's corner and open **F3** to read `X`/`Y`/`Z`.
+  > 2. Pick **open, flat terrain** — the build clears/overwrites blocks in its footprint; nothing
+  >    valuable should be there.
+  > 3. Estimate the footprint **before** building: `python scripts/midi_report.py --midi <mid>
+  >    --form <form>` prints an estimated footprint per form, so you know roughly how much space
+  >    to clear (swave/straight/multilane can span hundreds of blocks for a long song; `inplace`
+  >    stays tiny).
+  > 4. **Strongly recommended:** try the whole flow on a **creative-mode test save** first,
+  >    before building in a world you care about.
 - The build is staged into `build/<ns>/`. **Deploy is opt-in:** add
   `--world-dir "<world>/datapacks"` to copy it straight into a world.
 - Read the printed report: palette/cell count, dropped notes, octave-shifted count,
@@ -192,6 +277,9 @@ In the world where you want the machine, do these **in this exact order**:
   tick rate (auto-set via a command block was tested and does **not** work). Without it,
   playback is **~4× too slow** and melody-cut timing is off. This is a **required** step, not
   an optional diagnostic — type it yourself before pressing `[play]`.
+  > **⚠ This speeds up the ENTIRE world**, not just the machine — crop growth, mob spawning/AI,
+  > redstone, everything runs 4× faster. Be careful on a multiplayer/shared server. **Set it
+  > back with `/tick rate 20` when you're done listening.**
 - **⚠ 启用资源包 — 别忘了手动开 `qzpno_mv`(最常见的「完全没声」原因).** Before playing, open
   **Options → Resource Packs** and move **`qzpno_mv`** to the right (selected) side. It must be
   the `pack_format` matching your MC version (1.21.8 = **64**); otherwise MC **silently disables
@@ -209,6 +297,38 @@ each note centered on every player, so the music follows you.
 
 To rebuild for a different song, run `build_machine.py` again with a new `--ns`, then
 repeat steps 3–4.
+
+## 6. Tear it down (拆机) — 不想要了怎么拆
+
+Every generated machine ships its own **`/function <NS>:cleanup`**. Verified against the actual
+generator source (`scripts/generators/inplace.py`, `swave.py`, `multilane.py`):
+
+```
+/function <NS>:cleanup
+```
+
+**What it does:**
+- Resets the `PLAY`/`LOOP`/`SIL` scoreboard **values** to 0 and stops sound (`stopsound @a`).
+- Sets the player back to `gamemode creative` and clears any pending `schedule`d functions
+  (`done`, and `cutmel` on multi-instrument builds).
+- **Clears the machine's block footprint back to air** — an axis-aligned `fill ... air` over the
+  build's bounding box (on `inplace`, one shot; on `swave`/`multilane`, a **segmented** teardown
+  across multiple ticks — `cleanup` kicks off a `clearstep`/`clr/cN`/`cleardone` chain — because a
+  single `fill` over a large footprint can exceed the command size limit; give it a moment on a
+  big build).
+- Runs `forceload remove all` — releases the forceload tickets the machine registered at `setup`.
+- Prints a `tellraw` confirmation ("cleaned up." / "tearing down...").
+
+**What it does NOT do:**
+- It does **not** remove the `scoreboard objectives` themselves (`<ns>`, `rpcfg`) — only resets
+  their values. The objective definitions stay registered until the datapack is removed.
+- It does **not** delete the datapack files or unregister the datapack — the functions
+  (`setup`/`play`/`cleanup`/…) remain callable; running `setup` again rebuilds the machine.
+- It does **not** touch the resourcepack or the mod jar — those are shared runtime assets, not
+  per-song.
+
+**To fully remove a song**, run `cleanup` first (clears the physical blocks, cleanest), then
+delete its folder from `<world>/datapacks/<ns>/` and `/reload`.
 
 ---
 

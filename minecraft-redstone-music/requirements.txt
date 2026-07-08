@@ -1,4 +1,4 @@
-# minecraft-redstone-music (Family A / RedPiano) — Python build-script dependencies
+# minecraft-redstone-music (Family A / RedPiano) - Python build-script dependencies
 #
 # Minimum Python: 3.7+  (the scripts stay 3.8+-friendly: no PEP-604 `X | Y` type hints,
 # no `match`/`case`; the hard floor is `sys.stdout.reconfigure(...)`, a 3.7 API, plus f-strings).

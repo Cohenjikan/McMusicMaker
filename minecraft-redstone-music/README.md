@@ -8,16 +8,28 @@ resourcepack, mod build, and profile install to
 your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max `pack.mcmeta`);
 **1.21.8 is the verified default & anchor**.
 
-> **For any agent, on any platform.** This is a plain, self-contained folder + one Python
-> CLI. There is **no special "skill" loader, registry, or env var** to set up — you read these
-> docs and run a command. It works the same whether you're driving it from Trae, Codex, Mavis,
-> Work Buddy, Claude, or a human shell.
+> **For any agent, on any platform.** This is a plain Python CLI — you read these docs and run a
+> command. It works the same whether you're driving it from Trae, Codex, Mavis, Work Buddy,
+> Claude, or a human shell. If you register it as a **Claude Code skill**, the YAML frontmatter in
+> [SKILL.md](SKILL.md) is what lets the loader discover it by trigger phrase — but no loader is
+> *required* to just use the folder directly.
 >
-> One OS caveat: the generated **`DEPLOY_TO_GAME.bat` installer is Windows-only** (Minecraft
-> Java's usual home). On a non-Windows **native host** (not a sandbox), install with
-> `--install-now` instead, or copy `dist/` into the profile by hand.
+> **Clone the whole repo — this folder alone is not enough.** The scripts under `scripts/`
+> resolve sibling paths like `../binaries/` (prebuilt jars) and `../../poc` (sample sources)
+> relative to the repo root. **Do not copy just `minecraft-redstone-music/` out on its own** —
+> keep it inside the full repo checkout, or those lookups silently fail to find the prebuilt
+> binaries and sample sources (see [BINARIES.md](BINARIES.md)).
+>
+> One OS caveat: the delivery chain (the generated **`DEPLOY_TO_GAME.bat` installer**) is
+> **Windows-only** (Minecraft Java's usual home). On a non-Windows **native host** (not a
+> sandbox), install with `--install-now` instead, or copy `dist/` into the profile by hand —
+> there is no `.sh`/`.command` equivalent shipped today.
 
 ---
+
+> **Shell note:** the multi-line commands below use **bash** syntax (trailing `\` for line
+> continuation). On Windows, run them in **Git Bash** (or WSL); PowerShell users should either
+> launch `bash` first or rewrite the command onto a single line without the `\` characters.
 
 ## Quick start
 
@@ -31,11 +43,14 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
 ```
 
 - `--midi` your `.mid` (a license-clean `assets/demo.mid` is bundled to smoke-test with).
-- `--form` `inplace` (rock-solid, tiny, in-game-verified) is the safe smoke test; **`swave`**
-  is the recommended default for the full "playhead travels the line" machine. Other forms:
-  `straight`, `custom`, `multilane` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
-- `--ns` datapack namespace (also the scoreboard name). `--origin X Z Y` is the world build
-  origin (note the order: **X Z Y**). `--mc-version` is any version in the supported auto band
+- `--form` `inplace` (tiny footprint, functionally complete, tested in-game fewer times than
+  `swave`) is a safe smoke test; **`swave`** is the recommended default for the full "playhead
+  travels the line" machine and **has been tested in-game multiple times and confirmed working**.
+  Other forms: `straight`, `custom`, `multilane` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
+- `--ns` datapack namespace (also the scoreboard name — **pick a name you haven't used before**;
+  reusing one overwrites that datapack's existing folder). `--origin X Z Y` is the world build
+  origin (note the order: **X Z Y**, NOT the `X Y Z` order the in-game F3 screen shows — see
+  [QUICKSTART.md](QUICKSTART.md) §3 for the full warning + site-picking guidance). `--mc-version` is any version in the supported auto band
   **1.21 … 1.21.10** (defaults to the verified `1.21.8` anchor); pack_format, function-folder name,
   `pack.mcmeta` shape and sign-NBT dialect all auto-derive from the version table. Outside this
   band the auto-build `raise`s (it only auto-builds green) — that's the cue to switch to the
@@ -70,6 +85,13 @@ packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it
 refuses to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a
 missing RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
 
+**Resourcepack: pick exactly one.** `--samples-root <dir>` (build from a full samples folder),
+`--prebuilt-rp <qzpno_mv.zip>` (a pack you already have), or `--skip-resourcepack` (build without
+one). The honest effect of `--skip-resourcepack`: the machine plays either **vanilla note-block
+timbres** or **total silence** (if `qzpno_mv` sound events are referenced but nothing matching is
+enabled in the world) — it is **not** a promise of RedPiano's sampled sound. Only use it when a
+matching `qzpno_mv.zip` is already installed and enabled in the target profile.
+
 > **Packaged bundle? Resolve the binaries with one command.** The prebuilt jars + shared
 > `qzpno_mv.zip` + a `binaries_manifest.json` ship in a sibling `binaries/` folder (`../binaries/`).
 > Run **`python scripts/fetch_binaries.py --mc-version <ver>`** — it picks the version-matched mod
@@ -102,6 +124,8 @@ and skip the `.bat`.
    2. **`/tick rate 80` — ⚠ YOU must type this manually.** The machine does **NOT** self-set the
       tick rate (auto-set via a command block was tested and does **not** work). Without it,
       playback is **~4× too slow** and melody-cut timing is off.
+      **⚠ This speeds up the ENTIRE world** (crops, mob AI, redstone, everything) — be careful on
+      a shared/multiplayer world, and run `/tick rate 20` afterward to set it back.
    3. **Confirm the resourcepack** — the installer already enabled `qzpno_mv` in `options.txt`;
       in **Options → Resource Packs** verify `qzpno_mv` is on the right (selected) side.
    4. `/function <ns>:setup` (wait for "built") → press the **[播放]/[play]** sign-button.
@@ -137,14 +161,21 @@ and skip the `.bat`.
 
 ## Reusing this package (self-distribution)
 
-This folder is **fully self-contained**: every script, the test MIDI, the instrument map, and all
-docs are inside it. The only external runtime dependency is **Python 3 + `mido`**
-(`pip install -r requirements.txt`). To reuse it from any agent/platform: **keep the folder intact**
-and invoke `scripts/build_machine.py` with folder-relative or absolute paths — the scripts resolve
-their own assets relative to themselves, so they run from any working directory. No Claude-specific
-loader, registry entry, or environment variable is required. The only things that live **outside**
-this folder are the two large runtime binaries (RedPiano mod jar + `qzpno_mv.zip`) — see
-[BINARIES.md](BINARIES.md); they are needed only **in-game**, not to build a datapack.
+**Datapack-only builds (`scripts/build_machine.py`) are self-contained within this folder**:
+every script, the test MIDI, and the instrument map it needs live under
+`minecraft-redstone-music/` (it only reaches `../assets/`, still inside this same folder tree).
+Invoke it with folder-relative or absolute paths — the scripts resolve their own assets relative
+to themselves, so they run from any working directory. No Claude-specific loader, registry entry,
+or environment variable is required for this path.
+
+**The full runtime pipeline (`prepare_all.py`, `fetch_binaries.py`, `mod_build.py`) needs the
+whole repo**, not just this folder — see the "Clone the whole repo" note near the top of this
+file. Those scripts auto-detect sibling paths **outside** `minecraft-redstone-music/`:
+`../../binaries` (prebuilt jars), `../../poc` (sample sources), `../../mod/redpiano` (mod
+source). If you copy only `minecraft-redstone-music/` elsewhere, those lookups won't find
+anything — the two large runtime binaries (RedPiano mod jar + `qzpno_mv.zip`) still need the
+sibling `binaries/`/`poc/` folders described in [BINARIES.md](BINARIES.md); they matter only
+**in-game**, not to build a bare datapack.
 
 ## Scope
 

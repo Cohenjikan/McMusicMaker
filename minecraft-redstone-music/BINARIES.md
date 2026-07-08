@@ -5,16 +5,24 @@ binaries to RUN** — `scripts/build_machine.py` emits a datapack from a MIDI wi
 `mido`. The binaries below are needed **only in Minecraft, to make the note blocks sound**.
 
 Two of them ship in the repo (the **mod jar** — one per version — and an offline **Fabric API**
-copy); the **`qzpno_mv.zip` resourcepack does NOT** — its sampled instruments are of **unclear
-license**, so it is **distributed separately, never committed to this repo** (this restores the
-"copyright material stays out of the repo" rule from DEVLOG §8). You **supply your own**
-resourcepack — build it from a `qzpno_mv.zip` you already have (`--from-zip`) or from sample
-folders (`--samples-root`); see the "Sampled resourcepack" section below.
+copy); the **`qzpno_mv.zip` resourcepack does NOT** — the sampled piano is **Salamander Grand
+Piano (CC-BY)** and its **attribution obligation was never packaged into the shipped zip**, so
+the pack is **distributed separately, never committed to this repo** (this keeps the licensed /
+attribution-bearing material out of the repo). You **supply your own** resourcepack — build it
+from a `qzpno_mv.zip` you already have (`--from-zip`), from sample folders (`--samples-root`),
+or, just to **hear a sound fast**, from the self-contained **open-source demo samples** this repo
+can synthesize (numpy) — see the "Sampled resourcepack" section below.
+
+> **License at a glance** (details in the table further down): **piano = Salamander Grand Piano,
+> CC-BY (credit the author if you redistribute)**; **drums = VCSL, CC0 (no attribution)**;
+> **bass / lead / pad = numpy-synthesized (self-owned)**. Nothing here is "unknown license" — the
+> real gap is that Salamander's CC-BY credit was never baked into the zip, which is exactly why the
+> pack ships separately and you honor the credit yourself.
 
 | Binary | Ships in repo? | Goes in | Why it's needed | version-key |
 |---|---|---|---|---|
 | **RedPiano mod jar** (`redpiano-1.0.0-mc<ver>.jar`) | ✅ yes (`binaries/`) | profile `mods/` (restart MC) | turns a note-block press into the correct instrument sample, emitted centered on every player | **one jar per MC version** (see below) |
-| **`qzpno_mv.zip` resourcepack** | ❌ **no — samples ship separately** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp_format 64** base — build/derive per version |
+| **`qzpno_mv.zip` resourcepack** | ❌ **no — samples ship separately (piano is CC-BY, credit not packaged)** | profile `resourcepacks/` (enable in Options → Resource Packs) | the 103-block sampled instruments the mod plays | **rp_format 64** base — build/derive per version |
 | **Fabric API jar** (`fabric-api-<v>+mc<ver>.jar`) | ✅ offline copy (`binaries/`, Apache-2.0) | profile `mods/` (restart MC) | the mod's runtime dependency; RedPiano refuses to load without it | one per MC version |
 
 > Resolve the **mod jar** for your version with **`python scripts/fetch_binaries.py --mc-version
@@ -34,14 +42,15 @@ The **`binaries/`** folder ships **inside the repo snapshot**, a sibling of
 `../binaries/`). It holds **every green-band mod jar we have**, an offline Fabric API copy, and a
 **`binaries_manifest.json`** that indexes them with sha256 hashes and per-jar verified-state. The
 sampled `qzpno_mv.zip` is **not** here — the manifest carries it only as a *pointer* (`in_repo:
-false`), because its samples are unclear-license and ship separately.
+false`), because its piano slice is **CC-BY (Salamander)** whose attribution was never packaged, so
+the pack ships separately.
 
 | File in `binaries/` | For | Notes |
 |---|---|---|
 | `binaries_manifest.json` | (index) | schema-1 manifest: `base_url`, one `jars.<ver>` row per shipped jar (file + sha256 + `bytecode_checked` + `listened`), and a `resourcepack` **pointer** (`in_repo: false`, no sha) naming the pack you must supply. `fetch_binaries.py` reads it. |
 | `redpiano-1.0.0-mc<ver>.jar` | **that `<ver>` only** | one mod jar per version; `fabric.mod.json` pins `"minecraft":"~<ver>"`. |
 | `fabric-api-*+mc<ver>.jar` | that `<ver>` | offline copy of the Fabric API (**Apache-2.0**, from Modrinth / `maven.fabricmc.net`). Normally `prepare_all.py` auto-downloads this from Modrinth (public) — `fetch_binaries.py` does **not** manage it. |
-| ~~`qzpno_mv.zip`~~ | — | **NOT in the repo.** Unclear-license samples ship separately; build/derive your own (see "Sampled resourcepack" below). |
+| ~~`qzpno_mv.zip`~~ | — | **NOT in the repo.** Piano = Salamander Grand Piano (CC-BY, attribution required); drums = VCSL (CC0); bass/lead/pad = synthesized. Ships separately; build/derive your own (see "Sampled resourcepack" below). |
 
 ### Rule: `fetch_binaries.py` auto-selects the jar; you supply the resourcepack
 
@@ -157,9 +166,10 @@ build step (or a `qzpno_mv.zip` you already have).
 
 ### 2. `qzpno_mv.zip` sampled resourcepack — **you supply the samples** (not in this repo)
 
-The 103-block sampled resourcepack is **not distributed with this repo**: its samples are of
-**unclear license**, so per the "copyright material stays out of the repo" rule (DEVLOG §8) it ships
-**separately**. You provide it, one of two ways:
+The 103-block sampled resourcepack is **not distributed with this repo**: the shipped pack's piano
+is **Salamander Grand Piano (CC-BY)** and its **attribution was never packaged into the zip**, so —
+to keep attribution-bearing material out of the repo — it ships **separately**. You provide it, one
+of **three** ways (the third is the zero-download demo):
 
 - **Have your own `qzpno_mv.zip` already? — derive from it (no sample folder):**
   `scripts/build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out <derived.zip>`
@@ -170,6 +180,27 @@ The 103-block sampled resourcepack is **not distributed with this repo**: its sa
   builds the zip from per-instrument folders (`samples_piano` / `samples_bass` / `samples_lead` /
   `samples_pad` / `samples_drums`), each with a `samples_manifest_<inst>.json`. It only **copies
   already-encoded `.ogg`** (no ffmpeg). (`--samples-root` and `--from-zip` are mutually exclusive.)
+- **Just want a sound, no downloads? — synthesize the open-source demo samples:**
+  `python scripts/make_demo_samples.py` writes a full `--samples-root` at `assets/demo_samples/`
+  (all 103 sound-event ids the mod plays, synthesized with **numpy** — public-domain / self-owned,
+  **no licensed material, no network, no ffmpeg**), then feed it to the builder or straight to
+  `prepare_all.py --samples-root assets/demo_samples`. Needs the two extra deps in
+  `requirements-demo.txt` (`numpy` + `soundfile`; libsndfile inside the `soundfile` wheel encodes
+  the `.ogg` directly). This is the **"先听个响" path** in the root README / QUICKSTART — the voices
+  are plain synth, not the polished Salamander piano, but they prove the whole chain sounds with
+  zero licensing burden.
+
+#### Two-tier demo (honest expectations)
+
+- **tier 0 — zero extra deps, just build the machine:** `prepare_all.py ... --skip-resourcepack`
+  builds `dist/` with **no resourcepack**. Be honest about what you'll hear: with no matching
+  `qzpno_mv.zip` enabled in-game you get **vanilla note-block tones, or silence** (if the mod
+  rewrote the sound event to a `qzpno:` id that the world can't resolve) — **not** the sampled
+  instruments. Use this only to confirm the datapack/machine builds.
+- **tier 1 — open-source samples (recommended demo):** the `make_demo_samples.py` path above —
+  `pip install -r requirements-demo.txt` then the three-step chain — gives you an actual **`qzpno_mv.zip`
+  full of 103 synthesized voices**, so the mod finds every `qzpno:<id>` and the machine plays a real
+  (if plain) timbre. This is the path that is **build-verified end-to-end** from a clean clone.
 
 **Sample licensing — know what you're bundling.** These are the sources the original pack was built
 from; obtain them yourself under their own terms (none are redistributed here):
@@ -177,13 +208,25 @@ from; obtain them yourself under their own terms (none are redistributed here):
 | Instrument | Source in the original pack | License | You must |
 |---|---|---|---|
 | **drums** | VCSL / Karoryfer real samples (kick/snare/hihat/tom/crash) | **CC0** (public domain) | free to use; no attribution required |
-| **piano** | Salamander Grand Piano | **CC-BY** | **credit the author** if you redistribute |
+| **piano** | Salamander Grand Piano (by Alexander Holm) | **CC-BY 3.0** | **credit the author** if you redistribute — see attribution box below |
 | **bass / lead / pad** | numpy-synthesized (no external library) | your own synthesis output | regenerate or replace freely |
 
-> The `piano` slice is the reason the shipped `qzpno_mv.zip` is treated as unclear-license for
-> *redistribution* — Salamander's CC-BY attribution obligation was never packaged into the zip. If
-> you build your own pack, either honor CC-BY for the piano samples or swap in a CC0 / self-owned
-> piano set. drums are CC0 and bass/lead/pad are synthetic, so those carry no redistribution burden.
+> The `piano` slice is the reason the shipped `qzpno_mv.zip` **ships separately rather than in the
+> repo** — Salamander's **CC-BY** attribution obligation was never packaged into the zip. This is an
+> **attribution gap, not an "unknown license"**: the license is known (CC-BY 3.0) and permissive; you
+> just have to carry the credit. If you build/redistribute your own pack, either **honor CC-BY** for
+> the piano samples (below) or swap in a CC0 / self-owned piano set. drums are CC0 and bass/lead/pad
+> are synthetic, so those carry no redistribution burden. The `make_demo_samples.py` **demo** pack is
+> fully synthetic (no Salamander) and so carries **no** attribution burden at all.
+
+> **How to honor the Salamander CC-BY credit when you ship a pack.** Add a human-readable credit
+> that travels *with the zip* — any one of these is fine, all three is best:
+> 1. put a `CREDITS.txt` (or `README.txt`) **inside** `qzpno_mv.zip` root, e.g.
+>    `Piano samples: "Salamander Grand Piano" by Alexander Holm — licensed CC-BY 3.0
+>    (https://creativecommons.org/licenses/by/3.0/). Source: https://github.com/sfzinstruments/SalamanderGrandPiano`;
+> 2. mention the same credit in your resourcepack's `pack.mcmeta` `description` or on the download page;
+> 3. keep the credit in whatever repo/release notes you publish the pack from.
+> The other instruments need no credit (VCSL drums are CC0; bass/lead/pad are your own synthesis).
 
 The builder is **version-driven** either way: `--mc-version` reads the right `rp_format` +
 `pack.mcmeta` shape from the version table in `scripts/redpiano_core.py`. For **1.21.8** that's

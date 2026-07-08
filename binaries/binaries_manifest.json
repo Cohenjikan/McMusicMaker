@@ -6,7 +6,7 @@
     "rp_format": 64,
     "sha256": null,
     "in_repo": false,
-    "note": "samples are unclear-license and DISTRIBUTED SEPARATELY (not in repo); supply your own via build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"
+    "note": "piano samples = Salamander Grand Piano (CC-BY, attribution required); drums = VCSL (CC0); bass/lead/pad = synthesized. The qzpno_mv resourcepack ships separately (not in this repo); supply your own via build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"
   },
   "jars": {
     "1.21.1": {

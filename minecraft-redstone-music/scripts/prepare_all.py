@@ -357,14 +357,16 @@ def _run(label, argv, *, cwd=None, env=None):
     return True
 
 
-def main(argv=None):
+def _run_main(argv=None):
     p = argparse.ArgumentParser(
         prog="prepare_all.py",
         description="One command to prepare datapack + resourcepack + RedPiano mod "
                     "runtime for a target MC version (1.21..1.21.10).")
     p.add_argument("--midi", required=True, help="source .mid file")
     p.add_argument("--ns", required=True, help="datapack namespace")
-    p.add_argument("--origin", required=True, nargs=3, type=int, metavar=("X", "Z", "Y"))
+    p.add_argument("--origin", required=True, nargs=3, type=int, metavar=("X", "Z", "Y"),
+                   help="注意顺序是 X Z Y，不是游戏 F3 显示的 X Y Z。machine origin: "
+                        "world X, world Z, then world Y (height).")
     p.add_argument("--mc-version", required=True, dest="mc_version",
                    help="target MC version (1.21..1.21.10).")
     p.add_argument("--form", required=True,
@@ -577,12 +579,36 @@ def main(argv=None):
         print("-" * 64)
 
     # 3. MOD BUILD-CONFIG (only meaningful if the mod source is present).
-    if (not args.skip_mod_install and not args.prebuilt_mod_jar
-            and not args.skip_mod_build and os.path.isdir(mod_dir)):
-        mb_argv = [py, os.path.join(here, "mod_build.py"),
-                   "--mc-version", args.mc_version, "--write", "--mod-dir", mod_dir]
-        if not _run("mod build-config (mod_build.py --write)", mb_argv):
-            return 1
+    #    STEP 3 rewrites mod/redpiano/gradle.properties + build.gradle in place. If the
+    #    Gradle build (STEP 4) then fails for lack of a toolchain, that edit would be left
+    #    behind polluting the mod source. So PROBE Gradle + JDK 21 FIRST (reusing STEP 4's
+    #    own resolvers); if either is missing, skip BOTH steps 3 and 4 with a human note
+    #    pointing at --prebuilt-mod-jar, and never touch the mod source files.
+    #    (The --prebuilt-mod-jar / --skip-mod-build / --skip-mod-install paths already skip
+    #    this whole block, so they never write to the mod source either.)
+    resolved_gradle = None
+    resolved_java_home = None
+    resolved_java_detail = None
+    want_build = (not args.skip_mod_install and not args.prebuilt_mod_jar
+                  and not args.skip_mod_build and os.path.isdir(mod_dir))
+    if want_build:
+        resolved_gradle, gradle_detail = _resolve_gradle(args.gradle, mod_dir)
+        resolved_java_home, resolved_java_detail = _resolve_jdk21(args.java_home)
+        if not resolved_gradle or not resolved_java_home:
+            print("\n" + "-" * 64)
+            print("  STEP: mod build-config + jar SKIPPED — no Gradle/JDK 21 toolchain.")
+            print(f"        gradle: {gradle_detail}")
+            print(f"        jdk21 : {resolved_java_detail}")
+            print("  未检测到 Gradle / JDK 21，跳过模组自编（未改动 mod 源文件）。请改用")
+            print("  --prebuilt-mod-jar <redpiano jar>（scripts/fetch_binaries.py 可取随仓 jar），")
+            print("  或安装 Gradle + JDK 21 后重跑。")
+            print("-" * 64)
+            want_build = False
+        else:
+            mb_argv = [py, os.path.join(here, "mod_build.py"),
+                       "--mc-version", args.mc_version, "--write", "--mod-dir", mod_dir]
+            if not _run("mod build-config (mod_build.py --write)", mb_argv):
+                return 1
 
     # 4. MOD JAR — prefer a prebuilt jar (packaged bundles ship one; avoids needing
     #    Gradle/JDK inside a stripped sandbox). Fall back to a Gradle build if source
@@ -606,19 +632,18 @@ def main(argv=None):
         print("  STEP: mod jar SKIPPED BY REQUEST (--skip-mod-build).")
         print("  Not a ready runtime unless a matching RedPiano jar is already in mods/.")
         print("-" * 64)
+    elif not want_build:
+        # STEP 3 already printed the "no Gradle/JDK 21 — use --prebuilt-mod-jar" note and
+        # left the mod source untouched. Nothing to build; leave mod_jar unset so the
+        # honest summary shows the jar as NOT provided.
+        pass
     else:
-        gradle, gradle_detail = _resolve_gradle(args.gradle, mod_dir)
-        java_home, java_detail = _resolve_jdk21(args.java_home)
-        if not gradle or not java_home:
-            sys.stderr.write(
-                "error: no --prebuilt-mod-jar and could not build one "
-                f"(gradle: {gradle_detail}; jdk21: {java_detail}). "
-                "Ship/pass a prebuilt redpiano jar with --prebuilt-mod-jar, or install "
-                "Gradle + JDK 21. A stripped sandbox usually cannot build the jar — use "
-                "the prebuilt binary that ships beside the skill.\n")
-            return 2
-        print(f"[auto] using Gradle: {gradle_detail}")
-        print(f"[auto] using JDK 21: {java_detail}")
+        # Toolchain was probed + confirmed available before STEP 3; reuse it (do NOT
+        # re-resolve — STEP 3 only wrote the build config because these were present).
+        gradle = resolved_gradle
+        java_home = resolved_java_home
+        print(f"[auto] using Gradle: {gradle}")
+        print(f"[auto] using JDK 21: {resolved_java_detail}")
         env = dict(os.environ)
         env["JAVA_HOME"] = java_home
         env["PATH"] = os.path.join(java_home, "bin") + os.pathsep + env.get("PATH", "")
@@ -727,6 +752,14 @@ def main(argv=None):
     print("#    LISTEN ONCE before trusting a recompiled mixin.")
     print("#" * 64)
     return 0
+
+
+def main(argv=None):
+    try:
+        return _run_main(argv)
+    except KeyboardInterrupt:
+        sys.stderr.write("\ninterrupted\n")
+        return 130
 
 
 if __name__ == "__main__":

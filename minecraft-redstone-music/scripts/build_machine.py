@@ -337,7 +337,8 @@ def build_argparser():
                    help="datapack namespace (also the scoreboard objective name)")
     p.add_argument("--origin", required=True, nargs=3, type=int,
                    metavar=("X", "Z", "Y"),
-                   help="world origin X Z Y (overrides start_x/start_z/start_y in params)")
+                   help="注意顺序是 X Z Y，不是游戏 F3 显示的 X Y Z。world origin X Z Y "
+                        "(overrides start_x/start_z/start_y in params)")
     p.add_argument("--mc-version", default="1.21.8", dest="mc_version",
                    help="target Minecraft version (drives pack_format + folder names; "
                         "default 1.21.8). Unknown version -> hard fail.")

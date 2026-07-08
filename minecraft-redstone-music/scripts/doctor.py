@@ -125,8 +125,19 @@ def check_receipt(dist_dir):
     ok, info = deploy_bundle.verify_receipt(dist_dir)
     if ok:
         return Check(1, OK, f"deploy receipt present + token matches ({info})")
+    # If the install scripts themselves are absent, the build never completed — pointing
+    # the user at a nonexistent DEPLOY_TO_GAME.bat is a dead end. Tell them to re-run
+    # prepare_all.py instead.
+    bat = os.path.join(dist_dir, deploy_bundle.BAT_NAME)
+    ps1 = os.path.join(dist_dir, deploy_bundle.PS1_NAME)
+    if not os.path.isfile(bat) and not os.path.isfile(ps1):
+        return Check(1, BAD,
+                     "no valid deploy receipt — the bundle was NOT installed into the game",
+                     f"→ 构建未完成（安装脚本 {deploy_bundle.BAT_NAME} 尚未生成），请重新完整"
+                     f"运行 scripts/prepare_all.py 生成 dist/ 部署包，再由【用户本人】在资源"
+                     f"管理器里双击 {deploy_bundle.BAT_NAME}。 Detail: {info}")
     return Check(1, BAD, "no valid deploy receipt — the bundle was NOT installed into the game",
-                 f"→ the USER must double-click {os.path.join(dist_dir, deploy_bundle.BAT_NAME)} "
+                 f"→ the USER must double-click {bat} "
                  f"in Windows Explorer (native, not via an agent). "
                  f"Detail: {info}")
 
@@ -247,7 +258,16 @@ def check_mods(profile_dir, profile):
                      "no --profile-dir (and none inferable) — cannot inspect mods/")
     mods_dir = os.path.join(profile_dir, "mods")
     if not os.path.isdir(mods_dir):
-        return Check(4, BAD, "profile has no mods/ folder",
+        # If BOTH mods/ and resourcepacks/ are missing, the profile dir looks empty —
+        # almost always the --profile-dir points at the wrong place (multiple launchers /
+        # version isolation), not that the mods just aren't installed yet.
+        empty_note = ""
+        if not os.path.isdir(os.path.join(profile_dir, "resourcepacks")):
+            empty_note = (
+                "  ℹ 该 profile 目录下 mods/ 和 resourcepacks/ 都不存在，看起来是空的——"
+                "常见原因是电脑上有多个启动器（PCL2/HMCL/官方），或开了版本隔离；请确认 "
+                "--profile-dir 指向游戏真正在用的目录（版本隔离时是 versions/<版本>/ 那层）。")
+        return Check(4, BAD, "profile has no mods/ folder" + empty_note,
                      f"→ install the RedPiano jar + matching Fabric API into {mods_dir} "
                      f"(prepare_all.py stages both into dist/mods; DEPLOY_TO_GAME.bat copies them), "
                      f"then restart Minecraft.")

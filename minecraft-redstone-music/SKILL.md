@@ -70,11 +70,34 @@ only the machine logic; sound requires the resourcepack to be present in the
 Minecraft profile's `resourcepacks/` folder and selected in `options.txt` /
 Options -> Resource Packs.
 
+## 怎么使用 / 安装 (how to use / install this skill)
+
+- **推荐:整仓 clone 后在仓库目录里直接用.** Clone/download the **whole** repo (not just this
+  `minecraft-redstone-music/` folder), `cd` into it, and let the agent run the scripts directly —
+  no registration step needed. This works with any agent/platform (Claude Code, Trae, Codex, a
+  human shell, ...).
+- **若要注册成 Claude Code skill,必须保留仓库目录结构.** The YAML frontmatter at the top of this
+  file lets Claude Code's skill loader discover and trigger this skill by name. But the scripts
+  under `scripts/` resolve sibling paths like `../binaries/` (prebuilt jars) and `../../poc`
+  (sample sources) **relative to the repo root** — so registering the skill only works if
+  `minecraft-redstone-music/` stays inside the full repo tree. **Do not copy just this folder out
+  on its own**; it will build datapacks but silently lose access to the prebuilt binaries and
+  sample sources described in [BINARIES.md](BINARIES.md).
+- **交付链只支持 Windows.** The generated installer is `DEPLOY_TO_GAME.bat` — a Windows batch
+  file. This skill's install path assumes a Windows machine running Minecraft Java Edition. On a
+  non-Windows native host, skip the `.bat` and either use `--install-now` (native, non-sandboxed
+  hosts only) or copy `dist/` into the profile by hand; there is no `.sh`/`.command` equivalent
+  shipped today.
+
 ## 用户端流程 (onboarding — 任何 agent / 平台按此驱动用户)
 
 To fulfill a "make Minecraft redstone music from this MIDI" request, collect the inputs
-below, then run the build command in step 4. (No special "skill" loader is needed — this
-is a self-contained folder + one Python CLI; see README.md.)
+below, then run the build command in step 4.
+
+> **语言跟随用户 (language follows the user).** Talk to the user in **whatever language they used**
+> — questions, progress updates, error explanations, and the final delivery summary should all
+> follow their language, not default to English or Chinese. Code, commands, and file paths stay
+> as-is regardless of language.
 
 > ## ⚠ 交付准则 — AGENT MUST READ before reporting success (the #1 failure mode)
 > **You are almost certainly running in a filesystem SANDBOX (Trae SOLO / similar).** In it,
@@ -132,8 +155,12 @@ is a self-contained folder + one Python CLI; see README.md.)
 > bytecode-checked). The jar is per-version: `fabric.mod.json` pins a `"minecraft"` range and Fabric
 > **refuses to load a jar whose range doesn't cover the running game** — `fetch_binaries` selects the
 > right one (`redpiano-1.0.0-mc<ver>.jar`). The **`qzpno_mv.zip` resourcepack is NOT in the repo** —
-> its samples are unclear-license and ship separately (DEVLOG §8); `fetch_binaries` reports it as
-> `separate` (not a failure) and prints how to build your own. Supply a `qzpno_mv.zip` you already
+> its piano samples are **Salamander Grand Piano (CC-BY)**, which requires attribution on
+> redistribution that was never packaged into the zip, so it ships separately (see
+> [BINARIES.md](BINARIES.md) for the credit line; drums are CC0 and bass/lead/pad are
+> synthesized, so only the piano slice carries an attribution obligation); `fetch_binaries`
+> reports it as `separate` (not a failure) and prints how to build your own. Supply a
+> `qzpno_mv.zip` you already
 > have and derive a version-matched pack with **`build_resourcepack.py --from-zip <your qzpno_mv.zip>
 > --mc-version <ver>`** (a base rp-64 pack serves 1.21.7/1.21.8 directly; other versions get only
 > `pack.mcmeta` rewritten), or build from sample folders with `--samples-root`. Then feed the jar to
@@ -197,15 +224,26 @@ is a self-contained folder + one Python CLI; see README.md.)
      `<profile>/saves/<world>/datapacks`, infer `<profile>` from it.
    - **Minecraft profile root** (or confirm the inferred one). The resourcepack must land in
      `<profile>/resourcepacks/qzpno_mv.zip`; a datapack path alone is not enough.
-   - **Resourcepack source (you provide it — not in the repo)**: either `--samples-root` (full
-     source repo: the repo-root `poc/` folder, which contains `samples_manifest_*.json` +
-     `samples_*/*.ogg`) or a `qzpno_mv.zip` **you supply** (the sampled pack ships separately;
-     build/derive it per BINARIES.md) that matches the target MC resourcepack format. When using
-     `--samples-root`, two paths, one folder: the
-     **auto-detect** default is `../../poc` (anchored to `scripts/`, so `scripts/../../poc` =
-     repo-root `poc/`); if you pass `--samples-root` **by hand it's relative to your shell's
-     cwd** — from the repo root that same folder is just `./poc` (written `../poc` only in
-     examples that run one dir deeper). When unsure, pass an absolute path.
+     **Using PCL2 / HMCL with per-version isolation (版本隔离/独立)?** `--profile-dir` must point
+     to that specific version's own folder — typically `.minecraft/versions/<你的版本>/` — **not**
+     the shared `.minecraft` root. Full guidance: [QUICKSTART.md](QUICKSTART.md) §"--profile-dir".
+   - **Resourcepack source — pick exactly one of these three:**
+     1. **`--samples-root <dir>`** — a full samples folder you have (the repo-root `poc/` folder,
+        containing `samples_manifest_*.json` + `samples_*/*.ogg`). Two paths, one folder: the
+        **auto-detect** default is `../../poc` (anchored to `scripts/`, so `scripts/../../poc` =
+        repo-root `poc/`); if you pass `--samples-root` **by hand it's relative to your shell's
+        cwd** — from the repo root that same folder is just `./poc` (written `../poc` only in
+        examples that run one dir deeper). When unsure, pass an absolute path.
+     2. **`--prebuilt-rp <qzpno_mv.zip>`** — a `qzpno_mv.zip` **you already have** (the sampled
+        pack ships separately; build/derive one per [BINARIES.md](BINARIES.md), the piano samples
+        are Salamander Grand Piano under CC-BY and need attribution if you redistribute — see
+        BINARIES.md for the credit line).
+     3. **`--skip-resourcepack`** — build the datapack/mod runtime **without** staging any
+        resourcepack. **Honest effect:** the note blocks will play either **vanilla note-block
+        timbres** (if no `qzpno_mv`-compatible pack is already enabled in the world) **or total
+        silence** (if `qzpno_mv` sound events are referenced but no matching pack is active) —
+        it is **not** a guarantee of RedPiano's sampled sound. Only use this when a matching
+        `qzpno_mv.zip` is already installed **and enabled** in the target profile.
    - **Mod status**: inspect `<profile>/mods/`, but do not stop there. Default behavior is to
      build/install RedPiano and install/reuse/download the matching Fabric API automatically;
      only the final Minecraft restart and listen test remain user actions.
@@ -223,14 +261,15 @@ is a self-contained folder + one Python CLI; see README.md.)
    > (Family B) reproduces original timbre, and that lives in the **external
    > `mc-noteblock-demo` repo — this skill cannot build it.** Say so and ask for a MIDI.
 
-2. **选播放形态 — pick a form.** Default = **`inplace` 原地调色板**: the in-game-verified,
-   rock-solid, tiny-footprint form the user confirmed as "特别好" — reach for it unless there's a
-   reason not to. Escape hatch: if the user wants the "playhead travels the line" animation, offer
-   **`swave` S 型曲折直线** (generation-verified, full in-game listen still pending); custom
-   routing/particles go through the HTMLs in step 5. Confirm the form when it's ambiguous, but you
-   don't need a mandatory extra round-trip when the user already told you what they want (or said
-   "just use the default"). The `midi_report.py` verdict (step 1) can steer this — a long/dense
-   MIDI on `swave` reports a large footprint, nudging toward `inplace`.
+2. **选播放形态 — pick a form.** Default = **`inplace` 原地调色板**: functionally complete and
+   the user confirmed a build as "特别好", but it has been **tested in-game fewer times** than
+   `swave` — reach for it unless there's a reason not to. Escape hatch: if the user wants the
+   "playhead travels the line" animation, offer **`swave` S 型曲折直线** (`--form swave`) — this
+   form **has been tested in-game multiple times and confirmed working**; custom routing/particles
+   go through the HTMLs in step 5. Confirm the form when it's ambiguous, but you don't need a
+   mandatory extra round-trip when the user already told you what they want (or said "just use the
+   default"). The `midi_report.py` verdict (step 1) can steer this — a long/dense MIDI on `swave`
+   reports a large footprint, nudging toward `inplace`.
 
 3. **备好 mod + 音效包** for the chosen version (any of 1.21..1.21.10) — **start with
    `fetch_binaries.py`**:
@@ -244,7 +283,8 @@ is a self-contained folder + one Python CLI; see README.md.)
      you whether that jar was **listened in-game** or only **check-jar clean** (so you know to listen
      once). If the manifest has **no jar for the version**, it says so and points you to build one.
    - **resourcepack (you supply it — not in the repo)** — the sampled `qzpno_mv.zip` ships
-     separately (unclear-license samples; DEVLOG §8). Provide your own and pass it as
+     separately because its piano samples (Salamander Grand Piano, CC-BY) need attribution on
+     redistribution that isn't packaged into the zip (see [BINARIES.md](BINARIES.md)). Provide your own and pass it as
      `--prebuilt-rp`. Have a `qzpno_mv.zip`? derive a version-matched pack:
      `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out <derived.zip>`
      — rewrites only `pack.mcmeta` (rp_format + single/minmax shape from the version table), no
@@ -272,6 +312,13 @@ is a self-contained folder + one Python CLI; see README.md.)
    resourcepack is **not** in the repo — build/derive your own, see step 3), so no Gradle/JDK is
    needed. In a full source checkout, `--samples-root` auto-detects `../../poc`. Do not add
    `--skip-*` flags unless the user explicitly asks for a partial artifact.
+
+   > **⚠ `--origin` order is `X Z Y`, NOT `X Y Z`.** The in-game F3 debug screen shows coordinates
+   > as `X Y Z` — copying them in that order swaps height and Z and puts the machine somewhere
+   > wrong (often underground or in the wrong spot). Read X, Z, Y off F3 in that order when typing
+   > the flag. Full site-picking guidance: [QUICKSTART.md](QUICKSTART.md) §1a/§2.
+   > **⚠ `--ns` must be a name you haven't used before** in this world's `datapacks/` folder — an
+   > existing datapack directory with the same namespace gets **overwritten wholesale**.
    If `prepare_all.py` exits nonzero, fix the missing dependency or report blocked — do not
    summarize it as complete.
 
@@ -301,6 +348,8 @@ is a self-contained folder + one Python CLI; see README.md.)
    only placeholders. The **jar + Fabric API** come from `binaries/`; the **`--prebuilt-rp` is a
    resourcepack you supplied** (not in the repo — build it per step 3 first). With all three passed
    explicitly, **no Modrinth / network is needed**:
+
+   > bash 语法（行尾 `\` 续行）；PowerShell 用户请用 Git Bash 运行，或把整条命令改写成不带 `\` 的单行。
 
    ```bash
    python scripts/prepare_all.py \
@@ -342,6 +391,9 @@ is a self-contained folder + one Python CLI; see README.md.)
      2. `/reload` — register the datapack functions.
      3. `/tick rate 80` — **⚠ 用户必须自己手动敲这一条**. Without it playback is **~4× too
         slow** and melody-cut timing is off. **The machine does NOT self-set it.**
+        > **⚠ `/tick rate 80` speeds up the ENTIRE world** — crops, mob spawning/AI, redstone,
+        > everything, not just the music machine. Be cautious on a multiplayer/shared world.
+        > **Remember to `/tick rate 20` back** when done listening.
      4. **确认资源包** — the `.bat` already enabled `qzpno_mv` in `options.txt`; the user just
         confirms it's on the right (selected) side in Options → Resource Packs.
      5. `/function <ns>:setup` — build the physical machine + console at the origin.
@@ -370,9 +422,10 @@ Five forms share one MIDI→resolve→layout→melody-cut→emit pipeline. Pick 
 the full capability table, per-form verified status, and the 6-stage pipeline are in the
 authoritative reference — **don't re-derive them here**:
 
-- **`inplace`** — in-place palette, tiny footprint, **user-verified "特别好"**. The default.
+- **`inplace`** — in-place palette, tiny footprint, **user-verified "特别好"**; functionally
+  complete but tested in-game fewer times than `swave`. The default.
 - **`swave`** — marching-pulse S-wave with the "playhead travels the line" effect;
-  generation-verified, ear-confirm pending. Offer when the user wants the animation.
+  **tested in-game multiple times and confirmed working**. Offer when the user wants the animation.
 - **`straight` / `custom` / `multilane`** — long line / drawn waypoint route / one lane per
   voice. All v1, geometry-confirmed. `custom` and `multilane` need a designer `--params` JSON.
 
@@ -388,13 +441,18 @@ datapack plus active runtime assets. For normal requests, `prepare_all.py` owns 
 steps by default; this section is a checklist, not a reason to stop and hand work back.
 
 1. **Fabric Loader + Fabric API + Java 21** for the target Minecraft version
-   (verified default **1.21.8**; supported auto band **`1.21`..`1.21.10`**). The script
+   (verified default **1.21.8**; supported auto band **`1.21`..`1.21.10`**). Install **Fabric
+   Loader** first via the official installer: <https://fabricmc.net/use/installer/>. The script
    auto-detects JDK 21/Gradle for RedPiano builds and downloads/reuses Fabric API when
    possible; missing toolchain/network means **not ready**, not success.
 2. **RedPiano mod jar** in `<profile>/mods/` (then restart Minecraft — a jar swap needs a
    full restart, not `/reload`). The easy path is `fetch_binaries.py --mc-version <ver>` →
    pass its jar as `--prebuilt-mod-jar`. `prepare_all.py` can also build one via Gradle when
-   the manifest lacks the version and a JDK 21 is present.
+   the manifest lacks the version and a JDK 21 is present. RedPiano is **server-side logic**
+   (`docs/MOD_ARCHITECTURE.md` §0/§6.4 — it gates on `ServerLevel`/`ServerPlayer`); for
+   **singleplayer** just install it like any client mod (the integrated server runs on your
+   machine). For a **dedicated multiplayer server**, install RedPiano on the **server**; it is
+   shipped with `environment: "*"` so a client copy is harmless but not load-bearing.
 3. **`qzpno_mv` resourcepack** placed in `resourcepacks/` and **manually enabled by the
    user** in **Options → Resource Packs** (moved to the right/selected side). `prepare_all.py`
    copies the zip and tries to select it in `options.txt`, but the user MUST still confirm
@@ -403,9 +461,10 @@ steps by default; this section is a checklist, not a reason to stop and hand wor
    total silence.** The `pack_format` is version-specific (e.g. **64** for 1.21.8); a base
    `qzpno_mv.zip` is rp 64, and for any other version `scripts/build_resourcepack.py --from-zip`
    derives a matching pack from it (rp_format + shape from the version table, no re-encoding needed).
-   This zip is **not in the repo** — its samples are unclear-license and ship separately; **you
-   supply your own** (build/derive it per [BINARIES.md](BINARIES.md)). `fetch_binaries.py` resolves
-   only the mod jar, not this pack.
+   This zip is **not in the repo** — its piano samples (Salamander Grand Piano, CC-BY) need
+   attribution on redistribution that isn't packaged into the zip, so it ships separately; **you
+   supply your own** (build/derive it per [BINARIES.md](BINARIES.md), which has the credit line).
+   `fetch_binaries.py` resolves only the mod jar, not this pack.
 4. **tick80** is required for playback timing. **The user must manually type `/tick rate 80`
    in-game** before pressing `[play]` — the machine does **NOT** self-set it (auto-set via a
    command block was tested and does not work). Without it, playback runs **~4× too slow** and

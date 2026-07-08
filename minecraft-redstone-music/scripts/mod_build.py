@@ -385,6 +385,12 @@ def build_argparser():
 
 def main(argv=None):
     args = build_argparser().parse_args(argv)
+    # normalize --mc-version once at the entry point so every downstream consumer (the
+    # MOD_TOOLCHAIN dict lookup in toolchain_for(), _write()'s f-strings, check_jar()'s
+    # _mc_range_matches()) sees the same clean value get_version_profile() already
+    # tolerates internally — a bare dict .get() does NOT strip, so a trailing space
+    # ("1.21.8 ") used to pass get_version_profile() but then miss MOD_TOOLCHAIN.
+    args.mc_version = (args.mc_version or "").strip()
     if args.check_jar:
         # jar verification is standalone (no toolchain print/write); returns 0/1.
         return check_jar(args.check_jar, args.mc_version)

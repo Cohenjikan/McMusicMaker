@@ -596,7 +596,11 @@ def _cli(argv=None):
     p.add_argument("--verify", metavar="DIST", required=True,
                    help="dist/ dir to check for a valid DEPLOY_RECEIPT.txt")
     args = p.parse_args(argv)
-    ok, info = verify_receipt(args.verify)
+    try:
+        ok, info = verify_receipt(args.verify)
+    except KeyboardInterrupt:
+        sys.stderr.write("\ninterrupted\n")
+        return 130
     print(("✓ INSTALLED — " if ok else "✗ NOT INSTALLED — ") + info)
     return 0 if ok else 1
 

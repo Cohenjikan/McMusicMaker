@@ -7,8 +7,9 @@ binaries a target version needs:
 
   * the version-matched RedPiano mod jar (``redpiano-1.0.0-mc<ver>.jar``) — the one binary
     that ships in the repo's ``binaries/`` folder and is resolved here; and
-  * the ``qzpno_mv.zip`` sampled-instrument resourcepack — the samples are of UNCLEAR
-    LICENSE and are therefore **distributed separately, NOT in this repo** (see BINARIES.md).
+  * the ``qzpno_mv.zip`` sampled-instrument resourcepack — piano samples are Salamander
+    Grand Piano (CC-BY, attribution required), drums are VCSL (CC0), and bass/lead/pad are
+    synthesized; the pack **ships separately, NOT in this repo** (see BINARIES.md).
     This tool does not ship it; when a target version needs it, the tool prints exactly how
     to supply your own (``build_resourcepack.py --from-zip <your qzpno_mv.zip>`` or
     ``--samples-root <dir>``, or any other qzpno-shaped pack).
@@ -224,7 +225,8 @@ def fetch(mc_version, dest, manifest_path, base_url=None):
         "listened": bool(jar_row.get("listened")),
     })
 
-    # resourcepack — samples are UNCLEAR-LICENSE and ship SEPARATELY (not in this repo). We
+    # resourcepack — piano=Salamander Grand Piano (CC-BY, attribution required), drums=VCSL
+    # (CC0), bass/lead/pad=synthesized; the pack ships SEPARATELY (not in this repo). We
     # do NOT fail on it. If the manifest still carries a real in-repo entry with a sha (legacy
     # snapshots) AND the file happens to be present locally, we verify it as a courtesy;
     # otherwise we emit a 'separate' status with a clear self-supply pointer.
@@ -251,11 +253,13 @@ def fetch(mc_version, dest, manifest_path, base_url=None):
 
 def _rp_supply_hint(rp_file, dest):
     """The graceful-degradation guidance printed when the sampled resourcepack is not in the
-    repo (its samples are of unclear license and ship separately). Names the exact self-supply
+    repo (piano samples are Salamander Grand Piano CC-BY, drums are VCSL CC0, bass/lead/pad
+    are synthesized, and the pack ships separately). Names the exact self-supply
     commands rather than crashing or pretending the pack is available."""
     return (
-        f"{rp_file} is NOT in this repo — the sampled instruments are of unclear license and "
-        f"are distributed SEPARATELY (see BINARIES.md). Supply your own pack:\n"
+        f"{rp_file} is NOT in this repo — piano samples are Salamander Grand Piano (CC-BY, "
+        f"attribution required), drums are VCSL (CC0), and bass/lead/pad are synthesized; the "
+        f"pack ships SEPARATELY (see BINARIES.md). Supply your own pack:\n"
         f"        • have your own qzpno_mv.zip? derive a version-matched pack with:\n"
         f"            python scripts/build_resourcepack.py --from-zip <your qzpno_mv.zip> "
         f"--mc-version <ver> --out dist/qzpno_mv.zip\n"
@@ -315,7 +319,8 @@ def gen_manifest(binaries_dir, base_url=None):
 
     names = sorted(os.listdir(binaries_dir))
 
-    # resourcepack — the sampled instruments are of unclear license and ship SEPARATELY, so
+    # resourcepack — piano samples are Salamander Grand Piano (CC-BY, attribution required),
+    # drums are VCSL (CC0), and bass/lead/pad are synthesized; the pack ships SEPARATELY, so
     # the zip is normally ABSENT from binaries/. That is NOT an error: we write a POINTER
     # entry (in_repo=false, no sha) so the manifest documents the pack's shape without
     # claiming to carry it. If a local qzpno_mv.zip IS present (a maintainer's own copy),
@@ -327,8 +332,10 @@ def gen_manifest(binaries_dir, base_url=None):
             "rp_format": RP_BASE_FORMAT,
             "sha256": sha256_file(rp_path),
             "in_repo": True,
-            "note": ("local copy present but samples are unclear-license — do NOT commit; "
-                     "other 1.21.x: repack pack.mcmeta with build_resourcepack.py --from-zip"),
+            "note": ("local copy present (piano samples = Salamander Grand Piano, CC-BY, "
+                     "attribution required; drums = VCSL, CC0; bass/lead/pad = synthesized) "
+                     "— do NOT commit; other 1.21.x: repack pack.mcmeta with "
+                     "build_resourcepack.py --from-zip"),
         }
     else:
         resourcepack = {
@@ -336,9 +343,10 @@ def gen_manifest(binaries_dir, base_url=None):
             "rp_format": RP_BASE_FORMAT,
             "sha256": None,
             "in_repo": False,
-            "note": ("samples are unclear-license and DISTRIBUTED SEPARATELY (not in repo); "
-                     "supply your own via build_resourcepack.py --from-zip / --samples-root "
-                     "(see BINARIES.md)"),
+            "note": ("piano samples = Salamander Grand Piano (CC-BY, attribution required); "
+                     "drums = VCSL (CC0); bass/lead/pad = synthesized. The qzpno_mv "
+                     "resourcepack ships separately (not in this repo); supply your own via "
+                     "build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"),
         }
 
     # jars
@@ -415,7 +423,8 @@ def build_argparser():
         prog="fetch_binaries.py",
         description="Resolve the version-matched RedPiano mod jar for a target MC version "
                     "(local-first; remote once the repo is public). The qzpno_mv resourcepack "
-                    "ships SEPARATELY (unclear-license samples) — supply your own.")
+                    "(piano = Salamander Grand Piano CC-BY, drums = VCSL CC0, bass/lead/pad = "
+                    "synthesized) ships SEPARATELY (not in this repo) — supply your own.")
     p.add_argument("--mc-version", dest="mc_version", default=None,
                    help="target Minecraft version (selects the jar row from the manifest).")
     p.add_argument("--dest", default=None,
@@ -431,6 +440,12 @@ def build_argparser():
 
 def main(argv=None):
     args = build_argparser().parse_args(argv)
+    # normalize --mc-version once at the entry point: fetch()'s `mc_version not in jars`
+    # is a bare dict-key lookup (no internal stripping like redpiano_core's
+    # get_version_profile), so a trailing space ("1.21.8 ") would otherwise miss a
+    # manifest row that is really present.
+    if args.mc_version is not None:
+        args.mc_version = args.mc_version.strip()
 
     # --gen-manifest is a standalone maintenance mode.
     if args.gen_manifest is not None:
@@ -445,7 +460,8 @@ def main(argv=None):
         rpm = man["resourcepack"]
         if rpm.get("in_repo"):
             print(f"  resourcepack: {rpm['file']} (rp_format {rpm['rp_format']}, "
-                  f"LOCAL copy — unclear-license, do NOT commit)")
+                  f"LOCAL copy — piano=Salamander CC-BY/drums=VCSL CC0/bass-lead-pad="
+                  f"synthesized, do NOT commit)")
         else:
             print(f"  resourcepack: {rpm['file']} (rp_format {rpm['rp_format']}, "
                   f"ships SEPARATELY — not in repo; supply your own)")
@@ -517,7 +533,7 @@ def _selftest():
         rp_item = next(i for i in rpt["items"] if i["role"] == "resourcepack")
         assert jar_item["status"] == "local", jar_item
         assert rp_item["status"] == "separate", rp_item
-        assert "distributed SEPARATELY" in rp_item["detail"], rp_item
+        assert "ships SEPARATELY" in rp_item["detail"], rp_item
         assert "build_resourcepack.py --from-zip" in rp_item["detail"], rp_item
         print("ok: jar local hit -> ok; resourcepack 'separate' with self-supply guidance")
 

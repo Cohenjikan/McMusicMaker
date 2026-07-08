@@ -174,11 +174,17 @@ def get_version_profile(mc_version):
     the 'yellow' 1.20.3..1.20.6 band — the green-band *build policy* is enforced
     separately by assert_build_supported(), so these facts stay queryable (e.g. for the
     plural-folder rename) without implying the mod exists there."""
+    # Tolerate stray surrounding whitespace (e.g. a trailing space from a copy-paste or a
+    # shell-quoted "1.21.8 "): a bare VERSION_TABLE lookup would otherwise miss and raise
+    # "unknown version" for what is really a valid version with an extra space.
+    if mc_version is not None:
+        mc_version = str(mc_version).strip()
     row = VERSION_TABLE.get(mc_version)
     if row is None:
         raise RedPianoError(
             f"unknown mc_version {mc_version}; add it to VERSION_TABLE "
             f"(source dp/rp format from https://minecraft.wiki/w/Pack_format). "
+            f"若确认版本在支持列表里，检查输入是否带多余空格。 "
             f"Auto-build doesn't know this version, but the skill can still help: "
             f"read docs/VERSION_TACTICS.md and take the craftsman path (plan/build/"
             f"verify it yourself for a single delivery)."
