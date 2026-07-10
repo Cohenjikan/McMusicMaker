@@ -181,12 +181,15 @@ below, then run the build command in step 4.
 > real fabric-api was resolved, not a stub) as a pre-deploy gate.
 >
 > **If `fetch_binaries.py` resolves a jar for the target, DO NOT compile the mod at all.** A
-> version-matched jar ships in `../binaries/` for every version in the manifest (currently 1.21.7 /
-> 1.21.8; more as they are added). Inside the sandbox you **do not need and must not** run Gradle —
-> run `fetch_binaries --mc-version <ver>` and pass its jar as `--prebuilt-mod-jar`. Only when the
-> manifest has **no jar** for the target should you recompile, and even then a stripped sandbox
-> usually can't — building the mod in one is exactly what tempts the fatal fabric-api-stub shortcut
-> above.
+> version-matched jar ships in `../binaries/` for every version in the manifest — **11 jars,
+> covering `1.21`..`1.21.10`** (see `binaries_manifest.json`). Only **1.21.8** has been confirmed
+> by an in-game listen; the other ten are bytecode-checked only (`mod_build.py --check-jar` clean,
+> not yet heard) — see BINARIES.md's "Honesty: only 1.21.8 has been listened in-game" note before
+> claiming sound works. Inside the sandbox you **do not need and must not** run Gradle — run
+> `fetch_binaries --mc-version <ver>` and pass its jar as `--prebuilt-mod-jar`. Only when the
+> manifest has **no jar** for the target (i.e. outside `1.21`..`1.21.10`) should you recompile, and
+> even then a stripped sandbox usually can't — building the mod in one is exactly what tempts the
+> fatal fabric-api-stub shortcut above.
 >
 > **Never claim it "works" before an in-game listen.** A recompiled mixin can compile yet be
 > silent or mis-pitched. After the receipt exists, hand off the in-game steps (step 4) and ask

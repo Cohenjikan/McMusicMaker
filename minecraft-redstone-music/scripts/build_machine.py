@@ -457,6 +457,10 @@ def run(args):
     # fail fast on an --origin Y outside the buildable world height range.
     _check_origin_y(args.origin[2])
 
+    # fail fast on an invalid --ns before any MIDI parse: it is the datapack namespace
+    # AND scoreboard objective name, and it feeds os.path.join + rmtree downstream.
+    core.validate_namespace(args.ns)
+
     # default display name = MIDI file stem
     if args.name is None:
         args.name = os.path.splitext(os.path.basename(args.midi))[0] or "untitled"

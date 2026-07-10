@@ -35,6 +35,7 @@ Example:
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -246,6 +247,15 @@ def _find_fabric_api(mods_dir, mc_version):
     return max(matches, key=lambda p: os.path.getmtime(p))
 
 
+def _sha512_of(path):
+    """Stream a file through sha512 in 1MB chunks (stdlib only, no full-file read into memory)."""
+    h = hashlib.sha512()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _download_fabric_api(mods_dir, mc_version):
     os.makedirs(mods_dir, exist_ok=True)
     query = urllib.parse.urlencode({
@@ -275,8 +285,15 @@ def _download_fabric_api(mods_dir, mc_version):
     if not primary or not primary.get("url") or not primary.get("filename"):
         raise RedPianoError(f"Fabric API metadata for {mc_version} has no downloadable jar")
     target = os.path.join(mods_dir, primary["filename"])
+    # Corruption detection, not supply-chain security: a timed-out/truncated download can
+    # leave a half-written jar on disk, and the old `if os.path.isfile: return` reused that
+    # broken cache forever. sha512 (from Modrinth's own files[].hashes) catches that case.
+    expected = (primary.get("hashes") or {}).get("sha512")
     if os.path.isfile(target):
-        return target
+        if not expected or _sha512_of(target) == expected:
+            return target
+        print(f"[warn] cached {target} 校验哈希不匹配(可能是上次下载被截断/损坏),重新下载")
+        os.remove(target)
     dreq = urllib.request.Request(
         primary["url"],
         headers={"User-Agent": "McMusicMaker-prepare-all/1.0 (redpiano runtime helper)"},
@@ -289,6 +306,15 @@ def _download_fabric_api(mods_dir, mc_version):
             f"could not auto-download Fabric API jar for {mc_version}: {e}. "
             f"Pass --fabric-api-jar <matching fabric-api +{mc_version} jar>."
         )
+    if expected:
+        if _sha512_of(target) != expected:
+            os.remove(target)
+            raise RedPianoError(
+                f"downloaded Fabric API jar for {mc_version} failed sha512 verification "
+                f"(likely a truncated/corrupt download); retry, or pass --fabric-api-jar manually."
+            )
+    else:
+        print(f"[warn] Fabric API metadata for {mc_version} has no sha512 hash; skipping verification")
     return target
 
 

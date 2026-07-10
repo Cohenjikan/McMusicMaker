@@ -46,6 +46,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from runtime_guard import RuntimeGuardError, path_is_under_trae_vmcache  # noqa: E402
+from redpiano_core import validate_namespace, RedPianoError as _CoreErr  # noqa: E402
 
 RECEIPT_NAME = "DEPLOY_RECEIPT.txt"
 PS1_NAME = "deploy_to_game.ps1"
@@ -381,15 +382,14 @@ def build_deploy_bundle(dist_dir, *, ns, world_datapacks_dir, profile_dir, mc_ve
     Returns a dict with the token and the generated file paths. Performs NO write
     into the Minecraft profile — that is the emitted script's job, run natively."""
     token = token or new_token()
-    # Conservative ns check: a datapack namespace is required to be [a-z0-9_-] by Minecraft
-    # itself, so any other char is already invalid — and rejecting here also removes the ' /
-    # whitespace injection surface for the generated .ps1 ($Ns is spliced into paths + a
-    # PS single-quoted string). Fail loud rather than emit a bundle that crashes on run.
-    import re as _re
-    if not ns or not _re.fullmatch(r"[a-z0-9_-]+", ns):
-        raise RuntimeGuardError(
-            f"invalid datapack namespace {ns!r}: must be non-empty and only [a-z0-9_-] "
-            "(Minecraft's own rule for a datapack namespace).")
+    # Delegate the ns check to redpiano_core.validate_namespace (single source of truth),
+    # but keep raising RuntimeGuardError — prepare_all catches on that type. The .ps1
+    # splices $Ns into paths + a single-quoted PS string, so a bad ns is also an injection
+    # surface; fail loud rather than emit a bundle that crashes on run.
+    try:
+        validate_namespace(ns)
+    except _CoreErr as e:
+        raise RuntimeGuardError(str(e))
     dist_dir = os.path.abspath(dist_dir)
     # dist/ MUST live on the real disk. If it resolves under the VMCache mirror, the .bat
     # (run natively) would not find the staged artifacts. Refuse rather than mislead.
@@ -537,6 +537,12 @@ def install_now(dist_dir, *, world_datapacks_dir, profile_dir, ns, manifest, tok
 
     DO NOT call this from inside a sandbox — it would install into the mirror and
     then (falsely) write a receipt. It is gated by the CLI's native intent."""
+    # Public entry point: an external caller can hand-build the manifest, so re-validate
+    # ns here too — it feeds os.path.join + rmtree just below (keep the guard type).
+    try:
+        validate_namespace(ns)
+    except _CoreErr as e:
+        raise RuntimeGuardError(str(e))
     copied = []
     if manifest.get("datapack") and world_datapacks_dir:
         src = os.path.join(dist_dir, "datapack", ns)

@@ -230,6 +230,53 @@ def assert_build_supported(profile):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §1.0  Namespace validation + path-containment guard (destructive-op safety)
+#   ns flows into os.path.join + shutil.rmtree in three places (Datapack.__init__,
+#   Datapack.deploy, deploy_bundle.install_now). An unvalidated ns is a directory-
+#   traversal hole: '../..' or an absolute path escapes the build dir and rmtree
+#   deletes outside it (up to saves/). validate_namespace closes it at the source;
+#   _assert_subpath is defense-in-depth in case the regex is ever loosened.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def validate_namespace(ns):
+    """Assert ``ns`` is a safe datapack namespace / scoreboard objective name.
+
+    Rule: ``re.fullmatch(r"[a-z0-9_-]+")``, non-empty. Minecraft itself also permits
+    ``.`` in a namespace, but ``.`` is DELIBERATELY excluded: it would let ``..``
+    through, and ns is joined into a filesystem path that later gets rmtree'd — a
+    ``../..`` or absolute ns could delete outside the build dir (worst case saves/).
+    The narrow rule also fails loud instead of silently emitting a datapack whose
+    namespace / scoreboard objective MC rejects at load (uppercase / CJK / dots =>
+    a pack that installs but never plays). Raises RedPianoError on violation."""
+    if not ns or not re.fullmatch(r"[a-z0-9_-]+", ns):
+        raise RedPianoError(
+            f"非法命名空间 namespace={ns!r}: 必须非空且只含 [a-z0-9_-]+ —— 它同时是数据包 "
+            f"namespace 和 scoreboard objective 名。刻意排除点号 '.'(MC 允许，但会放行 "
+            f"'..' 让 ns 拼进随后 rmtree 的路径越界删除，最坏删到 saves/);且大写/中文/点号 "
+            f"这类非法 ns 即便不越界，也会静默产出一个进游戏加载失败、永远不响的坏数据包。"
+        )
+
+
+def _assert_subpath(child, base, what):
+    """Assert ``child`` resolves strictly inside ``base`` before a rmtree/copytree
+    touches it. Defense-in-depth behind validate_namespace: if the ns regex is ever
+    loosened this still refuses an escape. Windows: normcase folds case + separators;
+    commonpath raises ValueError across different drives — treat that (and any
+    non-containment, and child == base) as an escape."""
+    a_child = os.path.normcase(os.path.abspath(child))
+    a_base = os.path.normcase(os.path.abspath(base))
+    try:
+        common = os.path.commonpath([a_child, a_base])
+    except ValueError:
+        common = None
+    if common != a_base or a_child == a_base:
+        raise RedPianoError(
+            f"路径越界防线: {what} 解析到 {os.path.abspath(child)!r},不在 base "
+            f"{os.path.abspath(base)!r} 之内 —— 拒绝对 base 之外(或 base 本身)做破坏性操作。"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §1.1  Datapack writer + lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -241,6 +288,8 @@ class Datapack:
     """
 
     def __init__(self, ns, name, out_dir, mc_version, direction="+X", ox=0, oz=0):
+        # MUST precede any path build / rmtree below: a bad ns is a traversal hole.
+        validate_namespace(ns)
         self.ns = ns
         self.name = name
         self.mc_version = mc_version
@@ -254,6 +303,7 @@ class Datapack:
         self.ox = int(ox)
         self.oz = int(oz)
         self.root = os.path.join(out_dir, ns)
+        _assert_subpath(self.root, out_dir, "datapack root")
         # like the poc: remove and recreate the datapack root
         if os.path.isdir(self.root):
             shutil.rmtree(self.root)
@@ -317,6 +367,7 @@ class Datapack:
         poc/45 L212-214). Returns the destination path. Opt-in (only called when
         --world-dir is given)."""
         dst = os.path.join(world_datapacks_dir, self.ns)
+        _assert_subpath(dst, world_datapacks_dir, "world datapack dir")
         if os.path.isdir(dst):
             shutil.rmtree(dst)
         shutil.copytree(self.root, dst)
@@ -1233,5 +1284,33 @@ if __name__ == "__main__":
         assert os.path.isfile(os.path.join(dp2.root, "data", "oldns", "functions", "load.mcfunction"))
         assert os.path.isfile(os.path.join(dp2.root, "data", "minecraft", "tags", "functions", "load.json"))
         print("ok: pre-1.21 Datapack writes PLURAL folders")
+
+    # ── namespace validation + traversal-rmtree regression (destructive-op safety) ──
+    for bad in ["../evil", "..", "C:/temp_x", "/tmp/x", "a/b", "A", "春娇", "", "a.b"]:
+        expect_raise(lambda b=bad: validate_namespace(b), "namespace",
+                     f"reject bad ns {bad!r}")
+    for good in ("cjzm", "test_ns-1"):
+        validate_namespace(good)  # legal -> must NOT raise
+    print("ok: validate_namespace accepts [a-z0-9_-]+, rejects ../ .. abs a/b A CJK '' a.b")
+    # REGRESSION: a traversal ns must raise BEFORE any rmtree. Build a sentinel sibling
+    # of the (sub)build dir and prove Datapack('../<sentinel>', ...) leaves it intact.
+    _sandbox = tempfile.mkdtemp()
+    try:
+        _sentinel = os.path.join(_sandbox, "SENTINEL_KEEP")
+        os.makedirs(_sentinel)
+        open(os.path.join(_sentinel, "canary.txt"), "w").close()
+        _sub = os.path.join(_sandbox, "build")
+        os.makedirs(_sub)
+        expect_raise(lambda: Datapack("../SENTINEL_KEEP", "Evil", _sub, "1.21.8"),
+                     "namespace", "traversal ns rejected pre-rmtree")
+        assert os.path.isfile(os.path.join(_sentinel, "canary.txt")), \
+            "SENTINEL deleted — the raise happened AFTER rmtree!"
+        print("ok: traversal ns raised before rmtree (sentinel dir intact)")
+        # a legal ns still builds fine under the same sandbox.
+        _okdp = Datapack("cjzm", "Fine", _sub, "1.21.8")
+        assert os.path.isdir(_okdp.root) and os.path.basename(_okdp.root) == "cjzm"
+        print("ok: legal ns builds under sandbox ->", _okdp.root)
+    finally:
+        shutil.rmtree(_sandbox, ignore_errors=True)
 
     print("redpiano_core self-test PASSED")
