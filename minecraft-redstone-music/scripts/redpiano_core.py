@@ -1051,11 +1051,13 @@ def _rotate_block_states(block, turns):
 def rotate_command(cmd, direction, ox, oz):
     """Rotate one datapack command's geometry for a non-+X play direction. ``direction``
     == '+X' returns ``cmd`` unchanged (identity). Otherwise rotates the integer (x,z) coords
-    in setblock / fill / forceload-add / tp around (ox,oz) and remaps facing/rotation
+    in setblock / fill / forceload add/remove / tp around (ox,oz) and remaps facing/rotation
     blockstates. ``fill`` carries TWO absolute corner points (x0 y0 z0 x1 y1 z1); both are
     rotated independently — a rigid rotation maps a box to a box, so any corner ordering is
-    fine and no re-sort is needed. Commands without rotatable integer coords (relative `~`,
-    selectors, scoreboard, tellraw) pass through verbatim."""
+    fine and no re-sort is needed. ``execute (if|unless) loaded X Y Z run <tail>`` rotates the
+    loaded probe coords AND recurses into <tail> (which may itself be a setblock/tp, or a
+    coordinate-free tellraw/return that recursion returns verbatim). Commands without rotatable
+    integer coords (relative `~`, selectors, scoreboard, tellraw) pass through verbatim."""
     if direction == "+X":
         return cmd
     turns = _DIR_TURNS.get(direction)
@@ -1064,6 +1066,16 @@ def rotate_command(cmd, direction, ox, oz):
     parts = cmd.split(" ")
     head = parts[0]
     try:
+        # `execute (if|unless) loaded X Y Z run <tail>` — rotate the loaded coords, then
+        # recurse into <tail> so a nested setblock/tp is rotated too (a coordinate-free
+        # tail like `return run tellraw ...` recurses to an unchanged verbatim string).
+        if (head == "execute" and len(parts) >= 8
+                and parts[1] in ("if", "unless") and parts[2] == "loaded"
+                and parts[6] == "run"):
+            x, y, z = int(parts[3]), int(parts[4]), int(parts[5])
+            nx, nz = rot_xz(x, z, direction, ox, oz)
+            tail = rotate_command(" ".join(parts[7:]), direction, ox, oz)
+            return f"execute {parts[1]} loaded {nx} {y} {nz} run {tail}"
         if head == "setblock" and len(parts) >= 5:
             x, y, z = int(parts[1]), int(parts[2]), int(parts[3])
             nx, nz = rot_xz(x, z, direction, ox, oz)
@@ -1078,14 +1090,15 @@ def rotate_command(cmd, direction, ox, oz):
             if rest:
                 rest = " " + _rotate_block_states(rest, turns)
             return f"fill {nx0} {y0} {nz0} {nx1} {y1} {nz1}{rest}"
-        if head == "forceload" and len(parts) >= 4 and parts[1] == "add":
+        if head == "forceload" and len(parts) >= 4 and parts[1] in ("add", "remove"):
+            action = parts[1]
             x1, z1 = int(parts[2]), int(parts[3])
             nx1, nz1 = rot_xz(x1, z1, direction, ox, oz)
             if len(parts) >= 6:
                 x2, z2 = int(parts[4]), int(parts[5])
                 nx2, nz2 = rot_xz(x2, z2, direction, ox, oz)
-                return f"forceload add {nx1} {nz1} {nx2} {nz2}"
-            return f"forceload add {nx1} {nz1}"
+                return f"forceload {action} {nx1} {nz1} {nx2} {nz2}"
+            return f"forceload {action} {nx1} {nz1}"
         if head == "tp" and len(parts) >= 5:
             x, y, z = int(parts[2]), int(parts[3]), int(parts[4])
             nx, nz = rot_xz(x, z, direction, ox, oz)
@@ -1253,8 +1266,17 @@ if __name__ == "__main__":
     assert rot_xz(*rot_xz(7, 3, "+Z", 0, 0), "-Z", 0, 0) == (7, 3)   # +Z then -Z round-trips
     assert "facing=north" in rotate_command("setblock 2 64 0 minecraft:repeater[facing=west,delay=2]", "+Z", 0, 0)
     assert "rotation=4" in rotate_command('setblock 0 64 0 minecraft:oak_sign[rotation=0]{a}', "+Z", 0, 0)
+    assert rotate_command("forceload remove -2 -3 8 7", "-Z", 0, 0) == \
+        "forceload remove -3 2 7 -8"
     assert rotate_command("scoreboard players set PLAY ns 1", "-X", 0, 0) == "scoreboard players set PLAY ns 1"
-    print("ok: direction rotation (+X identity; +Z/-X/-Z rotate coords + facing/rotation)")
+    # `execute (if|unless) loaded X Y Z run <tail>`: rotate loaded coords + recurse into tail.
+    # -Z, coordinate-free tail (tellraw) recurses to verbatim.
+    assert rotate_command('execute unless loaded 5 64 3 run return run tellraw @a "x"', "-Z", 0, 0) == \
+        'execute unless loaded 3 64 -5 run return run tellraw @a "x"'
+    # +Z, tail IS a setblock -> its coords rotate too (recursion), same rot as the loaded probe.
+    assert rotate_command("execute if loaded 2 64 0 run setblock 2 64 0 minecraft:stone", "+Z", 0, 0) == \
+        "execute if loaded 0 64 2 run setblock 0 64 2 minecraft:stone"
+    print("ok: direction rotation (+X identity; +Z/-X/-Z rotate coords + facing/rotation + execute-loaded)")
 
     # ── Datapack writer (temp dir) ───────────────────────────────────────────
     import tempfile

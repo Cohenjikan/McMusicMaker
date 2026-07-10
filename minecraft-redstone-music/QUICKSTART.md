@@ -308,14 +308,30 @@ In the world where you want the machine, do these **in this exact order**:
   it → total silence**. Nothing automates this click — confirm it yourself in-game.
 - `/function <NS>:setup` builds the physical machine at the origin (mass `setblock`,
   batched across ticks — give it a moment) and places the sign+button console.
+- **⚠ 非超平坦世界(比如装了 Terralith 等地形生成模组)先按控制台的 `[preload]`。** `setup`
+  建好机器之后,如果沿线的区块还没被真正生成/加载过(常见于新地形、大型地形生成模组的世界),播放
+  时会因为区块跟不上而丢音、卡顿。按一下控制台上的 **`[preload]`** 按钮:它会把玩家临时切换成
+  旁观者模式,沿着机器路径**每 128 格 tp 一次**,强制把沿线的区块都生成/加载一遍,跑完后自动把你
+  传送回控制台并提示完成。超平坦世界(区块本来就简单,无需生成)可以跳过这一步。
 
 ## 5. Play
 
-Make sure you have already (1) typed `/tick rate 80` yourself and (2) enabled the
-`qzpno_mv` resource pack in **Options → Resource Packs** (see step 4) — neither is
-automatic. Then go to the console the `setup` built (at the origin) and **press the play
+Make sure you have already (1) typed `/tick rate 80` yourself, (2) enabled the
+`qzpno_mv` resource pack in **Options → Resource Packs** (see step 4), and (3) — on a
+non-superflat world — pressed **`[preload]`** at the console (see step 4) — none of these three
+is automatic. Then go to the console the `setup` built (at the origin) and **press the play
 button** under the sign. The machine triggers the note blocks in time; the RedPiano mod emits
 each note centered on every player, so the music follows you.
+
+> **⚠ `[play]` 现在会检查区块加载(preload 门禁)。** 如果沿线远端的区块还没加载完,`[play]`
+> 会**拒绝启动**并提示你先按 `[preload]`——这是有意为之,不是 bug,为的是避免在世界还没生成完的
+> 情况下强行开播导致丢音。
+
+### 试音区(voice-test row)
+
+控制台后方还有一排**试音按钮**:**`[音色总览]`** 列出这首歌用到的每一个乐器族(每族的音符数 /
+采样数 / 事件名);每个乐器族旁边配一个 **`[试音]`** 按钮,按一次就循环播放该族的低/中/高三个采样。
+不用整首歌播一遍,就能单独试听或排查某个音色对不对。
 
 To rebuild for a different song, run `build_machine.py` again with a new `--ns`, then
 repeat steps 3–4.
@@ -377,6 +393,21 @@ delete its folder from `<world>/datapacks/<ns>/` and `/reload`.
 - **Eerie / slow / out-of-sync playback** → you likely forgot to type `/tick rate 80`
   yourself, or it reverted. The machine does **not** set it for you — type `/tick rate 80`
   manually, then press `[play]` again.
+- **⚠ `/tick rate 80` 不跨会话保存,每次重进世界都要重敲 (tick rate does NOT persist across
+  sessions)** → 退出世界、切换存档、或重启游戏之后,tick rate 会**自动重置回默认的 `20`**——哪怕你
+  上一次已经敲过 `/tick rate 80`,这次重进/重启也必须**重新手动敲一遍**,游戏不会替你记住上次的
+  设置。用户实测过的「第二次播放突然变慢」,十有八九就是这一条(经常和下面的「服务器过载」叠加出现)。
+- **⚠ 机器太大 + 世界负载重 = tick rate "名存实亡" (server overload can defeat tick rate even
+  when it's set)** → 就算已经敲了 `/tick rate 80`,如果机器占地很大(动辄几百个 forceload
+  区块)、又同时开着 Distant Horizons、Terralith 这类地形生成模组在新区域生成地形,服务器可能扛不住,
+  日志里会打出 `Can't keep up! Running N ticks behind`(实测落后可以超过 **8914 ticks**)——出现这一行
+  就说明实际 TPS 已经崩塌,`/tick rate 80` 的设置形同虚设,听感就是慢/拖拍/断断续续。缓解办法:换成
+  占地更小的机器形态(`inplace`)、关掉 Distant Horizons 或调低渲染距离、等附近区块生成完再播放、
+  别同时跑多台机器。
+- **⚠ Esc 暂停会断音,这是已知限制,数据包修不了 (pausing cuts sound — a known limitation, not
+  fixable from the datapack)** → 单机游戏按 Esc 暂停会连带挂起集成服务器和声音引擎,恢复游戏时正在
+  响的长采样可能被从中间掐断一截。想中途打断播放,请用控制台的 **`[stop]`** 按钮再重新按
+  **`[play]`**,不要用 Esc 暂停当作"暂停音乐"的手段。
 - **Can't stop the music** → the mod plays on the `record` source; use
   `/stopsound @a record` (the machine also exposes a stop control).
 - **Build seems to do nothing on `setup`** → mass `setblock` is batched across ticks

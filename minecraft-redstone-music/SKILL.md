@@ -427,10 +427,32 @@ below, then run the build command in step 4.
         > **⚠ `/tick rate 80` speeds up the ENTIRE world** — crops, mob spawning/AI, redstone,
         > everything, not just the music machine. Be cautious on a multiplayer/shared world.
         > **Remember to `/tick rate 20` back** when done listening.
+        > **⚠ Tick rate does NOT persist across sessions.** Quitting/rejoining the world or
+        > restarting the game silently resets it back to `20` — the user must retype
+        > `/tick rate 80` **every session**, even if they set it correctly last time.
+        > **⚠ Server overload can defeat tick rate even when it IS set.** A big machine
+        > (hundreds of forceload chunks) plus a heavy world (Distant Horizons, Terralith-style
+        > terrain gen mid-generation) can push the server past what it can simulate; watch the
+        > log for `Can't keep up! Running N ticks behind` (seen as high as ~8914 ticks in
+        > testing) — when that appears, real TPS has already collapsed regardless of the
+        > `/tick rate 80` setting, and playback sounds slow/dragging/choppy. Mitigate with a
+        > smaller-footprint form (`inplace`), disabling Distant Horizons or lowering render
+        > distance, waiting for nearby chunks to finish generating before playing, or not
+        > running multiple machines at once.
+        > **若用户报"第二次播放变慢了"**:先问**是否重进过世界/重启过游戏**(tick rate 重置是最常见
+        > 原因),再看服务器日志有没有 `Can't keep up!`(服务器过载是第二常见原因),排除这两条之后
+        > 再怀疑是构建/生成器本身的问题。
      4. **确认资源包** — the `.bat` already enabled `qzpno_mv` in `options.txt`; the user just
         confirms it's on the right (selected) side in Options → Resource Packs.
      5. `/function <ns>:setup` — build the physical machine + console at the origin.
-     6. press the **[play]** sign/button.
+     6. **非超平坦世界(Terralith 等地形生成 mod)先按控制台的 `[preload]`** — 把玩家切成旁观者、
+        沿机器路径每 128 格 tp 一次强制生成/加载沿线区块,跑完自动传回控制台并提示完成;超平坦世界
+        可跳过。
+     7. press the **[play]** sign/button. **⚠ `[play]` 现在带 preload 门禁** — 沿线远端区块没
+        加载完时会拒绝启动并提示先按 `[preload]`,这是有意为之,不是 bug。
+     8. (展示用,可选) 控制台后方有一排**试音区**:`[音色总览]` 用 tellraw 列出这首歌实际用到的
+        每个乐器族(音符数/去重采样数/事件名),每族一个 `[试音]` 按钮,按一次循环播该族低/中/高
+        采样——交付时把这排介绍给用户,方便验证音色与展示。
    > **⚠ 「完全没声」先跑一键体检 `doctor.py`, 再看这三项.** The fastest triage is
    > `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir <world>/datapacks
    > --mc-version <ver> --ns <ns>` — it prints a numbered ✓/✗ checklist (receipt present?
@@ -502,6 +524,11 @@ steps by default; this section is a checklist, not a reason to stop and hand wor
    in-game** before pressing `[play]` — the machine does **NOT** self-set it (auto-set via a
    command block was tested and does not work). Without it, playback runs **~4× too slow** and
    melody-cut timing is off. Make this a required in-game step, not just a diagnostic.
+   **⚠ It also does not persist across sessions** — quitting/rejoining or restarting resets it
+   to `20`, so this is a per-session step, not a one-time setup. If a session that already had
+   tick80 set starts sounding slow again, also check the server log for `Can't keep up! Running
+   N ticks behind` (server overload can defeat tick80 even when it's set) — see step 4's
+   in-game-order notes above for the full triage.
 
 > **Large binary assets bundled separately.** The prebuilt **RedPiano mod jar** and
 > **`qzpno_mv.zip`** resourcepack are large binaries and are **not** in this folder.

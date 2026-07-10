@@ -150,7 +150,7 @@
       </div>
       <span class="v1note">v1 支持 <b>合并和弦(辐射)</b> 与 <b>多轨分布</b>(导出 form=multilane;每声部一轨,直线,过 forceload 上限会硬失败→改 S 波浪)。</span>
       <div id="multiLaneCtl" style="display:none">
-        <label class="row"><span class="k">最大复调 MAXPOLY</span><input type="range" id="maxPoly" min="1" max="12" value="7"><input type="number" id="maxPolyN" value="7"></label>
+        <label class="row"><span class="k">音轨数量 / 最大复调 MAXPOLY</span><input type="range" id="maxPoly" min="1" max="12" value="7"><input type="number" id="maxPolyN" value="7"></label>
         <label class="row"><span class="k">轨间距 LANE_DZ</span><input type="range" id="laneDz" min="1" max="6" value="2"><input type="number" id="laneDzN" value="2"></label>
         <button class="btn sec" id="toggleSide" style="margin-top:4px">📐 侧视编辑器(拖轨调相对位)</button>
         <div class="hint">多轨分布=每条声部单独一轨、共享唯一延迟骨架(绝对同步+列对齐, 旧版24/30)。轨间距防红石串扰。侧视里拖每条轨调相对 Z 位。</div>

@@ -90,6 +90,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     mel_event_of = {}        # tick -> sound_event of the longest cut-instr note in that cell
     _mel_best_dur = {}       # tick -> that note's dur (s), to pick the longest
     instr_count = defaultdict(int)
+    events_by_family = defaultdict(set)   # family -> {sound_event} for the audition console
     dropped = 0
 
     def _resolve(n):
@@ -107,6 +108,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
             lane_voices[li][tk] = (r.block, r.note_value)
             lane_counts[li] += 1
             instr_count[instr] += 1
+            events_by_family[instr].add(r.sound_event)
             if instr in CUT_INSTR:
                 cut_events.add(r.sound_event)
                 md = float(n.get("dur", 0.1))
@@ -141,6 +143,39 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     used_trig = [v for k, v in cells if k == "trig"]
     used_trig_set = set(used_trig)
     MAXTICK = max(used_trig) if used_trig else 0
+
+    # audition families (fixed display order) — only families that actually sounded.
+    events_by_family = {f: sorted(evs) for f, evs in events_by_family.items() if evs}
+    aud_families = [f for f in ("pno", "bass", "lead", "pad", "drum")
+                    if f in events_by_family]
+
+    # §A preload sample points: author-frame points every 128 blocks along the shared +X
+    # lane axis (Z at the lane-band center), so a spectator tp-walk warms every stretch of
+    # real terrain the pulse crosses. Written in +X author frame; write_function rotates them.
+    PRELOAD_STRIDE = 128
+    ncells = len(cells)
+    lane_zs = [OZ + int(L["z"]) for L in LANES]
+    z_center = (min(lane_zs) + max(lane_zs)) // 2
+    xmax = OX + (ncells - 1)
+    pre_pts = []
+    _px = OX
+    while _px <= xmax:
+        pre_pts.append((_px, z_center))
+        _px += PRELOAD_STRIDE
+    if not pre_pts or pre_pts[-1][0] != xmax:
+        pre_pts.append((xmax, z_center))
+
+    # §B play gating probes: path MIDPOINT and FARTHEST-X trigger cell (author frame). Each
+    # lane cell i sits at world x = OX+i; use lane 0's z/y as the representative block.
+    lane0_z = OZ + int(LANES[0]["z"])
+    lane0_y = Y + int(LANES[0].get("y", 0))
+    trig_idx = [i for i, (k, _v) in enumerate(cells) if k == "trig"]
+    if trig_idx:
+        _midi = trig_idx[len(trig_idx) // 2]
+        _fari = trig_idx[-1]   # cells are +X-monotone, so the last trig is the farthest X
+        probe_pts = [(OX + _midi, lane0_z), (OX + _fari, lane0_z)]
+    else:
+        probe_pts = []
 
     # 3. melody-sustain cut via core scheduler (absolute game-tick schedule).
     #    Routes through core.plan_melody_cuts so the contract's cut-floor assertion
@@ -254,6 +289,19 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     ctl += lbtn(PBX - 4, f"function {ns}:stop", ["[停止]", "立即静音", "", ""])
     ctl += lbtn(PBX - 6, f"function {ns}:cfg/polytoggle", ["[复音增益]", "大和弦防糊", "", ""])
     ctl += lbtn(PBX - 8, f"function {ns}:cfg/humantoggle", ["[微抖动]", "去复印感", "", ""])
+    # §A preload button — same main row (z=OZ), one slot further -X (clear of lanes, z>=OZ).
+    ctl += lbtn(PBX - 10, f"function {ns}:preload", ["[preload]", "预加载区块", "先按我再play", ""])
+    # §C audition row — a row BEHIND the console (z=OZ-3; console signs at OZ-2, lanes z>=OZ,
+    # so OZ-3 is collision-free), overview + one [试音 <fam>] per sounding family.
+    AZ = OZ - 3
+    ctl += core.labeled_button(PBX, Y, AZ, f"function {ns}:audition/list",
+                               ["[音色总览]", "列出音色", "listsounds", ""],
+                               sign_dialect=profile.sign_dialect)
+    for _i, _fam in enumerate(aud_families):
+        ctl += core.labeled_button(PBX - 2 * (_i + 1), Y, AZ,
+                                   f"function {ns}:audition/{_fam}",
+                                   [f"[试音 {_fam}]", "低/中/高", "循环采样", ""],
+                                   sign_dialect=profile.sign_dialect)
 
     RESET = [f"scoreboard players set PLAY {ns} 0", f"scoreboard players set SIL {ns} 0"]
     SCHED_CLEAR = [f"schedule clear {ns}:{f}" for f in
@@ -267,12 +315,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         + [core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
            "scoreboard objectives add rpcfg dummy",
            f"scoreboard players set poly_{ns} rpcfg 1",
-           f"scoreboard players set human_{ns} rpcfg 1"]
+           f"scoreboard players set human_{ns} rpcfg 1",
+           f"scoreboard players set PRE {ns} 0"]
+        + [f"scoreboard players set aud_{fam}_{ns} rpcfg 0" for fam in aud_families]
         + SCHED_CLEAR + TRIG_CLEAR
         + [f'tellraw @a ["",{{"text":"[{ns}] 多轨分布式直线机 loaded. ","color":"aqua"}},'
            f'{{"text":"需RedPiano+qzpno. 手动 /tick rate 80 -> /function {ns}:setup -> 启用资源包 -> 按 [play]"}}]'])
     dp.write_function("setup",
-        RESET + ["gamemode creative @a", SSTOP, f"scoreboard players set CLR {ns} -1"]
+        RESET + ["gamemode creative @a", SSTOP, f"scoreboard players set CLR {ns} -1",
+                 f"scoreboard players set PRE {ns} 0"]
         + SCHED_CLEAR + TRIG_CLEAR + flbuild
         + [f"tp @a {PBX} {Y + 3} {OZ}", f"schedule function {ns}:startbuild 100t",
            f'tellraw @a "[{ns}] reset+forceload({NCH}区块); building 多轨..."'])
@@ -302,16 +353,28 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         [f"scoreboard players set PLAY {ns} 1", f"scoreboard players set SIL {ns} 0",
          SSTOP, f"schedule clear {ns}:cutmel"] + TRIG_CLEAR
         + [f"schedule function {ns}:fire 2t"])
+    # §B play gating: refuse if the mid/far chunk isn't loaded yet (forceload ticket down but
+    # terrain not generated -> pulse runs into ungenerated chunks and drops out). loaded-probe
+    # coords rotate via rotate_command (§1.8) for non-+X multilane (e.g. olk -X).
+    probe_lines = [
+        f'execute unless loaded {px} {lane0_y + 1} {pz} run return run tellraw @a '
+        f'"[{ns}] 机器远端区块未加载完成——先按 [preload] 预加载(或稍等 forceload 生成完)再 play"'
+        for (px, pz) in probe_pts
+    ]
     dp.write_function("play",
-        [f'execute if score PLAY {ns} matches 1 run return run tellraw @a "[{ns}] 正在播放, 先[停止]"',
-         f"function {ns}:playcore",
-         f'tellraw @a "[{ns}] GO。多轨分布式直线, 站着听全曲。"'])
+        [f'execute if score PLAY {ns} matches 1 run return run tellraw @a "[{ns}] 正在播放, 先[停止]"']
+        + probe_lines
+        + [f"function {ns}:playcore",
+           f'tellraw @a "[{ns}] GO。多轨分布式直线, 站着听全曲。"',
+           f'tellraw @a "[{ns}] 提示: /tick rate {TPS} 重进世界会重置,需重敲;若节奏拖慢'
+           f'(日志见 Can\'t keep up)=服务器过载,试关 Distant Horizons/降渲染距离。"'])
     dp.write_function("view",
         ["gamemode spectator @a", f"tp @a {CAMX} {Y + 80} {CAMZ} 0 90",
          f'tellraw @a "[{ns}] 俯视多轨(spectator)。"'])
     dp.write_function("stop",
         RESET + ["gamemode creative @a", SSTOP] + SCHED_CLEAR + TRIG_CLEAR
         + [f"scoreboard players set SIL {ns} 1",
+           f"scoreboard players set PRE {ns} 0",
            f"schedule function {ns}:unsil {END_TICKS}t",
            f"tp @a {PBX} {Y + 3} {OZ}", f'tellraw @a "[{ns}] 已停止。"'])
     dp.write_function("unsil", f"scoreboard players set SIL {ns} 0")
@@ -342,7 +405,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     dp.write_function("clearstep", cs)
     dp.write_function("cleanup",
         ["gamerule commandModificationBlockLimit 2147483647"] + RESET
-        + ["gamemode creative @a", SSTOP, f"scoreboard players set BLD {ns} -1"]
+        + ["gamemode creative @a", SSTOP, f"scoreboard players set BLD {ns} -1",
+           f"scoreboard players set PRE {ns} 0"]
         + SCHED_CLEAR + TRIG_CLEAR
         + [f"scoreboard players set CLR {ns} 0", f'tellraw @a "[{ns}] tearing down..."'])
     for nm, sc in (("polytoggle", "poly"), ("humantoggle", "human")):
@@ -353,6 +417,54 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
              f"scoreboard players operation {scp} rpcfg = rptmp_{ns} rpcfg",
              f'execute if score {scp} rpcfg matches 1 run tellraw @a "[{ns}] {sc} ON"',
              f'execute if score {scp} rpcfg matches 0 run tellraw @a "[{ns}] {sc} OFF"'])
+
+    # §A preload: spectator tp-walk warms the real terrain the pulse crosses. PRE (in the
+    # {ns} objective) is the chain sentinel: preload sets 1, stop/cleanup set 0; each pre/pN
+    # early-returns on PRE==0, so a stop aborts the dynamic chain without schedule-clearing it.
+    dp.write_function("preload",
+        ["gamemode spectator @a"] + flbuild
+        + [f"scoreboard players set PRE {ns} 1",
+           f'tellraw @a "[{ns}] 预加载开始: 逐段 tp 预热 {len(pre_pts)} 个采样点(每段30t),'
+           f'完成后自动回控制台。请勿走动。"',
+           f"schedule function {ns}:pre/p0 1t"])
+    _M = len(pre_pts)
+    for _k, (_px, _pz) in enumerate(pre_pts):
+        dp.write_function(f"pre/p{_k}",
+            [f"execute if score PRE {ns} matches 0 run return 0",
+             f"tp @a {_px} {Y + 16} {_pz}",
+             f'tellraw @a "[{ns}] 预加载 {_k + 1}/{_M} (等待地形生成)"',
+             f"schedule function {ns}:pre/p{_k + 1} 30t"])
+    dp.write_function(f"pre/p{_M}",
+        [f"execute if score PRE {ns} matches 0 run return 0",
+         "gamemode creative @a",
+         f"tp @a {PBX} {Y + 3} {OZ}",
+         f"scoreboard players set PRE {ns} 0",
+         f'tellraw @a "[{ns}] 预加载完成,按 [直接播放]。"'])
+
+    # §C audition: [音色总览] list + per-family low/mid/high sampler (aud_<fam>_<ns> in rpcfg)
+    aud_list = [f'tellraw @a "[{ns}] === 音色总览 ({len(aud_families)} 族) ==="']
+    for _fam in aud_families:
+        _evs = events_by_family[_fam]
+        _head6 = " ".join(_evs[:6])
+        _more = " …" if len(_evs) > 6 else ""
+        aud_list.append(
+            f'tellraw @a "[{ns}] {_fam}: {instr_count[_fam]}音 {len(_evs)}采样 | '
+            f'{_head6}{_more}"')
+    dp.write_function("audition/list",
+                      aud_list or [f'tellraw @a "[{ns}] (无音色数据)"'])
+    for _fam in aud_families:
+        _evs = events_by_family[_fam]
+        _lo, _mid, _hi = _evs[0], _evs[len(_evs) // 2], _evs[-1]
+        _sc = f"aud_{_fam}_{ns}"
+        dp.write_function(f"audition/{_fam}",
+            [f"execute if score {_sc} rpcfg matches 0 run playsound {_lo} master @a ~ ~ ~ 1 1",
+             f'execute if score {_sc} rpcfg matches 0 run tellraw @a "[{ns}] 试音 {_fam} 低: {_lo}"',
+             f"execute if score {_sc} rpcfg matches 1 run playsound {_mid} master @a ~ ~ ~ 1 1",
+             f'execute if score {_sc} rpcfg matches 1 run tellraw @a "[{ns}] 试音 {_fam} 中: {_mid}"',
+             f"execute if score {_sc} rpcfg matches 2 run playsound {_hi} master @a ~ ~ ~ 1 1",
+             f'execute if score {_sc} rpcfg matches 2 run tellraw @a "[{ns}] 试音 {_fam} 高: {_hi}"',
+             f"scoreboard players add {_sc} rpcfg 1",
+             f"execute if score {_sc} rpcfg matches 3.. run scoreboard players set {_sc} rpcfg 0"])
 
     deployed = dp.deploy(deploy_dir) if deploy_dir else None
 
@@ -385,6 +497,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "mel_cut_cells": len(mel_ticks),
         "cut_count": len(mel_ticks),
         "median_cut_gt": median_cut_gt,
+        "audition_families": {f: len(events_by_family[f]) for f in aud_families},
+        "preload_steps": len(pre_pts),
         "warnings": warnings,
         "deployed": deployed,
         "out": dp.root,
