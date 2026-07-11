@@ -71,14 +71,32 @@ vice-versa. `fetch_binaries` picks the covering one for you.
   <ver> --out <derived.zip>`; a base rp-64 pack serves 1.21.7/1.21.8 directly, other versions get a
   rewritten `pack.mcmeta`.
 
-### Honesty: only 1.21.8 has been listened in-game
+### Honesty: currently zero jars are listened-confirmed (1.21.8 just changed, pending re-listen)
 
-The manifest marks **exactly one** jar `"listened": true` — **1.21.8**, the in-game anchor. Every
-other jar is `bytecode_checked` (passed `mod_build.py --check-jar`, i.e. compiled against the real
-maven fabric-api, not a stub) but **NOT yet heard** — a recompiled mixin can be silent or mis-pitched
-even when bytecode-clean. So after installing any non-1.21.8 jar, **listen once** to confirm; the
-`fetch_binaries` VERDICT says exactly this. A jar filename may carry a `-UNVERIFIED` suffix meaning
-the same thing (see below).
+As of this build, the manifest marks **all 11 jars** `"listened": false` — including **1.21.8**,
+the long-standing in-game anchor. That is not a regression in what was already proven; it's the
+manifest being honest about a **new binary**: 1.21.8 was just **rebuilt** to add a global `mute`
+check in `rpcfg` (fixes "stopsound, then a leftover note still slips through in the same tick"),
+so it is a **different jar** from the one that was previously heard, and its `listened` flag was
+correctly reset to `false` until someone confirms *this* jar in-game. For the record: the
+**previous, pre-mute** 1.21.8 jar *had* been listened and confirmed working — the underlying sound
+path is proven; only this specific rebuild is unconfirmed.
+
+Every jar (all 11) is `bytecode_checked` (passed `mod_build.py --check-jar`, i.e. compiled against
+the real maven fabric-api, not a stub) but **NOT yet heard** — a recompiled mixin can be silent or
+mis-pitched even when bytecode-clean. So after installing **any** jar right now, including the new
+1.21.8, **listen once** to confirm; the `fetch_binaries` VERDICT says exactly this. **Installing
+the new 1.21.8 jar requires a full Minecraft restart** (`/reload` does not reload mod jars). Once
+someone confirms sound in-game, flip its `listened` flag back to `true` (see "registering a new
+jar" below) — don't claim it works before that.
+
+The other ten jars (every version except 1.21.8) do **not** yet have the `mute` check — they were
+built before this change and haven't been recompiled since. This is harmless to use as-is: `mute`
+is a **datapack-side** scoreboard (`rpcfg mute`) that an old jar simply never reads (a no-op for
+it), and `stop`'s existing ~100-tick silence window (`SIL`) still covers the same "trailing sample
+tail" case those jars need. `mute` will reach the remaining ten the next time each is recompiled —
+see "Maintainer note" below. A jar filename may carry a `-UNVERIFIED` suffix meaning the same
+"not yet heard" state (see below).
 
 ### Private now, remote later (same manifest)
 

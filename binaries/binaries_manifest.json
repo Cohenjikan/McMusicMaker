@@ -59,9 +59,9 @@
     },
     "1.21.8": {
       "file": "redpiano-1.0.0-mc1.21.8.jar",
-      "sha256": "74fe7e4c320ea322e4e4a3e757c2cacfc65a514c6f70dad351e9daf0e042a76b",
+      "sha256": "10d2487c4e8fb7f5a1a169d8980e77b825f9f81488542cefd6b3bdfc47928d42",
       "bytecode_checked": true,
-      "listened": true
+      "listened": false
     },
     "1.21.9": {
       "file": "redpiano-1.0.0-mc1.21.9.jar",

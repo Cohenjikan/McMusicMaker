@@ -39,6 +39,7 @@ public class RedPiano implements ModInitializer {
 
     private void flush(MinecraftServer server) {
         if (QUEUE.isEmpty()) return;
+        if (readCfg(server, "mute", 0) != 0) { QUEUE.clear(); return; }   // 数据包 stop 置 rpcfg mute=1 → 丢弃本刻队列(修"stopsound 后同刻末音")
         int n = QUEUE.size();
         int poly = readCfg(server, "poly", 1);      // 命令方块开关: 0=关复音增益; 非0/缺省=开
         boolean human = readCfg(server, "human", 1) != 0;

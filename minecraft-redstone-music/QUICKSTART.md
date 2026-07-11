@@ -308,11 +308,18 @@ In the world where you want the machine, do these **in this exact order**:
   it → total silence**. Nothing automates this click — confirm it yourself in-game.
 - `/function <NS>:setup` builds the physical machine at the origin (mass `setblock`,
   batched across ticks — give it a moment) and places the sign+button console.
+  > **建造/拆除进度条(bossbar):** 从这一步起,头顶会按阶段自动显示/隐藏一条彩色进度条——
+  > **绿色**=建造中(`setup`)、**红色**=拆除中(`cleanup`)、**黄色**=保护壳施工中(`prosetup`,
+  > 见下面第 7 节)、**蓝色**=预加载中(`[preload]`,见下面)。跑完对应阶段自动隐藏,不用手动关,
+  > 主要是让"生成过程是不是卡死了"变得肉眼可见。
 - **⚠ 非超平坦世界(比如装了 Terralith 等地形生成模组)先按控制台的 `[preload]`。** `setup`
   建好机器之后,如果沿线的区块还没被真正生成/加载过(常见于新地形、大型地形生成模组的世界),播放
   时会因为区块跟不上而丢音、卡顿。按一下控制台上的 **`[preload]`** 按钮:它会把玩家临时切换成
-  旁观者模式,沿着机器路径**每 128 格 tp 一次**,强制把沿线的区块都生成/加载一遍,跑完后自动把你
-  传送回控制台并提示完成。超平坦世界(区块本来就简单,无需生成)可以跳过这一步。
+  旁观者模式,沿着机器路径**每 128 格 tp 一次**——但现在走的是**验证式等待**:每到一个采样点,
+  机器会等**下一段**区块真正加载完成(`loaded` 判定通过)才推进,不再是固定时间间隔硬等;头顶有一条
+  **蓝色进度条(bossbar)**显示"第几段/共几段"。所以整个 `[preload]` 要跑多久取决于你的地形生成
+  速度——地形 mod 越重、生成越慢,等得越久是**正常现象**,不是卡死。跑完后自动把你传送回控制台、
+  置为 READY 并提示完成。超平坦世界(区块本来就简单,无需生成)可以跳过这一步。
 
 ## 5. Play
 
@@ -323,15 +330,26 @@ is automatic. Then go to the console the `setup` built (at the origin) and **pre
 button** under the sign. The machine triggers the note blocks in time; the RedPiano mod emits
 each note centered on every player, so the music follows you.
 
-> **⚠ `[play]` 现在会检查区块加载(preload 门禁)。** 如果沿线远端的区块还没加载完,`[play]`
-> 会**拒绝启动**并提示你先按 `[preload]`——这是有意为之,不是 bug,为的是避免在世界还没生成完的
-> 情况下强行开播导致丢音。
+> **⚠ `[play]` 现在会检查区块加载(preload 门禁)。** 门禁现在是**全线探针**——沿路线每 128 格
+> 抽一个采样点逐个探测是否已加载;只要有一个没加载完,`[play]` 就会**拒绝启动**并提示你先按
+> `[preload]`——这是有意为之,不是 bug,为的是避免在世界还没生成完的情况下强行开播导致丢音。
+> 如果 `[preload]` 已经跑完并置为 **READY**,这道探针门禁会被**直通跳过**,`[play]` 立即开始。
+>
+> **⚠ `[play]` 也会自动开启性能模式(perfmode)。** 见上面「Can't keep up 过载」与「perfmode
+> 异常退出」两条 pitfall——正常按 `[stop]`/放完/拆机会自动恢复,异常退出才需要手动 `perfoff`。
 
-### 试音区(voice-test row)
+### 音色展台(voice-test stand)
 
-控制台后方还有一排**试音按钮**:**`[音色总览]`** 列出这首歌用到的每一个乐器族(每族的音符数 /
-采样数 / 事件名);每个乐器族旁边配一个 **`[试音]`** 按钮,按一次就循环播放该族的低/中/高三个采样。
-不用整首歌播一遍,就能单独试听或排查某个音色对不对。
+控制台后方只有一个 **`[音色展台]`** 按钮:按下会把你 tp 到一座实体展台,并用 tellraw
+列出这首歌用到的每个乐器族的格数摘要。展台按**最终实际落地**的 (映射方块, note 值, 音效事件)
+去重后逐格摆出实体:底层映射方块、上层**真音符盒**、侧面墙上的石按钮(按下=红石充能=走
+mod+资源包的**真实发声路径**,不是拿 `playsound` 糊弄),每格前还有一块标签牌(事件名 / 方块
+id / note 值+族),按 pno/bass/lead/pad/drum 分区,每族一块总标牌,每行 16 格。
+
+> **⚠ 别右键音符盒——右键会改音高,毁掉这一格展品。** 试听只用侧面的石按钮。
+
+展台的占地已自动并入这台机器的 forceload 范围和 `cleanup` 清除盒,不用额外操心。展台超过
+256 格会被截断,并在 tellraw 里提示。
 
 To rebuild for a different song, run `build_machine.py` again with a new `--ns`, then
 repeat steps 3–4.
@@ -386,6 +404,44 @@ delete its folder from `<world>/datapacks/<ns>/` and `/reload`.
 清不到旧机器伸出这个包围盒之外的那部分方块,会在世界里留下一截**残骸**(旧红石/音符盒轨迹)。
 先用旧数据包自带的 `cleanup` 把旧机器完整清空,再铺新的,才不会留死角。
 
+## 7. 区块保护(可选)— prosetup 建保护壳
+
+默认 `setup` **不建保护壳**,机器占地内原有的地形/方块照常被覆盖/清空,产物和以前完全一样。
+如果你想在建机器前先把这块区域**封起来**(比如共享世界、怕被人误闯,或想让展示区看起来干净),
+在传给 `--params` 的 JSON 里加一段 `protection`:
+
+```json
+{
+  "protection": {
+    "enabled": true,
+    "block": "minecraft:barrier",
+    "margin_xz": 3,
+    "floor_margin": 2,
+    "headroom": 5,
+    "clear_interior": true
+  }
+}
+```
+
+> 仅 `straight` / `swave` / `custom` / `multilane` 支持这个字段;`inplace` 不支持,传了会被
+> 直接拒绝构建。
+
+启用后产物会多出两个函数:
+- **`/function <ns>:prosetup`** — 代替 `setup` 用。流程:先停一切(等价于 `cleanup` 的复位)
+  → 分段建一个封闭的屏障壳(底/顶/四面墙,每段 `fill` 跨度 ≤128 格,避免撞 Minecraft 单条
+  `fill` 的体积上限)→ 若 `clear_interior` 为 true,再分段把壳内的地形清空为空气 → 接着照常
+  自动建机器本体 → 建完把玩家 tp 进控制台。
+- **`/function <ns>:unprotect`** — 只分段拆掉屏障壳,机器本体不受影响。若机器是由 `prosetup`
+  建的,`cleanup` 会**自动连壳一起拆**,不用你额外再敲一遍 `unprotect`。
+
+> **⚠ `clear_interior: true` 会真的清空包围盒内的地形、水、岩浆——不可逆。** 在乎这块地的
+> 世界,先确认清楚再启用;不想清地形就把它设成 `false`,只留一层屏障壳,内部原地形不动。
+> 默认的 `minecraft:barrier` 是隐形方块,建好后你几乎看不到壳的存在,只会感觉到"撞到隐形墙"。
+
+不启用 `protection`(不写这段 JSON,或写 `"enabled": false`)时,产物里没有这两个函数,和
+以前完全一样;启用后普通的 `/function <ns>:setup` 依然可用(不带壳,走老流程)。机器越大,
+`prosetup` 分段建壳需要的时间也越长,是正常现象,耐心等它跑完。
+
 ---
 
 ## Common pitfalls beyond the top-3 box
@@ -401,13 +457,30 @@ delete its folder from `<world>/datapacks/<ns>/` and `/reload`.
   when it's set)** → 就算已经敲了 `/tick rate 80`,如果机器占地很大(动辄几百个 forceload
   区块)、又同时开着 Distant Horizons、Terralith 这类地形生成模组在新区域生成地形,服务器可能扛不住,
   日志里会打出 `Can't keep up! Running N ticks behind`(实测落后可以超过 **8914 ticks**)——出现这一行
-  就说明实际 TPS 已经崩塌,`/tick rate 80` 的设置形同虚设,听感就是慢/拖拍/断断续续。缓解办法:换成
-  占地更小的机器形态(`inplace`)、关掉 Distant Horizons 或调低渲染距离、等附近区块生成完再播放、
-  别同时跑多台机器。
+  就说明实际 TPS 已经崩塌,`/tick rate 80` 的设置形同虚设,听感就是慢/拖拍/断断续续。`play`/`setup`/
+  `prosetup` 现在会**自动开启性能模式(perfmode)**——临时把 `randomTickSpeed`→0、关生物生成/火/
+  天气/昼夜这 5 个高负载 gamerule 削一部分负载,但这只是**缓解**、不保证消除过载:机器占地越大、
+  地形生成越猛,依然可能扛不住。更管用的缓解办法还是:换成占地更小的机器形态(`inplace`)、关掉
+  Distant Horizons 或调低渲染距离、等附近区块生成完再播放、别同时跑多台机器。
+- **⚠ perfmode 异常退出可能来不及恢复 gamerule (an abnormal game exit can leave perfmode's
+  gamerule changes un-restored)** → 上面的性能模式是**临时**改动,正常情况下按 `[stop]`、播放
+  自然结束、或拆机(`cleanup`)时都会**自动精确恢复**这 5 个 gamerule 到你原来的值(如果你之前把
+  `randomTickSpeed` 设成过 >3 的自定义值,会被恢复成 `3` 并提示一句,而不是恢复到超过 3 的原值)。
+  但如果你是**闪退 / 强制关游戏**这种没走到这几个收尾点的方式退出的,这次恢复可能就没机会跑——
+  重进世界后如果发现生物不刷新、庄稼不生长、天气/昼夜卡住不动,手动敲一遍 `/function <ns>:perfoff`
+  就能恢复正常;重进世界时如果检测到上一次残留的性能模式状态,机器也会自动提示你。
 - **⚠ Esc 暂停会断音,这是已知限制,数据包修不了 (pausing cuts sound — a known limitation, not
   fixable from the datapack)** → 单机游戏按 Esc 暂停会连带挂起集成服务器和声音引擎,恢复游戏时正在
   响的长采样可能被从中间掐断一截。想中途打断播放,请用控制台的 **`[stop]`** 按钮再重新按
   **`[play]`**,不要用 Esc 暂停当作"暂停音乐"的手段。
+- **⚠ `[stop]` 现在支持"即停即重播",不用等整首歌播完 (stop now physically kills the traveling
+  pulse — you can cleanly replay immediately, no need to wait for the song to finish)** → 以前
+  中途按 `[stop]` 只是切静音,行进中的红石脉冲其实还在往前走,要么等它自然走完全程、要么留着一段
+  "鬼脉冲"可能继续触发音符盒。现在 `[stop]` 会按精确的时间账本算出脉冲前沿此刻大概走到哪,**物理
+  挖掉**那一小段中继器(变成空气,让脉冲直接断掉),**4 游戏刻**后再把中继器原样补回去。所以按下
+  `[stop]` 后可以**立刻**重按 `[play]` 干净地从头重播,不用等歌放完。如果你**手速极快连续按**
+  `[stop]`/`[play]`,可能会看到提示"机器复位中,约1秒后再按 [play]"——这是正常的复位锁
+  (等中继器补回去),不是 bug,稍等一下再按就行。
 - **Can't stop the music** → the mod plays on the `record` source; use
   `/stopsound @a record` (the machine also exposes a stop control).
 - **Build seems to do nothing on `setup`** → mass `setblock` is batched across ticks

@@ -182,10 +182,13 @@ below, then run the build command in step 4.
 >
 > **If `fetch_binaries.py` resolves a jar for the target, DO NOT compile the mod at all.** A
 > version-matched jar ships in `../binaries/` for every version in the manifest — **11 jars,
-> covering `1.21`..`1.21.10`** (see `binaries_manifest.json`). Only **1.21.8** has been confirmed
-> by an in-game listen; the other ten are bytecode-checked only (`mod_build.py --check-jar` clean,
-> not yet heard) — see BINARIES.md's "Honesty: only 1.21.8 has been listened in-game" note before
-> claiming sound works. Inside the sandbox you **do not need and must not** run Gradle — run
+> covering `1.21`..`1.21.10`** (see `binaries_manifest.json`). **Currently none of the 11 are
+> confirmed by an in-game listen** — all are bytecode-checked only (`mod_build.py --check-jar`
+> clean, not yet heard). **1.21.8** had previously been confirmed, but it was just rebuilt with a
+> new global `mute` check and its `listened` flag was honestly reset to `false` pending a fresh
+> listen after a full restart — see BINARIES.md's "Honesty: currently zero jars are
+> listened-confirmed" note before claiming sound works. Inside the sandbox you **do not need and
+> must not** run Gradle — run
 > `fetch_binaries --mc-version <ver>` and pass its jar as `--prebuilt-mod-jar`. Only when the
 > manifest has **no jar** for the target (i.e. outside `1.21`..`1.21.10`) should you recompile, and
 > even then a stripped sandbox usually can't — building the mod in one is exactly what tempts the
@@ -446,13 +449,21 @@ below, then run the build command in step 4.
         confirms it's on the right (selected) side in Options → Resource Packs.
      5. `/function <ns>:setup` — build the physical machine + console at the origin.
      6. **非超平坦世界(Terralith 等地形生成 mod)先按控制台的 `[preload]`** — 把玩家切成旁观者、
-        沿机器路径每 128 格 tp 一次强制生成/加载沿线区块,跑完自动传回控制台并提示完成;超平坦世界
-        可跳过。
+        沿机器路径每 128 格 tp 一次,但走的是**验证式等待**:每段都等下一段区块真正加载完成
+        (`loaded` 判定通过)才推进,不是固定时间间隔硬等;头顶有一条**蓝色 bossbar** 显示"第几段/
+        共几段"进度,地形生成越慢等得越久是正常现象。跑完自动传回控制台、置 READY 并提示完成;
+        超平坦世界可跳过。
      7. press the **[play]** sign/button. **⚠ `[play]` 现在带 preload 门禁** — 沿线远端区块没
-        加载完时会拒绝启动并提示先按 `[preload]`,这是有意为之,不是 bug。
-     8. (展示用,可选) 控制台后方有一排**试音区**:`[音色总览]` 用 tellraw 列出这首歌实际用到的
-        每个乐器族(音符数/去重采样数/事件名),每族一个 `[试音]` 按钮,按一次循环播该族低/中/高
-        采样——交付时把这排介绍给用户,方便验证音色与展示。
+        加载完时会拒绝启动并提示先按 `[preload]`,这是有意为之,不是 bug。**⚠ `[play]`(连同
+        `setup`/`prosetup`)现在会自动临时改 5 个高负载 gamerule(性能模式/perfmode:
+        `randomTickSpeed`→0、关生物生成/火/天气/昼夜)给 tick80 播放减负**,`[stop]`/播放结束/
+        拆机时会自动精确恢复;若游戏是闪退/强杀等异常方式退出、没来得及恢复,重进后手动敲
+        `/function <ns>:perfoff` 即可恢复。
+        > **中途想停/重播?** 按控制台的 **`[stop]`**——它现在会物理挖断行进中的中继器(4 游戏刻
+        > 后自动补回),所以停下后可以**立刻**重按 `[play]` 干净重播,不用等整首歌播完;手速极快
+        > 连续按时看到"机器复位中,约1秒后再按"提示属正常复位锁(ARM lock),稍等即可,不是 bug。
+     8. (展示用,可选) 控制台后方有一个 **`[音色展台]`** 按钮,按下会 tp 到一座实体展台逐格试听
+        真实发声路径——**⚠ 别右键展台里的音符盒,会改音高毁掉展品,只用侧面石按钮试听**。
    > **⚠ 「完全没声」先跑一键体检 `doctor.py`, 再看这三项.** The fastest triage is
    > `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir <world>/datapacks
    > --mc-version <ver> --ns <ns>` — it prints a numbered ✓/✗ checklist (receipt present?
@@ -464,10 +475,22 @@ below, then run the build command in step 4.
    > `/tick rate 80`。
    > Bare `scripts/build_machine.py` is datapack-only; for a playable result use
    > `prepare_all.py` (it stages the resourcepack + mod and emits the native installer).
+   > **给 agent 的两条常见排查(非"没声"类):**
+   > - 用户问**"怎么卡在预加载/`[preload]` 半天不动"** → 这是**地形生成慢**,属正常现象(§4 步骤 6:
+   >   现在是验证式等待,不是固定间隔硬等),让用户看头顶**蓝色 bossbar** 的进度,不要当成卡死去
+   >   重启;地形生成 mod(Terralith 等)越重的世界越慢。
+   > - 用户报**"gamerule 被改了 / 生物不刷了 / 庄稼不长了"** → 这是性能模式(perfmode)的临时改动
+   >   没被自动恢复,通常因为闪退/强杀游戏,没走到 `[stop]`/播放结束/拆机这几个自动恢复点,不是
+   >   bug 也不需要重新生成机器——让用户在游戏里手动敲 **`/function <ns>:perfoff`** 即可恢复。
 
 5. **自定义需求 → 两个 HTML**(用法都是:浏览器里手动填 → 直接复制或导出 JSON 交给 agent):
    - `designer/layout_designer.html` — **自定义走线方式**(形态 / 尺寸 / 折叠 / 起点)。
-     导出 layout params JSON → 传给 `build_machine.py --params`.
+     导出 layout params JSON → 传给 `build_machine.py --params`. params JSON 可选加一个
+     `protection` 字段(`straight`/`swave`/`custom`/`multilane` 支持,`inplace` 不支持)开一层
+     可选保护壳,产物会多出 `<ns>:prosetup`(代替 `setup`,先分段建壳再建机器)和
+     `<ns>:unprotect`(只拆壳);字段与用法见 [QUICKSTART.md](QUICKSTART.md) §7「区块保护」。
+     > **⚠ agent 若要替用户把 `protection.clear_interior` 设为 `true`,必须先在聊天里向用户
+     > 明确确认**——它会真的清空保护壳包围盒内的地形/水/岩浆,且不可逆,不能替用户默认打开。
    - `designer/particle_editor.html` — **自定义关键帧 + 命令方块位置**(粒子 / 烟花 / 任意命令,
      同步音乐时间与世界坐标)。导出 particle_keyframes JSON → `build_particles.py`(见 docs/PARTICLES.md).
 

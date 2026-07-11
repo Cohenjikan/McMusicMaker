@@ -90,7 +90,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     mel_event_of = {}        # tick -> sound_event of the longest cut-instr note in that cell
     _mel_best_dur = {}       # tick -> that note's dur (s), to pick the longest
     instr_count = defaultdict(int)
-    events_by_family = defaultdict(set)   # family -> {sound_event} for the audition console
+    # family -> {(block, note_value, sound_event)} of every FINAL landed timbre, for the
+    # physical [音色展台] stand (dedup'd; recorded as each note is resolved+placed below).
+    stand_palette = defaultdict(set)
     dropped = 0
 
     def _resolve(n):
@@ -108,7 +110,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
             lane_voices[li][tk] = (r.block, r.note_value)
             lane_counts[li] += 1
             instr_count[instr] += 1
-            events_by_family[instr].add(r.sound_event)
+            stand_palette[instr].add((r.block, r.note_value, r.sound_event))
             if instr in CUT_INSTR:
                 cut_events.add(r.sound_event)
                 md = float(n.get("dur", 0.1))
@@ -144,10 +146,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     used_trig_set = set(used_trig)
     MAXTICK = max(used_trig) if used_trig else 0
 
-    # audition families (fixed display order) — only families that actually sounded.
-    events_by_family = {f: sorted(evs) for f, evs in events_by_family.items() if evs}
-    aud_families = [f for f in ("pno", "bass", "lead", "pad", "drum")
-                    if f in events_by_family]
+    # per-cell pulse arrival (game-ticks) off the SHARED skeleton — identical for every lane
+    # and signal track. Drives the deterministic pulse-kill (§1.6b): each rep cell's repeater
+    # is tagged with arrival_gt so `stop` punches an air gap just ahead of the marching front.
+    arr = core.arrival_gt_by_cell(cells)
 
     # §A preload sample points: author-frame points every 128 blocks along the shared +X
     # lane axis (Z at the lane-band center), so a spectator tp-walk warms every stretch of
@@ -165,17 +167,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     if not pre_pts or pre_pts[-1][0] != xmax:
         pre_pts.append((xmax, z_center))
 
-    # §B play gating probes: path MIDPOINT and FARTHEST-X trigger cell (author frame). Each
-    # lane cell i sits at world x = OX+i; use lane 0's z/y as the representative block.
-    lane0_z = OZ + int(LANES[0]["z"])
+    # §B play gate now probes the FULL preload sample set (pre_pts, one per 128 blocks) at the
+    # lane-plane height, not just mid+far — see the play/playgo split below. lane0_y = lane
+    # 0's world Y (the probe height).
     lane0_y = Y + int(LANES[0].get("y", 0))
-    trig_idx = [i for i, (k, _v) in enumerate(cells) if k == "trig"]
-    if trig_idx:
-        _midi = trig_idx[len(trig_idx) // 2]
-        _fari = trig_idx[-1]   # cells are +X-monotone, so the last trig is the farthest X
-        probe_pts = [(OX + _midi, lane0_z), (OX + _fari, lane0_z)]
-    else:
-        probe_pts = []
 
     # 3. melody-sustain cut via core scheduler (absolute game-tick schedule).
     #    Routes through core.plan_melody_cuts so the contract's cut-floor assertion
@@ -199,6 +194,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     grid = core.Grid()
     build_cmds = ["gamerule commandModificationBlockLimit 2147483647"]
     sources = []   # (x,y,z) redstone source per chain
+    # every chain's repeater cell (all lanes + signal tracks), tagged with the shared-skeleton
+    # arrival_gt, for the deterministic pulse-kill. block string captured verbatim so restore
+    # is byte-faithful to the bld batch.
+    rep_kill_records = []
 
     def emit_chain(out, lz, ly, voices, lx=0):
         # lx/ly/lz = per-chain X/Y/Z offset off the origin. Voice lanes use lx=0 (they
@@ -212,7 +211,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
             x = x0 + i
             if kind == "rep":
                 grid.put(out, x, yb - 1, z, BASE)
-                grid.put(out, x, yb, z, f"minecraft:repeater[facing={RFACE},delay={v}]")
+                rblock = f"minecraft:repeater[facing={RFACE},delay={v}]"
+                grid.put(out, x, yb, z, rblock)
+                rep_kill_records.append((arr[i], x, yb, z, rblock))
             else:
                 note = voices.get(v) if voices is not None else None
                 grid.put(out, x, yb - 1, z, BASE)
@@ -228,6 +229,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     for sg in SIGS:
         emit_chain(build_cmds, int(sg.get("dz", 0)), int(sg.get("dy", 0)), None,
                    lx=int(sg.get("dx", 0)))
+
+    # 4b. timbre-palette STAND — physical showcase of every landed (block, note, event)
+    #     triple, fired by real wall buttons (the true mod path; replaces the old [试音]
+    #     playsound row). Emitted into the SAME grid so its blocks join the occ-based
+    #     forceload chunk set + the cleanup fill bbox. Author +X frame; grows -X from
+    #     PBX(=OX-3) and -Z from OZ-6 (behind the console at z=OZ, clear of lanes z>=OZ).
+    stand_cells, stand_truncated, stand_walk = core.emit_palette_stand(
+        grid, build_cmds, stand_palette, ox=OX, oz=OZ, y=Y,
+        sx=OX - 3, sz0=OZ - 6, sign_dialect=profile.sign_dialect,
+        base_block=BASE)
 
     batches = core.batch_setblocks(build_cmds, BATCH)
 
@@ -279,6 +290,39 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     CAMX = OX + (max(allx) - min(allx)) // 2
     CAMZ = OZ + (max(allz) - min(allz)) // 2
 
+    # ── deterministic pulse-kill plan (§1.6b): bucket every chain's (lane + signal-track)
+    #    repeater cells by the ELAPSED window that punches them to air on stop. Build-time
+    #    asserts every bucket overlapping the song has >=1 repeater (else a stop there is a
+    #    no-op). All lanes/signals share one skeleton, so arr[i] tags each chain's cell i. ──
+    kill_plan = core.plan_kill_buckets(rep_kill_records, MUSIC_TICKS)
+    kill_kz, kill_bodies, restore_bodies = core.kill_function_bodies(ns, kill_plan)
+
+    # ── protection (prosetup) barrier-shell geometry, author +X frame. None unless
+    #    protection.enabled — every emission below is gated on prot_cfg so the OFF path
+    #    is byte-for-byte identical to the no-protection build (zero-diff contract). ──
+    prot_cfg = core.protection_config(_get(params, "protection", None))
+    shell_segs = interior_segs = pro_segs = []
+    shell_bbox = None
+    N_PRO = M_SHELL = 0
+    flshell = []
+    if prot_cfg is not None:
+        # union footprint = the occupied-cell bbox ∪ the hand-placed console button row
+        # (PBX..PBX-12 in X, OZ-2..OZ in Z — those blocks live in `placectl`, NOT the grid).
+        cx0, cx1 = PBX - 12, PBX
+        cz0, cz1 = OZ - 2, OZ
+        bx0, bz0 = min(min(allx), cx0), min(min(allz), cz0)
+        bx1, bz1 = max(max(allx), cx1), max(max(allz), cz1)
+        shell_segs, interior_segs, shell_bbox = core.protection_shell(
+            prot_cfg, bx0, bz0, bx1, bz1, Y)
+        pro_segs = shell_segs + interior_segs      # ORDER: build shell, then clear cavity
+        N_PRO = len(pro_segs)
+        M_SHELL = len(shell_segs)
+        SX0, SZ0, SX1, SZ1, _FY, _CY = shell_bbox
+        # the shell is a solid rectangle around the whole footprint (⊇ the machine); its
+        # forceload covers the machine build too. Honor --force-cap like the machine bbox.
+        flshell = core.forceload_guard(SX0 - 2, SZ0 - 2, SX1 + 2, SZ1 + 2,
+                                       auto_fold=force_cap)
+
     def lbtn(bx, cmd, lines):
         return core.labeled_button(bx, Y, OZ, cmd, lines,
                                    sign_dialect=profile.sign_dialect)
@@ -291,49 +335,102 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     ctl += lbtn(PBX - 8, f"function {ns}:cfg/humantoggle", ["[微抖动]", "去复印感", "", ""])
     # §A preload button — same main row (z=OZ), one slot further -X (clear of lanes, z>=OZ).
     ctl += lbtn(PBX - 10, f"function {ns}:preload", ["[preload]", "预加载区块", "先按我再play", ""])
-    # §C audition row — a row BEHIND the console (z=OZ-3; console signs at OZ-2, lanes z>=OZ,
-    # so OZ-3 is collision-free), overview + one [试音 <fam>] per sounding family.
-    AZ = OZ - 3
-    ctl += core.labeled_button(PBX, Y, AZ, f"function {ns}:audition/list",
-                               ["[音色总览]", "列出音色", "listsounds", ""],
-                               sign_dialect=profile.sign_dialect)
-    for _i, _fam in enumerate(aud_families):
-        ctl += core.labeled_button(PBX - 2 * (_i + 1), Y, AZ,
-                                   f"function {ns}:audition/{_fam}",
-                                   [f"[试音 {_fam}]", "低/中/高", "循环采样", ""],
-                                   sign_dialect=profile.sign_dialect)
+    # §C [音色展台] — tp to the physical stand (real note blocks + wall buttons). Replaces the
+    # old [试音 <fam>] playsound row: a stand cell drives the genuine mod+resourcepack path.
+    ctl += lbtn(PBX - 12, f"function {ns}:stand", ["[音色展台]", "去实体展台", "按墙钮听真声", ""])
 
     RESET = [f"scoreboard players set PLAY {ns} 0", f"scoreboard players set SIL {ns} 0"]
     SCHED_CLEAR = [f"schedule clear {ns}:{f}" for f in
                    ("done", "fire", "firestop", "startbuild", "unsil", "cutmel")]
     TRIG_CLEAR = [f"setblock {sx} {sy} {sz} minecraft:air" for (sx, sy, sz) in sources]
 
+    # ── shared HALT: one clean-slate reset reused by setup / preload / cleanup / prosetup.
+    #    Zeroes play state (PLAY/SIL/PRE), parks every state machine idle (BLD/CLR/PRO = -1)
+    #    and clears the schedule + trigger sources. PRO=-1 interrupts an in-flight shell
+    #    build (PRO>=0) or shell removal (PRO<=-2). It deliberately does NOT touch PROT (the
+    #    "built by prosetup" flag) or `stop`'s own SIL mute window. ──
+    HALT = (RESET
+            + [f"scoreboard players set PRE {ns} 0",
+               f"scoreboard players set BLD {ns} -1",
+               f"scoreboard players set CLR {ns} -1",
+               f"scoreboard players set PRO {ns} -1",
+               # pulse-kill state: a clean slate has no pulse in flight and the machine is
+               # ARM'd (ready). ELAPSED is the game-tick counter used to time a kill (§1.6b).
+               f"scoreboard players set ELAPSED {ns} 0",
+               f"scoreboard players set ARM {ns} 1",
+               # mute联动: a clean-slate halt is unmuted (rpcfg exists post-load).
+               "scoreboard players set mute rpcfg 0"]
+            + SCHED_CLEAR + TRIG_CLEAR)
+    dp.write_function("halt", HALT)
+
+    # perfmode (§A): perfon captures+disables the 5 tick-load gamerules, perfoff restores
+    # them. Written UNCONDITIONALLY so /function <ns>:perfoff is available for manual recovery
+    # after a crashed session (load preserves a leftover PERF=1 so the guard passes).
+    dp.write_function("perfon", core.perfon_fn(ns))
+    dp.write_function("perfoff", core.perfoff_fn(ns))
+
     dp.write_function("load",
         [f"scoreboard objectives add {ns} dummy",
          f"scoreboard players set BLD {ns} -1",
-         f"scoreboard players set CLR {ns} -1"] + RESET
+         f"scoreboard players set CLR {ns} -1",
+         # pulse-kill state init (§1.6b): ELAPSED game-tick counter + ARM ready flag
+         f"scoreboard players set ELAPSED {ns} 0",
+         f"scoreboard players set ARM {ns} 1"] + RESET
         + [core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
            "scoreboard objectives add rpcfg dummy",
            f"scoreboard players set poly_{ns} rpcfg 1",
            f"scoreboard players set human_{ns} rpcfg 1",
-           f"scoreboard players set PRE {ns} 0"]
-        + [f"scoreboard players set aud_{fam}_{ns} rpcfg 0" for fam in aud_families]
+           # mute联动: the mod reads `mute` in rpcfg (0=emit, 1=silence note sounds);
+           # init unmuted, tracked alongside SIL everywhere below.
+           "scoreboard players set mute rpcfg 0",
+           f"scoreboard players set PRE {ns} 0",
+           # perfmode: init PERF=0 EXCEPT when a prior session crashed mid-perf (PERF
+           # persisted 1) — then keep 1 so its captured ORIG_* stay valid and perfoff
+           # (manual or via stop) still restores the gamerules.
+           f"execute unless score PERF {ns} matches 1 run "
+           f"scoreboard players set PERF {ns} 0",
+           f'execute if score PERF {ns} matches 1 run tellraw @a "[{ns}] 检测到上次性能模式'
+           f'未正常关闭, gamerule 可能仍被改; /function {ns}:perfoff 可恢复(或按[直接播放]'
+           f'再[停止]自动恢复)。"']
+        + core.bossbar_init_lines(ns, with_pro=prot_cfg is not None)
         + SCHED_CLEAR + TRIG_CLEAR
+        # protection: park PRO idle + record "no shell yet" (PROT=0). Gated -> load stays
+        # zero-diff when protection is off.
+        + ([f"scoreboard players set PRO {ns} -1",
+            f"scoreboard players set PROT {ns} 0"] if prot_cfg else [])
         + [f'tellraw @a ["",{{"text":"[{ns}] 多轨分布式直线机 loaded. ","color":"aqua"}},'
-           f'{{"text":"需RedPiano+qzpno. 手动 /tick rate 80 -> /function {ns}:setup -> 启用资源包 -> 按 [play]"}}]'])
+           f'{{"text":"需RedPiano+qzpno. 手动 /tick rate 80 -> /function {ns}:setup -> 启用资源包 -> 按 [play]"}}]']
+        + ([f'tellraw @a "[{ns}] 保护壳可选: 用 /function {ns}:prosetup 代替 setup 建屏障壳, '
+            f'/function {ns}:unprotect 拆壳。"'] if prot_cfg else []))
     dp.write_function("setup",
-        RESET + ["gamemode creative @a", SSTOP, f"scoreboard players set CLR {ns} -1",
-                 f"scoreboard players set PRE {ns} 0"]
-        + SCHED_CLEAR + TRIG_CLEAR + flbuild
+        [f"function {ns}:halt",
+         # perfmode ON (after halt's clean slate) for the build + performance; stop/done/
+         # cleardone restore the gamerules.
+         f"function {ns}:perfon",
+         "gamemode creative @a", SSTOP] + flbuild
         + [f"tp @a {PBX} {Y + 3} {OZ}", f"schedule function {ns}:startbuild 100t",
            f'tellraw @a "[{ns}] reset+forceload({NCH}区块); building 多轨..."'])
     dp.write_function("startbuild",
-        f'scoreboard players set BLD {ns} 0\n'
-        f'tellraw @a "[{ns}] building {NLANE}轨 + {len(SIGS)}信号轨, {len(cells)}cell..."')
+        [f"scoreboard players set BLD {ns} 0"]
+        # bossbar: reveal the green build bar (max = batch count the BLD counter walks)
+        + core.bossbar_show(ns, "bld", len(batches))
+        + [f'tellraw @a "[{ns}] building {NLANE}轨 + {len(SIGS)}信号轨, {len(cells)}cell..."'])
     dp.write_function("tick",
-        f"execute if score BLD {ns} matches 0.. run function {ns}:buildstep\n"
-        f"execute if score CLR {ns} matches 0.. run function {ns}:clearstep\n"
-        f"execute if score SIL {ns} matches 1 run {SSTOP}")
+        # pulse-kill clock: count game-ticks while playing so `stop` can time the kill (§1.6b).
+        [f"execute if score PLAY {ns} matches 1 run scoreboard players add ELAPSED {ns} 1",
+         # bossbar: mirror each driving score into its progress bar beside the dispatch.
+         f"execute if score BLD {ns} matches 0.. run function {ns}:buildstep",
+         core.bossbar_track(ns, "bld", "BLD"),
+         f"execute if score CLR {ns} matches 0.. run function {ns}:clearstep",
+         core.bossbar_track(ns, "clr", "CLR")]
+        # protection: PRO>=0 drives the shell BUILD (prostep), PRO<=-2 drives the shell
+        # REMOVAL (unprostep); PRO=-1 idle. Gated -> a no-protection tick is byte-identical.
+        # The pro bar only tracks the BUILD band (matches 0..); removal has no bar.
+        + ([f"execute if score PRO {ns} matches 0.. run function {ns}:prostep",
+            core.bossbar_track(ns, "pro", "PRO"),
+            f"execute if score PRO {ns} matches ..-2 run function {ns}:unprostep"]
+           if prot_cfg else [])
+        + [f"execute if score SIL {ns} matches 1 run {SSTOP}"])
     bs = [f"execute if score BLD {ns} matches {k} run function {ns}:bld/b{k}"
           for k in range(len(batches))]
     bs += [f"execute if score BLD {ns} matches {len(batches)} run function {ns}:builddone",
@@ -343,41 +440,96 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         dp.write_function(f"bld/b{k}", b)
     dp.write_function("placectl", ctl)
     dp.write_function("builddone",
-        f"scoreboard players set BLD {ns} -1\nfunction {ns}:placectl\n"
-        f'tellraw @a ["",{{"text":"[{ns}] built. ","color":"green"}},'
-        f'{{"text":"{NLANE}轨分布式直线; 按[直接播放]/[全景俯视]"}}]')
+        [f"scoreboard players set BLD {ns} -1",
+         core.bossbar_hide(ns, "bld"),
+         f"function {ns}:placectl",
+         f'tellraw @a ["",{{"text":"[{ns}] built. ","color":"green"}},'
+         f'{{"text":"{NLANE}轨分布式直线; 按[直接播放]/[全景俯视]"}}]']
+        # protection: after a prosetup build (PROT=1), drop the player inside the console.
+        # rotate_command does NOT recurse into `execute if score ... run <tail>`, so the
+        # coord-bearing tp lives in a sub-function (proenter) that write_function rotates.
+        # Gated -> a no-protection builddone is byte-identical.
+        + ([f"execute if score PROT {ns} matches 1 run function {ns}:proenter"]
+           if prot_cfg else []))
     dp.write_function("cutmel",
         [f"stopsound @a record {ev}" for ev in cut_events]
         or [f"# {ns}: 无旋律截断事件(纯钢琴/鼓)"])
     dp.write_function("playcore",
-        [f"scoreboard players set PLAY {ns} 1", f"scoreboard players set SIL {ns} 0",
+        [# perfmode ON for the performance (no-op if setup already turned it on; re-enables
+         # after a stop turned it off). Sheds the tick-load that starves tick80 playback.
+         f"function {ns}:perfon",
+         # zero the pulse-kill clock BEFORE the pulse starts (fire is 2t out) so ELAPSED
+         # tracks this performance's front from t0 (§1.6b).
+         f"scoreboard players set ELAPSED {ns} 0",
+         f"scoreboard players set PLAY {ns} 1", f"scoreboard players set SIL {ns} 0",
+         "scoreboard players set mute rpcfg 0",     # SIL 0 -> unmute mod note sounds
          SSTOP, f"schedule clear {ns}:cutmel"] + TRIG_CLEAR
         + [f"schedule function {ns}:fire 2t"])
-    # §B play gating: refuse if the mid/far chunk isn't loaded yet (forceload ticket down but
-    # terrain not generated -> pulse runs into ungenerated chunks and drops out). loaded-probe
-    # coords rotate via rotate_command (§1.8) for non-+X multilane (e.g. olk -X).
-    probe_lines = [
+    # §B play gate: probe the FULL preload sample set (pre_pts, one per 128 blocks) so `play`
+    # refuses only when some stretch of the route is still ungenerated. A verified preload sets
+    # PRE=2 (READY) and short-circuits to playgo; a superflat world passes every probe so play
+    # works WITHOUT a preload (backward-compatible). loaded coords rotate via rotate_command
+    # (§1.8) for a non-+X multilane (e.g. olk -X).
+    fullline_probes = [
         f'execute unless loaded {px} {lane0_y + 1} {pz} run return run tellraw @a '
-        f'"[{ns}] 机器远端区块未加载完成——先按 [preload] 预加载(或稍等 forceload 生成完)再 play"'
-        for (px, pz) in probe_pts
+        f'"[{ns}] 机器沿线区块未加载完成——先按 [preload] 预加载(或稍等 forceload 生成完)再 play"'
+        for (px, pz) in pre_pts
     ]
     dp.write_function("play",
-        [f'execute if score PLAY {ns} matches 1 run return run tellraw @a "[{ns}] 正在播放, 先[停止]"']
-        + probe_lines
-        + [f"function {ns}:playcore",
-           f'tellraw @a "[{ns}] GO。多轨分布式直线, 站着听全曲。"',
-           f'tellraw @a "[{ns}] 提示: /tick rate {TPS} 重进世界会重置,需重敲;若节奏拖慢'
-           f'(日志见 Can\'t keep up)=服务器过载,试关 Distant Horizons/降渲染距离。"'])
+        [f'execute if score PLAY {ns} matches 1 run return run tellraw @a "[{ns}] 正在播放, 先[停止]"',
+         # READY (a verified preload finished): direct through, skip the probes.
+         f"execute if score PRE {ns} matches 2 run return run function {ns}:playgo"]
+        + fullline_probes
+        + [f"function {ns}:playgo"])
+    dp.write_function("playgo",
+        [# ARM lock: a just-pressed [停止] punched the pulse to air and restores it 4gt later;
+         # refuse to re-play during that window so the new pulse can't run into the air gap.
+         f'execute if score ARM {ns} matches 0 run return run tellraw @a '
+         f'"[{ns}] 机器复位中,约1秒后再按 [直接播放]"',
+         f"function {ns}:playcore",
+         f'tellraw @a "[{ns}] GO。多轨分布式直线, 站着听全曲。"',
+         f'tellraw @a "[{ns}] 提示: /tick rate {TPS} 重进世界会重置,需重敲;若节奏拖慢'
+         f'(日志见 Can\'t keep up)=服务器过载,试关 Distant Horizons/降渲染距离。"'])
     dp.write_function("view",
         ["gamemode spectator @a", f"tp @a {CAMX} {Y + 80} {CAMZ} 0 90",
          f'tellraw @a "[{ns}] 俯视多轨(spectator)。"'])
+    # ── deterministic pulse-kill functions (§1.6b). killzone (guarded on PLAY==1) dispatches
+    #    ELAPSED to kill/k<n>, which punches the near-front repeaters (all lanes + signals) to
+    #    air (ARM=0) and schedules restore/k<n> 4gt out to rebuild them byte-for-byte (ARM=1).
+    #    restore/* is DELIBERATELY absent from SCHED_CLEAR — even a halt mid-kill must let the
+    #    restore fire, or the machine keeps an air hole. All setblocks author +X (rotated by
+    #    write_function for a non-+X multilane).
+    dp.write_function("killzone", kill_kz)
+    for _n, _body in kill_bodies.items():
+        dp.write_function(f"kill/k{_n}", _body)
+    for _n, _body in restore_bodies.items():
+        dp.write_function(f"restore/k{_n}", _body)
+
     dp.write_function("stop",
-        RESET + ["gamemode creative @a", SSTOP] + SCHED_CLEAR + TRIG_CLEAR
+        # NB: NO leading RESET — PLAY must stay 1 until killzone runs (it guards on PLAY==1).
+        # Mute the samples, clear the schedule + sources, THEN physically kill the marching
+        # pulse, and only then drop PLAY / restore gamerules.
+        ["gamemode creative @a", SSTOP]
+        + SCHED_CLEAR + TRIG_CLEAR
         + [f"scoreboard players set SIL {ns} 1",
+           "scoreboard players set mute rpcfg 1",   # SIL 1 -> mute mod note sounds too
+           # kill the pulse WHILE PLAY==1 (punch an air gap ahead of the front -> it dies);
+           # restore/k<n> rebuilds the repeaters 4gt later (ARM gates replay until then).
+           # ELAPSED 插桩: 若 stop 后 ~1s 音乐复活(漏杀), 用户报这个数字即可定位失效桶。
+           f'tellraw @a ["",{{"text":"[{ns}] stop@ELAPSED=","color":"gray"}},'
+           f'{{"score":{{"name":"ELAPSED","objective":"{ns}"}}}},'
+           f'{{"text":" (若静音后音乐复活,请报告此数字)","color":"gray"}}]',
+           f"function {ns}:killzone",
+           f"scoreboard players set PLAY {ns} 0",
+           f"function {ns}:perfoff",                # perfmode OFF — restore the captured gamerules
            f"scoreboard players set PRE {ns} 0",
-           f"schedule function {ns}:unsil {END_TICKS}t",
-           f"tp @a {PBX} {Y + 3} {OZ}", f'tellraw @a "[{ns}] 已停止。"'])
-    dp.write_function("unsil", f"scoreboard players set SIL {ns} 0")
+           # the pulse is physically dead, so SIL only needs to cover the sample tails (~1s),
+           # not the whole END_TICKS window (an old jar without mute is still fine at SIL 100t).
+           f"schedule function {ns}:unsil 100t",
+           f"tp @a {PBX} {Y + 3} {OZ}", f'tellraw @a "[{ns}] 已停止,可立即重播。"'])
+    dp.write_function("unsil",
+        [f"scoreboard players set SIL {ns} 0",
+         "scoreboard players set mute rpcfg 0"])  # SIL 0 -> unmute
     fire_lines = flbuild + [f"setblock {sx} {sy} {sz} minecraft:redstone_block"
                             for (sx, sy, sz) in sources]
     fire_lines += [f"schedule function {ns}:cutmel {cut_sched[tk]}t append" for tk in mel_ticks]
@@ -387,6 +539,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     dp.write_function("firestop", TRIG_CLEAR)
     dp.write_function("done",
         RESET + ["gamemode creative @a",
+                 f"function {ns}:perfoff",       # song ended -> restore gamerules
                  f'tellraw @a "[{ns}] (end) 重放[直接播放]; 拆 /function {ns}:cleanup。"'])
     SEG = 200
     clr_segs = (WX1 - WX0 + 16) // SEG + 1
@@ -396,19 +549,30 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         dp.write_function(f"clr/c{k}", f"fill {fx0} {WY0} {WZ0} {fx1} {WY1} {WZ1} air")
     dp.write_function("cleardone",
         [f"scoreboard players set CLR {ns} -1",
+         core.bossbar_hide(ns, "clr"),
          core.forceload_remove_region(WX0, WZ0, WX1, WZ1),
-         f'tellraw @a "[{ns}] cleaned."'])
+         f"function {ns}:perfoff",       # teardown -> restore gamerules
+         f'tellraw @a "[{ns}] cleaned."']
+        # bossbar: teardown removes every bar this ns created (machine is gone).
+        + core.bossbar_remove_all(ns, with_pro=prot_cfg is not None)
+        # protection: machine bbox cleared; if a shell was raised by prosetup (PROT=1),
+        # auto-run unprotect (PRO=-2 kicks unprostep, which ends by clearing PROT + the
+        # shell forceload). Gated -> a no-protection cleardone is byte-identical.
+        + ([f"execute if score PROT {ns} matches 1 run scoreboard players set PRO {ns} -2",
+            f'execute if score PROT {ns} matches 1 run tellraw @a '
+            f'"[{ns}] 拆除保护壳(分段)..."'] if prot_cfg else []))
     cs = [f"execute if score CLR {ns} matches {k} run function {ns}:clr/c{k}"
           for k in range(clr_segs)]
     cs += [f"execute if score CLR {ns} matches {clr_segs} run function {ns}:cleardone",
            f"execute if score CLR {ns} matches 0..{clr_segs} run scoreboard players add CLR {ns} 1"]
     dp.write_function("clearstep", cs)
     dp.write_function("cleanup",
-        ["gamerule commandModificationBlockLimit 2147483647"] + RESET
-        + ["gamemode creative @a", SSTOP, f"scoreboard players set BLD {ns} -1",
-           f"scoreboard players set PRE {ns} 0"]
-        + SCHED_CLEAR + TRIG_CLEAR
-        + [f"scoreboard players set CLR {ns} 0", f'tellraw @a "[{ns}] tearing down..."'])
+        ["gamerule commandModificationBlockLimit 2147483647",
+         f"function {ns}:halt", "gamemode creative @a", SSTOP]
+        + [f"scoreboard players set CLR {ns} 0"]
+        # bossbar: reveal the red teardown bar (max = clear segment count the CLR counter walks)
+        + core.bossbar_show(ns, "clr", clr_segs)
+        + [f'tellraw @a "[{ns}] tearing down..."'])
     for nm, sc in (("polytoggle", "poly"), ("humantoggle", "human")):
         scp = f"{sc}_{ns}"   # ns-scoped fake player so two songs don't clobber each other
         dp.write_function(f"cfg/{nm}",
@@ -422,49 +586,116 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # {ns} objective) is the chain sentinel: preload sets 1, stop/cleanup set 0; each pre/pN
     # early-returns on PRE==0, so a stop aborts the dynamic chain without schedule-clearing it.
     dp.write_function("preload",
-        ["gamemode spectator @a"] + flbuild
-        + [f"scoreboard players set PRE {ns} 1",
-           f'tellraw @a "[{ns}] 预加载开始: 逐段 tp 预热 {len(pre_pts)} 个采样点(每段30t),'
-           f'完成后自动回控制台。请勿走动。"',
+        [f"function {ns}:halt", "gamemode spectator @a"] + flbuild
+        + [f"scoreboard players set PRE {ns} 1"]        # 1 = 预加载中 (0 idle / 2 READY)
+        + core.bossbar_show(ns, "pre", len(pre_pts))    # blue preload bar
+        + [f'tellraw @a "[{ns}] 预加载开始: 逐段 tp + 验证式等待 {len(pre_pts)} 个采样点,'
+           f'完成后自动回控制台并置 READY。请勿走动。"',
            f"schedule function {ns}:pre/p0 1t"])
     _M = len(pre_pts)
+    # §B verified preload: each pre/p<k> tp's to point k, then hands to a wait function
+    # pre/w<k> that SPINS (self-schedule 20t) until the NEXT sample point's chunk is actually
+    # loaded (terrain gen caught up), instead of blindly waiting a fixed 30t. PRE==0 is the
+    # sentinel: a stop/halt sets PRE 0, so every pre/p and pre/w early-returns and the dynamic
+    # chain unwinds WITHOUT any schedule-clear. loaded-probe coords rotate via write_function.
     for _k, (_px, _pz) in enumerate(pre_pts):
+        # wait target = the next point's chunk; clamp at the tail so the last step waits on
+        # its own (already tp'd) chunk before advancing to the READY finish.
+        _nx, _nz = pre_pts[_k + 1] if _k + 1 < _M else pre_pts[_k]
         dp.write_function(f"pre/p{_k}",
             [f"execute if score PRE {ns} matches 0 run return 0",
              f"tp @a {_px} {Y + 16} {_pz}",
-             f'tellraw @a "[{ns}] 预加载 {_k + 1}/{_M} (等待地形生成)"',
-             f"schedule function {ns}:pre/p{_k + 1} 30t"])
+             f"bossbar set {ns}:pre value {_k + 1}",
+             f'tellraw @a "[{ns}] 预加载 {_k + 1}/{_M} (验证下一段区块加载中)"',
+             f"function {ns}:pre/w{_k}"])
+        dp.write_function(f"pre/w{_k}",
+            [f"execute if score PRE {ns} matches 0 run return 0",
+             f"execute unless loaded {_nx} {Y + 1} {_nz} run "
+             f"schedule function {ns}:pre/w{_k} 20t",
+             f"execute if loaded {_nx} {Y + 1} {_nz} run function {ns}:pre/p{_k + 1}"])
     dp.write_function(f"pre/p{_M}",
         [f"execute if score PRE {ns} matches 0 run return 0",
+         core.bossbar_hide(ns, "pre"),
          "gamemode creative @a",
          f"tp @a {PBX} {Y + 3} {OZ}",
-         f"scoreboard players set PRE {ns} 0",
-         f'tellraw @a "[{ns}] 预加载完成,按 [直接播放]。"'])
+         f"scoreboard players set PRE {ns} 2",       # 2 = READY -> play direct-throughs
+         f'tellraw @a "[{ns}] 预加载完成(READY),按 [直接播放] 直接播放。"'])
 
-    # §C audition: [音色总览] list + per-family low/mid/high sampler (aud_<fam>_<ns> in rpcfg)
-    aud_list = [f'tellraw @a "[{ns}] === 音色总览 ({len(aud_families)} 族) ==="']
-    for _fam in aud_families:
-        _evs = events_by_family[_fam]
-        _head6 = " ".join(_evs[:6])
-        _more = " …" if len(_evs) > 6 else ""
-        aud_list.append(
-            f'tellraw @a "[{ns}] {_fam}: {instr_count[_fam]}音 {len(_evs)}采样 | '
-            f'{_head6}{_more}"')
-    dp.write_function("audition/list",
-                      aud_list or [f'tellraw @a "[{ns}] (无音色数据)"'])
-    for _fam in aud_families:
-        _evs = events_by_family[_fam]
-        _lo, _mid, _hi = _evs[0], _evs[len(_evs) // 2], _evs[-1]
-        _sc = f"aud_{_fam}_{ns}"
-        dp.write_function(f"audition/{_fam}",
-            [f"execute if score {_sc} rpcfg matches 0 run playsound {_lo} master @a ~ ~ ~ 1 1",
-             f'execute if score {_sc} rpcfg matches 0 run tellraw @a "[{ns}] 试音 {_fam} 低: {_lo}"',
-             f"execute if score {_sc} rpcfg matches 1 run playsound {_mid} master @a ~ ~ ~ 1 1",
-             f'execute if score {_sc} rpcfg matches 1 run tellraw @a "[{ns}] 试音 {_fam} 中: {_mid}"',
-             f"execute if score {_sc} rpcfg matches 2 run playsound {_hi} master @a ~ ~ ~ 1 1",
-             f'execute if score {_sc} rpcfg matches 2 run tellraw @a "[{ns}] 试音 {_fam} 高: {_hi}"',
-             f"scoreboard players add {_sc} rpcfg 1",
-             f"execute if score {_sc} rpcfg matches 3.. run scoreboard players set {_sc} rpcfg 0"])
+    # §C stand: tp @a to the physical timbre-palette stand + tellraw a per-family summary.
+    # Replaces the old audition/* playsound functions: the exhibit IS the audition, and a
+    # cell's wall button drives the real mod+resourcepack sound path (not a playsound sample).
+    _stand_total = sum(stand_cells.values())
+    _stand_parts = " ".join(f"{_f}:{_c}" for _f, _c in stand_cells.items()) or "(空)"
+    _wx, _wz = stand_walk
+    stand_body = [
+        f"tp @a {_wx} {Y + 2} {_wz} 180 25",
+        f'tellraw @a "[{ns}] 音色展台: {_stand_parts} (共{_stand_total}格)。沿走道逐格看牌,'
+        f'按墙面石按钮=真实 mod+资源包发声(勿右键音符盒,会改音高毁展品)。"',
+    ]
+    if stand_truncated:
+        stand_body.append(
+            f'tellraw @a "[{ns}] 注意: 音色种类超过 {core.STAND_MAX_CELLS} 种,展台只摆前 '
+            f'{core.STAND_MAX_CELLS} 格。"')
+    dp.write_function("stand", stand_body)
+
+    # ── §D protection: barrier-shell prosetup (opt-in entry point that REPLACES setup).
+    #    PRO>=0 builds the shell then clears the cavity (pro/s*), hands off to startbuild
+    #    (machine body), builddone drops the player inside; PRO<=-2 removes ONLY the shell
+    #    geometry (unpro/u*). All fills are author +X frame (write_function rotates them).
+    #    Every write here is gated on prot_cfg -> a no-protection build emits none of it. ──
+    if prot_cfg is not None:
+        SX0, SZ0, SX1, SZ1, _FY, _CY = shell_bbox
+        dp.write_function("prosetup",
+            [f"function {ns}:halt",
+             f"function {ns}:perfon",       # perfmode ON (like setup) for the shell+body build
+             "gamemode creative @a", SSTOP]
+            + flshell
+            + [f"scoreboard players set PROT {ns} 1",
+               f"tp @a {PBX} {Y + 3} {OZ}",
+               f"scoreboard players set PRO {ns} 0"]
+            + core.bossbar_show(ns, "pro", N_PRO)   # yellow shell-build bar
+            + [f'tellraw @a "[{ns}] 保护壳施工: 先建屏障壳({M_SHELL}段)'
+               f'{"+清腔" if interior_segs else ""}, 再建机器本体..."'])
+        for _k, _seg in enumerate(pro_segs):
+            dp.write_function(f"pro/s{_k}", core.shell_fill_cmd(_seg))
+        prostep = [f"execute if score PRO {ns} matches {_k} run function {ns}:pro/s{_k}"
+                   for _k in range(N_PRO)]
+        prostep += [
+            f"execute if score PRO {ns} matches {N_PRO} run function {ns}:probuilddone",
+            f"execute if score PRO {ns} matches 0..{N_PRO} run "
+            f"scoreboard players add PRO {ns} 1"]
+        dp.write_function("prostep", prostep)
+        dp.write_function("probuilddone",
+            [f"scoreboard players set PRO {ns} -1",
+             core.bossbar_hide(ns, "pro"),       # hide shell bar; startbuild reveals build bar
+             f"function {ns}:startbuild"])
+        # proenter: plain tp so write_function rotates it (builddone calls it when PROT=1).
+        dp.write_function("proenter",
+            [f"tp @a {PBX} {Y + 2} {OZ + 1} 0 40",
+             f'tellraw @a "[{ns}] 保护壳完成,已进壳内控制台。"'])
+
+        # unprotect: remove ONLY the shell (fill air), segmented in the negative PRO band so
+        # halt (PRO=-1) can abort it. PRO=-2 => u0, -3 => u1, ...
+        dp.write_function("unprotect",
+            [f"function {ns}:halt",
+             f"scoreboard players set PRO {ns} -2",
+             f'tellraw @a "[{ns}] 拆除保护壳(分段移除屏障壳,机器保留)..."'])
+        for _k, _seg in enumerate(shell_segs):
+            _x0, _y0, _z0, _x1, _y1, _z1, _b = _seg
+            dp.write_function(f"unpro/u{_k}",
+                f"fill {_x0} {_y0} {_z0} {_x1} {_y1} {_z1} minecraft:air")
+        unprostep = [f"execute if score PRO {ns} matches {-2 - _k} run function {ns}:unpro/u{_k}"
+                     for _k in range(M_SHELL)]
+        unprostep += [
+            f"execute if score PRO {ns} matches {-2 - M_SHELL} run function {ns}:unprodone",
+            f"execute if score PRO {ns} matches {-2 - M_SHELL}..-2 run "
+            f"scoreboard players remove PRO {ns} 1"]
+        dp.write_function("unprostep", unprostep)
+        dp.write_function("unprodone",
+            [f"scoreboard players set PRO {ns} -1",
+             f"scoreboard players set PROT {ns} 0",
+             core.forceload_remove_region(SX0 - 2, SZ0 - 2, SX1 + 2, SZ1 + 2),
+             f'tellraw @a "[{ns}] 保护壳已拆除。"'])
 
     deployed = dp.deploy(deploy_dir) if deploy_dir else None
 
@@ -497,7 +728,17 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "mel_cut_cells": len(mel_ticks),
         "cut_count": len(mel_ticks),
         "median_cut_gt": median_cut_gt,
-        "audition_families": {f: len(events_by_family[f]) for f in aud_families},
+        # deterministic pulse-kill (§1.6b): ELAPSED bucket count + biggest single-bucket
+        # repeater-kill count (all lanes + signal tracks pooled).
+        "kill_buckets": kill_plan.n_buckets,
+        "kill_cells_max": kill_plan.cells_max,
+        "stand_cells": stand_cells,
+        "stand_truncated": stand_truncated,
+        # protection (barrier-shell / prosetup) — off => enabled False, 0 segments, no bbox
+        "protection_enabled": prot_cfg is not None,
+        "shell_segments": M_SHELL,
+        "interior_segments": len(interior_segs),
+        "shell_bbox": shell_bbox,
         "preload_steps": len(pre_pts),
         "warnings": warnings,
         "deployed": deployed,

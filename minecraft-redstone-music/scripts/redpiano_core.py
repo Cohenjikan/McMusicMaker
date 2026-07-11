@@ -444,6 +444,130 @@ def batch_setblocks(setblock_lines, batch=2000):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §1.1c  Performance mode (perfon/perfoff) — shed the persistent tick-load that
+#   starves tick80 playback. In-game logs (Can't keep up) traced the choppiness to
+#   the ×4 random-tick + mob-AI background load that runs every game-tick, not to the
+#   machine itself. perfon captures the 5 tick-load gamerules into ns-scoped scores and
+#   zeroes/false them; perfoff restores each PRECISELY (booleans from the captured 0/1,
+#   randomTickSpeed from its enumerated original with a >3 fallback). Both are guarded so
+#   redundant calls (setup then playcore both perfon) are no-ops. No coords -> the
+#   direction-rotation in write_function passes every line through verbatim.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# (score-name, gamerule) for the 5 captured gamerules. randomTickSpeed is numeric
+# (enumerated restore); the other four are booleans (query returns 0/1).
+_PERF_BOOL_RULES = [
+    ("ORIG_MOB", "doMobSpawning"),
+    ("ORIG_FIRE", "doFireTick"),
+    ("ORIG_WEATHER", "doWeatherCycle"),
+    ("ORIG_DAY", "doDaylightCycle"),
+]
+
+
+def perfon_fn(ns):
+    """`perfon` body: capture (via `execute store result score ... run gamerule <rule>`,
+    the query form) then disable the 5 tick-load gamerules. Guarded on PERF==1 so a second
+    call (e.g. playcore after setup already turned it on) is a no-op and never re-captures
+    the perf values as if they were the originals."""
+    out = [f"execute if score PERF {ns} matches 1 run return 0"]
+    # capture BEFORE mutating (guard above guarantees these are the true originals)
+    out.append(
+        f"execute store result score ORIG_RTS {ns} run gamerule randomTickSpeed")
+    out += [f"execute store result score {s} {ns} run gamerule {g}"
+            for s, g in _PERF_BOOL_RULES]
+    out += ["gamerule randomTickSpeed 0",
+            "gamerule doMobSpawning false",
+            "gamerule doFireTick false",
+            "gamerule doWeatherCycle false",
+            "gamerule doDaylightCycle false",
+            f"scoreboard players set PERF {ns} 1",
+            f'tellraw @a "[{ns}] 性能模式 ON: 已暂存并关闭 随机刻/生物生成/火蔓延/天气/昼夜 '
+            f'以给 tick80 播放减负(stop/结束/拆机会自动恢复)。"']
+    return out
+
+
+def perfoff_fn(ns):
+    """`perfoff` body: restore the 5 gamerules perfon captured, precisely. Booleans go back
+    from their captured 0/1; randomTickSpeed is restored from its enumerated original 0..3,
+    with a >3 fallback to 3 (the vanilla default) plus a tellraw so a player who deliberately
+    ran a high randomTickSpeed knows to set it back. Guarded on PERF==1 so a redundant perfoff
+    (stop after the song already ended via done) is a no-op."""
+    out = [f"execute unless score PERF {ns} matches 1 run return 0"]
+    for s, g in _PERF_BOOL_RULES:
+        out += [f"execute if score {s} {ns} matches 0 run gamerule {g} false",
+                f"execute if score {s} {ns} matches 1 run gamerule {g} true"]
+    out += [f"execute if score ORIG_RTS {ns} matches {v} run gamerule randomTickSpeed {v}"
+            for v in (0, 1, 2, 3)]
+    out += [f"execute if score ORIG_RTS {ns} matches 4.. run gamerule randomTickSpeed 3",
+            f'execute if score ORIG_RTS {ns} matches 4.. run tellraw @a '
+            f'"[{ns}] 注意: 你之前把 randomTickSpeed 设为 >3, 已回退为 3, 请按需自行改回。"',
+            f"scoreboard players set PERF {ns} 0",
+            f'tellraw @a "[{ns}] 性能模式 OFF: gamerule 已恢复。"']
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §1.1d  Generation-progress bossbars — a visible progress bar for each long-running
+#   segmented state machine (build / clear / protection-shell / preload), so generation
+#   is no longer a black box. Four ids under the ns: bld(green) clr(red) pro(yellow,
+#   only with protection) pre(blue). `load` (re)creates + hides them; each state machine
+#   shows its bar at start (max/players/visible), the `tick` dispatch drives the value
+#   from the driving score, and each done-handler hides its bar (cleardone removes all).
+#   bossbar commands carry NO coords -> write_function's rotation passes them verbatim.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# (id-suffix, label, bar-color). pro is appended only when protection is enabled.
+_BOSSBAR_DEFS = [
+    ("bld", "建造中", "green"),
+    ("clr", "拆除中", "red"),
+    ("pre", "预加载区块中", "blue"),
+]
+_BOSSBAR_PRO = ("pro", "保护壳施工中", "yellow")
+
+
+def _bossbar_defs(with_pro):
+    return _BOSSBAR_DEFS + ([_BOSSBAR_PRO] if with_pro else [])
+
+
+def bossbar_init_lines(ns, with_pro=False):
+    """`load` body fragment: (re)create the four progress bossbars and start hidden.
+    `remove` before `add` is idempotent — a failed command inside a function is a silent
+    no-op, so a first-ever load (nothing to remove) and a re-load (already exists) both end
+    with exactly one fresh, hidden bar per id."""
+    out = []
+    for bid, label, color in _bossbar_defs(with_pro):
+        out += [f"bossbar remove {ns}:{bid}",
+                f'bossbar add {ns}:{bid} {{"text":"[{ns}] {label}"}}',
+                f"bossbar set {ns}:{bid} color {color}",
+                f"bossbar set {ns}:{bid} visible false"]
+    return out
+
+
+def bossbar_show(ns, bid, maxval):
+    """State-machine start fragment: set the bar's max, attach @a, and reveal it."""
+    return [f"bossbar set {ns}:{bid} max {maxval}",
+            f"bossbar set {ns}:{bid} players @a",
+            f"bossbar set {ns}:{bid} visible true"]
+
+
+def bossbar_hide(ns, bid):
+    """Done-handler fragment: hide one bar (kept defined so a later run can re-show it)."""
+    return f"bossbar set {ns}:{bid} visible false"
+
+
+def bossbar_track(ns, bid, score):
+    """`tick` fragment: mirror the driving score into the bar's value while the machine is
+    active (score in 0..). Placed beside the matching `run function ...:<step>` dispatch."""
+    return (f"execute if score {score} {ns} matches 0.. store result bossbar {ns}:{bid} "
+            f"value run scoreboard players get {score} {ns}")
+
+
+def bossbar_remove_all(ns, with_pro=False):
+    """`cleardone` (teardown) fragment: remove every bossbar this ns created."""
+    return [f"bossbar remove {ns}:{bid}" for bid, _l, _c in _bossbar_defs(with_pro)]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §1.2  Grid — collision-guarded grid writer
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -566,6 +690,122 @@ def labeled_button(bx, y, oz, cmd, lines, *, sign_dialect="component_string",
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §1.3b  Timbre-palette STAND — a PHYSICAL showcase of every distinct landed
+#   (mapping-block, note-value, sound-event) triple. Unlike a [试音] playsound button,
+#   each stand cell is a REAL note block (mapping block directly below, air above) fired
+#   by a wall button, so pressing it drives the genuine mod + resourcepack sound path —
+#   that is the whole point of the exhibit. Emitted through the collision-guarded Grid so
+#   the stand's footprint auto-joins the machine's forceload + cleanup bounding box.
+#   Author +X frame; the caller's Datapack.write_function rotates it for non-+X directions.
+# ─────────────────────────────────────────────────────────────────────────────
+
+STAND_FAMILY_ORDER = ("pno", "bass", "lead", "pad", "drum")  # fixed section order
+STAND_MAX_CELLS = 256      # truncate the palette past this (stats WARN); bounds setblocks
+STAND_COLS = 16            # cells per row
+STAND_CELL_DX = 2          # column spacing, grows -X
+STAND_ROW_DZ = 4           # row spacing, grows -Z (block + north-face sign/button + aisle)
+
+
+def _stand_short(s):
+    """Trim a namespace + any blockstate/NBT for a sign label:
+    ``qzpno:pno_c4_mf`` -> ``pno_c4_mf``; ``minecraft:iron_block[x=y]`` -> ``iron_block``."""
+    return s.split("[")[0].split("{")[0].split(":")[-1]
+
+
+def emit_palette_stand(grid, out, palette_by_family, *, ox, oz, y, sx, sz0,
+                       sign_dialect, base_block="minecraft:stone"):
+    """Emit a physical timbre-palette stand into ``grid`` (author +X frame).
+
+    ``palette_by_family``: {family: iterable of (block, note_value, sound_event)} — the
+    FINAL landed triples the caller dedup'd. Families are laid out in STAND_FAMILY_ORDER;
+    within a family triples are sorted by (sound_event, note_value, block).
+
+    Per cell at (cx, cz), through the collision-guarded Grid:
+        mapping block   (cx, y,   cz)     # the mod reads THIS to choose the sample
+        note block      (cx, y+1, cz)     # minecraft:note_block[note=<nv>]
+        air             (cx, y+2, cz)     # a note block needs air above it to sound
+        wall button     (cx, y+1, cz-1)   # stone_button[face=wall,facing=north] on the note
+                                          #   block's NORTH face — pressing = redstone power =
+                                          #   the REAL mod sound path. (NEVER right-click a
+                                          #   stand note block: that re-pitches it, ruining
+                                          #   the exhibit.)
+        label wall sign (cx, y,   cz-1)   # on the mapping block's NORTH face, read from the
+                                          #   same -Z aisle the button is pressed from; its
+                                          #   backboard is the mapping block. Lines:
+                                          #     1 event (no ns:)  2 block short id  3 note=<n> fam
+    Rows grow -Z; each family gets a standing-sign header (backboard = base_block). Cells past
+    STAND_MAX_CELLS are dropped and ``truncated`` is set True.
+
+    Returns (stand_cells, truncated, walk_xz):
+        stand_cells  {family: cells_placed}  (fixed order, only non-empty families)
+        truncated    bool                    (palette exceeded STAND_MAX_CELLS)
+        walk_xz      (x, z)                   aisle-entrance tp target (author frame)
+    """
+    # normalize + sort each family's triples (dedup defensively via set)
+    fam_lists = {}
+    for fam in STAND_FAMILY_ORDER:
+        trips = palette_by_family.get(fam)
+        if trips:
+            fam_lists[fam] = sorted(set(trips), key=lambda t: (t[2], t[1], t[0]))
+    total = sum(len(v) for v in fam_lists.values())
+    truncated = total > STAND_MAX_CELLS
+
+    # per-family placed counts under the GLOBAL cap (greedy, fixed order)
+    budget = STAND_MAX_CELLS
+    placed_n = {}
+    for fam in STAND_FAMILY_ORDER:
+        if fam not in fam_lists:
+            continue
+        take = min(len(fam_lists[fam]), budget)
+        if take > 0:
+            placed_n[fam] = take
+        budget -= take
+
+    stand_cells = {}
+    walk_xz = None
+    cur_z = sz0
+    for fam in STAND_FAMILY_ORDER:
+        n_take = placed_n.get(fam, 0)
+        if n_take == 0:
+            continue
+        trips = fam_lists[fam]
+        # ── family header: standing sign on a backing block, read from the +Z entrance ──
+        hz = cur_z
+        grid.put(out, sx, y, hz, base_block)
+        hdr = sign_messages([f"== {fam.upper()} ==", f"{n_take} 格音色",
+                             "按墙钮=真实发声"], sign_dialect)
+        grid.put(out, sx, y + 1, hz,
+                 "minecraft:oak_sign[rotation=0]{front_text:{messages:[%s]}}" % hdr)
+        if walk_xz is None:
+            walk_xz = (sx + 3, hz + 2)   # entrance just +X/+Z of the first header
+        # ── cells ──
+        row0 = hz - STAND_ROW_DZ
+        for k in range(n_take):
+            block, nv, ev = trips[k]
+            col, row = k % STAND_COLS, k // STAND_COLS
+            cx = sx - col * STAND_CELL_DX
+            cz = row0 - row * STAND_ROW_DZ
+            grid.put(out, cx, y, cz, block)                                       # mapping block
+            grid.put(out, cx, y + 1, cz, f"minecraft:note_block[note={nv}]")      # real note block
+            grid.put(out, cx, y + 2, cz, "minecraft:air")                         # air above (sounding)
+            grid.put(out, cx, y + 1, cz - 1,                                      # wall button (north face)
+                     "minecraft:stone_button[face=wall,facing=north]")
+            lbl = sign_messages([_stand_short(ev), _stand_short(block),
+                                 f"note={nv} {fam}"], sign_dialect)
+            grid.put(out, cx, y, cz - 1,                                          # label sign (north face)
+                     "minecraft:oak_wall_sign[facing=north]"
+                     "{front_text:{messages:[%s]}}" % lbl)
+        stand_cells[fam] = n_take
+        nrows = (n_take + STAND_COLS - 1) // STAND_COLS
+        last_row_z = row0 - (nrows - 1) * STAND_ROW_DZ
+        cur_z = last_row_z - 2 * STAND_ROW_DZ    # gap before the next family's header
+
+    if walk_xz is None:                          # empty palette (no families) — degenerate
+        walk_xz = (sx + 3, sz0 + 2)
+    return stand_cells, truncated, walk_xz
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §1.4  Forceload helpers — per-path add + over-threshold guard
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -664,6 +904,139 @@ def forceload_guard(x0, z0, x1, z1, *, auto_fold=False):
         return forceload_split(x0, z0, x1, z1)
     # within cap: still split for safety on wide regions, but a single add is fine.
     return forceload_split(x0, z0, x1, z1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §1.4b  Protection shell (prosetup) — a segmented barrier box around the machine
+#   footprint. The shell is built by a PRO-scored state machine BEFORE the machine
+#   body: fill the six faces, (optionally) clear the interior cavity to air, then hand
+#   off to the machine build. Emitted in the author +X frame; Datapack.write_function
+#   rotates every `fill` for a non-+X play direction. Consumed by all line forms +
+#   multilane; validated in params_schema.assert_supported.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# per-segment fill bounds (Minecraft caps a single fill at 32768 blocks; keep the X
+# stride short too so no one fill spans an unwieldy column count).
+SHELL_MAX_XLEN = 128
+SHELL_MAX_VOL = 32768
+
+PROTECTION_DEFAULTS = {
+    "enabled": False,
+    "block": "minecraft:barrier",
+    "margin_xz": 3,      # horizontal padding beyond the machine+console footprint
+    "floor_margin": 2,   # blocks below the machine's Y-2 base for the floor slab
+    "headroom": 5,       # blocks above the machine's Y+3 top for the ceiling slab
+    "clear_interior": True,
+}
+
+
+def protection_config(prot):
+    """Normalize a validated protection dict (or None) into a full config with defaults
+    applied. Returns None when ``prot`` is falsy OR enabled is not True — i.e. None means
+    "no shell, emit nothing" (the zero-diff path). params_schema.assert_supported has
+    already validated the shape, so this only fills defaults."""
+    if not prot:
+        return None
+    cfg = dict(PROTECTION_DEFAULTS)
+    cfg.update(prot)
+    if not cfg.get("enabled"):
+        return None
+    return cfg
+
+
+def _seg_box(x0, y0, z0, x1, y1, z1, block, *,
+             max_xlen=SHELL_MAX_XLEN, max_vol=SHELL_MAX_VOL):
+    """Tile an axis-aligned box [x0..x1]x[y0..y1]x[z0..z1] into fill segments. Each segment
+    has BOTH horizontal spans <= ``max_xlen`` AND volume <= ``max_vol``. Returns a list of
+    (x0,y0,z0,x1,y1,z1,block) tuples that cover the box exactly once (no overlap, no gap).
+    Empty box (any hi<lo) -> [].
+
+    Both X and Z strides are capped at ``max_xlen`` (not just X): a non-+X play direction
+    rotates author X<->Z, so bounding ONLY author-X would let the in-game X-span blow past
+    the cap after a +/-Z rotation. Capping both keeps the rotated fill's X-span <= max_xlen
+    for every direction; the Y stride then bounds any remaining volume."""
+    if x1 < x0 or y1 < y0 or z1 < z0:
+        return []
+    segs = []
+    xs = x0
+    while xs <= x1:
+        xe = min(x1, xs + max_xlen - 1)
+        xlen = xe - xs + 1
+        ylen_full = y1 - y0 + 1
+        # Z stride: bounded by the length cap AND the volume budget (at full Y height).
+        max_zlen = max(1, min(max_xlen, max_vol // (xlen * ylen_full)))
+        zs = z0
+        while zs <= z1:
+            ze = min(z1, zs + max_zlen - 1)
+            zlen = ze - zs + 1
+            max_ylen = max(1, max_vol // (xlen * zlen))
+            ys = y0
+            while ys <= y1:
+                ye = min(y1, ys + max_ylen - 1)
+                segs.append((xs, ys, zs, xe, ye, ze, block))
+                ys = ye + 1
+            zs = ze + 1
+        xs = xe + 1
+    return segs
+
+
+def protection_shell(cfg, bx0, bz0, bx1, bz1, y, *,
+                     max_xlen=SHELL_MAX_XLEN, max_vol=SHELL_MAX_VOL):
+    """Compute the barrier-shell geometry around the union footprint [bx0..bx1]x[bz0..bz1]
+    at machine height ``y`` (author +X frame). Returns (shell_segs, interior_segs, bbox):
+
+        shell_segs     list of (x0,y0,z0,x1,y1,z1,block) — floor + ceiling + 4 walls, a
+                       WATERTIGHT box (every perimeter cell covered exactly once).
+        interior_segs  list of fill-air segments for the interior cavity (empty when
+                       clear_interior is false); strictly INSIDE the shell (never a shell cell).
+        bbox           (SX0, SZ0, SX1, SZ1, FLOOR_Y, CEIL_Y) — the shell extent.
+
+    Geometry (contract): floor top surface at Y-2-floor_margin, ceiling bottom at
+    Y+3+headroom, horizontal extent = footprint +/- margin_xz. Floor and ceiling are single
+    Y layers over the full XZ rectangle; the 4 walls fill the perimeter for the Y range
+    strictly between them (east/west walls span the full Z, north/south walls span X minus
+    the shared corner columns, so the box is closed with no double-placed cell)."""
+    m = int(cfg["margin_xz"])
+    block = cfg["block"]
+    SX0, SZ0 = bx0 - m, bz0 - m
+    SX1, SZ1 = bx1 + m, bz1 + m
+    FLOOR_Y = y - 2 - int(cfg["floor_margin"])
+    CEIL_Y = y + 3 + int(cfg["headroom"])
+
+    shell = []
+    # floor + ceiling: full XZ rectangle, one Y layer each
+    shell += _seg_box(SX0, FLOOR_Y, SZ0, SX1, FLOOR_Y, SZ1, block,
+                      max_xlen=max_xlen, max_vol=max_vol)
+    shell += _seg_box(SX0, CEIL_Y, SZ0, SX1, CEIL_Y, SZ1, block,
+                      max_xlen=max_xlen, max_vol=max_vol)
+    # walls: only the Y band strictly between floor and ceiling
+    wy0, wy1 = FLOOR_Y + 1, CEIL_Y - 1
+    if wy1 >= wy0:
+        # west (x=SX0) + east (x=SX1) walls span the full Z (own the corners)
+        shell += _seg_box(SX0, wy0, SZ0, SX0, wy1, SZ1, block,
+                          max_xlen=max_xlen, max_vol=max_vol)
+        shell += _seg_box(SX1, wy0, SZ0, SX1, wy1, SZ1, block,
+                          max_xlen=max_xlen, max_vol=max_vol)
+        # north (z=SZ0) + south (z=SZ1) walls span X minus the corner columns
+        if SX1 - 1 >= SX0 + 1:
+            shell += _seg_box(SX0 + 1, wy0, SZ0, SX1 - 1, wy1, SZ0, block,
+                              max_xlen=max_xlen, max_vol=max_vol)
+            shell += _seg_box(SX0 + 1, wy0, SZ1, SX1 - 1, wy1, SZ1, block,
+                              max_xlen=max_xlen, max_vol=max_vol)
+
+    interior = []
+    if cfg.get("clear_interior"):
+        interior = _seg_box(SX0 + 1, wy0, SZ0 + 1, SX1 - 1, wy1, SZ1 - 1,
+                            "minecraft:air", max_xlen=max_xlen, max_vol=max_vol)
+
+    return shell, interior, (SX0, SZ0, SX1, SZ1, FLOOR_Y, CEIL_Y)
+
+
+def shell_fill_cmd(seg):
+    """Render one (x0,y0,z0,x1,y1,z1,block) segment as a `fill` command string
+    (author +X frame; Datapack.write_function rotates it for a non-+X direction)."""
+    x0, y0, z0, x1, y1, z1, block = seg
+    return f"fill {x0} {y0} {z0} {x1} {y1} {z1} {block}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -977,6 +1350,155 @@ def plan_melody_cuts(mel_events, *, tps=80, melcap_s=1.2, min_cut_gt=4,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §1.6b  Deterministic pulse-kill buckets — physically kill the marching pulse on stop.
+#   A `stop` mid-song must not leave a redstone pulse still marching down the repeater
+#   line (it would keep firing note blocks / block an instant re-play). SIL/mute cover the
+#   SAMPLE tails, but the pulse itself is a physical redstone signal — the only way to end
+#   it deterministically is to punch an AIR gap in a repeater just ahead of its front, which
+#   the signal cannot cross. 4 game-ticks later the repeater is restored byte-for-byte so
+#   the machine is intact and instantly replayable.
+#
+#   The generator knows, at COMPILE time, when the pulse reaches every cell: a repeater with
+#   delay d red-stone-ticks = 2d game-ticks, so arrival_gt(cell) = 2 x cumulative delay. At
+#   run time an ELAPSED score counts game-ticks while PLAY==1, so `stop` reads ELAPSED, maps
+#   it to a time BUCKET, and kills every repeater whose arrival_gt sits in that bucket's
+#   (padded) window — guaranteeing a dead repeater at/ahead of the front wherever it is.
+#
+#   Bucket n covers ELAPSED in [128n, 128n+127]; its KILL WINDOW = repeater cells with
+#   arrival_gt in [128n-16, 128n+127+80] (back-pad absorbs the ELAPSED->arrival offset;
+#   forward-pad guarantees killed repeaters AHEAD of the front). Windows overlap between
+#   buckets by design; that is fine — only ONE bucket fires per stop (the one ELAPSED is in).
+# ─────────────────────────────────────────────────────────────────────────────
+
+KILL_BUCKET_GT = 128   # ELAPSED bucket width in game-ticks
+KILL_WIN_BACK = 64     # kill window extends this many gt before the bucket's ELAPSED start.
+# 64 (was 16): the BACK edge is the only edge that actually kills — the front lookahead air
+# heals (4gt restore) before the dominant 8gt repeater hop completes, so it is inert. A thin
+# back margin (16 -> ~6-14gt usable after discretization) leaks the pulse whenever the real
+# front lags ELAPSED by >=11gt (in-game 偶发 "stop 后 ~1s 音乐复活"). Widening BACKWARD only
+# deletes already-passed, unpowered repeaters — strictly safe, no re-trigger risk — and lifts
+# the tolerated front-lag to ~55gt+. (2026-07-12 static pulse simulation on the deployed pack.)
+KILL_WIN_FWD = 80      # ...and this many gt past the bucket's ELAPSED end (front lookahead)
+KILL_RESTORE_DELAY_GT = 4  # restore the punched repeaters this many game-ticks later
+
+
+def arrival_gt_by_cell(cells):
+    """Given the shared-timeline ``cells`` (list of ('rep', delay) | ('trig', tick)),
+    return ``arr`` where ``arr[i]`` = the pulse arrival at cell i in GAME-TICKS =
+    2 x (cumulative repeater delay in redstone-ticks reaching cell i's input).
+
+    This depends ONLY on the shared skeleton, so a cell index maps to the SAME arrival
+    for every mirror track / parallel lane (they all share one repeater skeleton). At a
+    trig cell arr = 2 x (sum of preceding rep delays) = 2 x (T0+OFFSET) — the same value
+    the melody-cut schedule uses — so kill timing and cut timing agree by construction."""
+    out = []
+    cum = 0
+    for kind, v in cells:
+        out.append(2 * cum)
+        if kind == "rep":
+            cum += v
+    return out
+
+
+class KillPlan:
+    """Output of plan_kill_buckets(). Fields:
+      buckets     list[list[(x,y,z,block)]] — per-bucket repeater cells to punch to air
+                  (author +X frame; the caller's write_function rotates them).
+      n_buckets   total buckets (indices 0..n_buckets-1), continuous over ELAPSED
+                  0..music_ticks+200.
+      cells_max   the largest single-bucket cell count (report metric / stats).
+    """
+
+    __slots__ = ("buckets", "n_buckets", "cells_max")
+
+    def __init__(self, buckets, n_buckets, cells_max):
+        self.buckets = buckets
+        self.n_buckets = n_buckets
+        self.cells_max = cells_max
+
+
+def plan_kill_buckets(rep_cells, music_ticks):
+    """Bucket every repeater cell by the ELAPSED window that should kill it.
+
+    ``rep_cells``: iterable of ``(arrival_gt, x, y, z, block)`` — EVERY repeater cell
+    across all tracks/lanes/signal-tracks (author +X frame). ``block`` is the exact
+    repeater blockstate string emitted at build time (so restore is byte-faithful).
+
+    Buckets span 0..N where N = (music_ticks+200)//128 (continuous ELAPSED coverage of
+    0..music_ticks+200). Bucket n collects cells with arrival_gt in
+    [128n-KILL_WIN_BACK, 128n+127+KILL_WIN_FWD].
+
+    Build-time GUARD (CONTRACT §5.①): a bucket whose ELAPSED interval overlaps the song
+    [0, music_ticks] (i.e. 128n <= music_ticks) MUST contain >= 1 repeater cell — else a
+    stop landing there would be a silent no-op. Raise RedPianoError (fail at build, never
+    ship a machine whose stop can't kill the pulse). Tail buckets past music_ticks may be
+    empty (the pulse has already finished there)."""
+    top = music_ticks + 200
+    n_buckets = top // KILL_BUCKET_GT + 1
+    rep_cells = list(rep_cells)
+    buckets = []
+    for n in range(n_buckets):
+        lo = KILL_BUCKET_GT * n - KILL_WIN_BACK
+        hi = KILL_BUCKET_GT * n + (KILL_BUCKET_GT - 1) + KILL_WIN_FWD
+        buckets.append([(x, y, z, block) for (a, x, y, z, block) in rep_cells
+                        if lo <= a <= hi])
+    for n in range(n_buckets):
+        elapsed_lo = KILL_BUCKET_GT * n
+        if elapsed_lo <= music_ticks and not buckets[n]:
+            raise RedPianoError(
+                f"kill bucket {n} (ELAPSED {elapsed_lo}..{elapsed_lo + KILL_BUCKET_GT - 1}) "
+                f"overlaps the song [0,{music_ticks}] but its kill window "
+                f"[{KILL_BUCKET_GT * n - KILL_WIN_BACK}.."
+                f"{KILL_BUCKET_GT * n + KILL_BUCKET_GT - 1 + KILL_WIN_FWD}] contains NO "
+                f"repeater — a stop landing here could not kill the pulse. (repeater "
+                f"skeleton too sparse for the {KILL_BUCKET_GT}gt bucketing?)")
+    cells_max = max((len(b) for b in buckets), default=0)
+    return KillPlan(buckets, n_buckets, cells_max)
+
+
+def kill_function_bodies(ns, plan):
+    """Render the kill/restore datapack function bodies from a KillPlan.
+
+    Returns ``(killzone_body, kill_bodies, restore_bodies)``:
+      killzone_body     lines for ``<ns>:killzone`` — the PLAY guard + a CONTINUOUS,
+                        non-overlapping ELAPSED ladder dispatching to kill/k<n>. The LAST
+                        rung is open-ended (``matches {lo}..``) so a stray late ELAPSED is
+                        still covered; it is always a pure tail (no-op) bucket.
+      kill_bodies       {n: body} for ``<ns>:kill/k<n>`` — set ARM=0, setblock air per
+                        cell, schedule restore/k<n>.
+      restore_bodies    {n: body} for ``<ns>:restore/k<n>`` — setblock the exact repeater
+                        per cell, set ARM=1. **restore/* MUST NEVER be added to any
+                        SCHED_CLEAR list**: even if a halt interrupts, the 4gt restore must
+                        still fire or the machine keeps an air hole.
+
+    All setblock lines are AUTHOR +X frame — the caller writes them via
+    Datapack.write_function, which rotates coords + blockstates for a non-+X direction, so
+    a restore line stays byte-identical to the same cell's line in the build (bld) batch."""
+    killzone = [f"execute unless score PLAY {ns} matches 1 run return 0"]
+    kill_bodies = {}
+    restore_bodies = {}
+    last = plan.n_buckets - 1
+    for n in range(plan.n_buckets):
+        lo = KILL_BUCKET_GT * n
+        if n == last:
+            rung = f"matches {lo}.."               # open-ended tail rung
+        else:
+            rung = f"matches {lo}..{lo + KILL_BUCKET_GT - 1}"
+        killzone.append(
+            f"execute if score ELAPSED {ns} {rung} run function {ns}:kill/k{n}")
+        kb = [f"scoreboard players set ARM {ns} 0"]
+        kb += [f"setblock {x} {y} {z} minecraft:air"
+               for (x, y, z, _block) in plan.buckets[n]]
+        kb.append(f"schedule function {ns}:restore/k{n} {KILL_RESTORE_DELAY_GT}t")
+        kill_bodies[n] = kb
+        rb = [f"setblock {x} {y} {z} {block}"
+              for (x, y, z, block) in plan.buckets[n]]
+        rb.append(f"scoreboard players set ARM {ns} 1")
+        restore_bodies[n] = rb
+    return killzone, kill_bodies, restore_bodies
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §1.7  Tick-rate handling
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1255,6 +1777,53 @@ if __name__ == "__main__":
     assert any("overlapping" in w for w in plan_ov.warnings), plan_ov.warnings
     print("ok: polyphony WARN fired ->", plan_ov.warnings[0])
 
+    # ── pulse-kill buckets (§1.6b): arrival math + bucketing + ladder + assertions ──
+    # a small shared skeleton: rep(2), trig(0), rep(4), rep(1), trig(5) — note trig arrival
+    # equals 2*(T0+OFFSET) with OFFSET derived by the caller (here OFFSET=0, trigs>0).
+    _cells = [("rep", 2), ("trig", 3), ("rep", 4), ("rep", 1), ("trig", 8)]
+    _arr = arrival_gt_by_cell(_cells)
+    # cum: 0 (rep2 input), then +2 -> trig arrival 4 == 2*(3+0)? no: this toy trig=3 with
+    # cum after rep2 = 2 -> arrival 4. The real generators build cells so cum==T0+OFFSET;
+    # here we only assert the CUMULATIVE math, not the toy's musical consistency.
+    assert _arr == [0, 4, 4, 12, 14], _arr        # 2*[0,2,2,6,7]
+    print("ok: arrival_gt_by_cell cumulative math", _arr)
+    # rep cells across TWO mirror tracks (same arrival, distinct z) -> both killed per bucket
+    _reps = [
+        (_arr[0], 10, 64, 0, "minecraft:repeater[facing=west,delay=2]"),
+        (_arr[0], 10, 64, 9, "minecraft:repeater[facing=west,delay=2]"),   # mirror track
+        (_arr[2], 12, 64, 0, "minecraft:repeater[facing=west,delay=4]"),
+        (_arr[3], 13, 64, 0, "minecraft:repeater[facing=west,delay=1]"),
+    ]
+    _kp = plan_kill_buckets(_reps, music_ticks=14)
+    # music_ticks 14 -> top 214 -> n_buckets = 214//128 + 1 = 2 (buckets 0,1)
+    assert _kp.n_buckets == 2, _kp.n_buckets
+    # bucket 0 window [-16, 207] catches every rep (arrivals 0,0,12,14) -> 4 cells
+    assert len(_kp.buckets[0]) == 4, _kp.buckets[0]
+    assert _kp.cells_max == 4, _kp.cells_max
+    print("ok: plan_kill_buckets", _kp.n_buckets, "buckets, max", _kp.cells_max, "cells")
+    # build-time GUARD: a bucket overlapping [0,music_ticks] with NO repeater -> raise. Force
+    # it by claiming a long song (music_ticks 5000) but supplying only near-zero-arrival reps.
+    expect_raise(lambda: plan_kill_buckets(
+        [(0, 1, 64, 0, "minecraft:repeater[facing=west,delay=1]")], music_ticks=5000),
+        "NO", "sparse-skeleton kill guard")
+    # ladder: continuous, non-overlapping, PLAY guard first, open-ended last rung, and the
+    # restore line is byte-identical to the rep cell's block (so it matches the bld batch).
+    _kz, _kb, _rb = kill_function_bodies("qz", _kp)
+    assert _kz[0] == "execute unless score PLAY qz matches 1 run return 0", _kz[0]
+    assert "matches 0..127 run function qz:kill/k0" in _kz[1]
+    assert _kz[-1].endswith("matches 128.. run function qz:kill/k1"), _kz[-1]   # open last rung
+    # kill body: ARM=0 first, air setblocks, restore schedule last
+    assert _kb[0][0] == "scoreboard players set ARM qz 0"
+    assert _kb[0][-1] == "schedule function qz:restore/k0 4t"
+    assert "setblock 10 64 0 minecraft:air" in _kb[0] and "setblock 10 64 9 minecraft:air" in _kb[0]
+    # restore body: exact repeater setblock + ARM=1 last; air coords == restore coords set
+    assert "setblock 10 64 0 minecraft:repeater[facing=west,delay=2]" in _rb[0]
+    assert _rb[0][-1] == "scoreboard players set ARM qz 1"
+    _air = {c.split(" minecraft:air")[0] for c in _kb[0] if c.startswith("setblock")}
+    _res = {c.rsplit(" minecraft:repeater", 1)[0] for c in _rb[0] if c.startswith("setblock")}
+    assert _air == _res, (_air, _res)   # every killed coord is restored, and vice-versa
+    print("ok: kill_function_bodies ladder+guard+byte-faithful restore (air coords==restore coords)")
+
     # ── tick rate is MANUAL: no auto tick-rate command block is emitted anymore. ──
     assert not hasattr(sys.modules[__name__], "tickrate_command_block"), \
         "tickrate_command_block must stay removed (player sets /tick rate 80 manually)"
@@ -1277,6 +1846,192 @@ if __name__ == "__main__":
     assert rotate_command("execute if loaded 2 64 0 run setblock 2 64 0 minecraft:stone", "+Z", 0, 0) == \
         "execute if loaded 0 64 2 run setblock 0 64 2 minecraft:stone"
     print("ok: direction rotation (+X identity; +Z/-X/-Z rotate coords + facing/rotation + execute-loaded)")
+
+    # ── stand wall-button / wall-sign rotation: `facing=` (compass) rotates, `face=wall`
+    #    (mount type) is rotation-invariant and must NOT change; NBT + spaces survive. ──
+    _b = rotate_command("setblock 3 64 5 minecraft:stone_button[face=wall,facing=north]", "+Z", 0, 0)
+    assert "face=wall" in _b and "facing=east" in _b, _b        # north --+Z(1 CW)--> east
+    _b2 = rotate_command("setblock 3 64 5 minecraft:stone_button[face=wall,facing=north]", "-Z", 0, 0)
+    assert "face=wall" in _b2 and "facing=west" in _b2, _b2     # north --(-Z=3 CW)--> west
+    _sgn = ('setblock 2 64 3 minecraft:oak_wall_sign[facing=north]'
+            '{front_text:{messages:[{"text":"note=12 pno"}]}}')
+    _rs = rotate_command(_sgn, "+Z", 0, 0)
+    assert _rs.startswith("setblock -3 64 2 "), _rs             # (2,3)->(-3,2) around origin
+    assert "facing=east" in _rs and '"text":"note=12 pno"' in _rs, _rs  # facing rot + NBT/space intact
+    print("ok: wall button/sign rotate facing=, keep face=wall, preserve spaced NBT")
+
+    # ── palette stand emission (collision-free, fixed family order, truncation) ──
+    _grid, _out = Grid(), []
+    _pal = {
+        "pno": [("minecraft:iron_block", 12, "qzpno:pno_c4_mf"),
+                ("minecraft:gold_block", 5, "qzpno:pno_a3_p")],
+        "drum": [("minecraft:tnt", 12, "qzpno:drum:snare")],
+    }
+    _cells, _trunc, _walk = emit_palette_stand(
+        _grid, _out, _pal, ox=0, oz=0, y=64, sx=-3, sz0=-6,
+        sign_dialect="component_snbt", base_block="minecraft:stone")
+    assert _cells == {"pno": 2, "drum": 1} and not _trunc, (_cells, _trunc)
+    assert sum(1 for c in _out if "note_block" in c) == 3, _out          # 3 real note blocks
+    assert sum(1 for c in _out if "stone_button[face=wall" in c) == 3    # 3 wall buttons
+    assert sum(1 for c in _out if "oak_wall_sign" in c) == 3             # 3 per-cell labels
+    assert sum(1 for c in _out if "oak_sign[rotation=0]" in c) == 2      # 2 family headers
+    # note block sits directly ABOVE its mapping block (mod reads the block below); the
+    # button/label sit one block NORTH (z-1) on those two blocks' faces. pno sorts by event
+    # so col 0 = gold_block/pno_a3_p @ (sx, y, sz0-ROW_DZ) = (-3, 64, -10).
+    assert "setblock -3 64 -10 minecraft:gold_block" in _out                     # mapping @ (cx,y,cz)
+    assert "setblock -3 65 -10 minecraft:note_block[note=5]" in _out             # note   @ (cx,y+1,cz)
+    assert "setblock -3 66 -10 minecraft:air" in _out                            # air    @ (cx,y+2,cz)
+    assert "setblock -3 65 -11 minecraft:stone_button[face=wall,facing=north]" in _out  # button @ (cx,y+1,cz-1)
+    assert any(c.startswith("setblock -3 64 -11 minecraft:oak_wall_sign") for c in _out)  # label @ (cx,y,cz-1)
+    print("ok: emit_palette_stand ->", _cells, "collision-free, walk@", _walk)
+    _big = {"pno": [("minecraft:stone", i % 25, "qzpno:e%04d" % i) for i in range(300)]}
+    _g2, _o2 = Grid(), []
+    _c2, _t2, _ = emit_palette_stand(_g2, _o2, _big, ox=0, oz=0, y=64, sx=-3, sz0=-6,
+                                     sign_dialect="component_snbt")
+    assert _t2 and _c2["pno"] == STAND_MAX_CELLS, (_t2, _c2)
+    print("ok: emit_palette_stand truncates a", 300, "-triple palette to", STAND_MAX_CELLS)
+
+    # ── protection shell: config normalization + segmenter bounds + watertight box ──
+    assert protection_config(None) is None
+    assert protection_config({"enabled": False}) is None          # disabled -> None (zero-diff)
+    _cfg = protection_config({"enabled": True})                   # defaults fill in
+    assert _cfg == {"enabled": True, "block": "minecraft:barrier", "margin_xz": 3,
+                    "floor_margin": 2, "headroom": 5, "clear_interior": True}, _cfg
+    _cfg2 = protection_config({"enabled": True, "block": "minecraft:glass", "margin_xz": 5})
+    assert _cfg2["block"] == "minecraft:glass" and _cfg2["margin_xz"] == 5
+    print("ok: protection_config normalizes (None when disabled)")
+
+    def _seg_ok(segs, max_xlen=SHELL_MAX_XLEN, max_vol=SHELL_MAX_VOL):
+        cells = {}
+        for (x0, y0, z0, x1, y1, z1, _b) in segs:
+            xlen = x1 - x0 + 1
+            zlen = z1 - z0 + 1
+            vol = xlen * (y1 - y0 + 1) * zlen
+            assert xlen <= max_xlen, ("xlen", xlen)
+            assert zlen <= max_xlen, ("zlen", zlen)   # both spans bounded (rotation-safe)
+            assert vol <= max_vol, ("vol", vol)
+            for xx in range(x0, x1 + 1):
+                for yy in range(y0, y1 + 1):
+                    for zz in range(z0, z1 + 1):
+                        k = (xx, yy, zz)
+                        assert k not in cells, ("overlap", k)   # each cell covered once
+                        cells[k] = _b
+        return cells
+
+    # a wide, thin slab (like a real floor) forces X + Z striding
+    _floor = _seg_box(0, 64, 0, 400, 64, 300, "minecraft:barrier")
+    _fcells = _seg_ok(_floor)
+    assert len(_fcells) == 401 * 1 * 301, len(_fcells)           # exact cover, no gap
+    assert max(x1 - x0 + 1 for (x0, _, _, x1, _, _, _) in _floor) <= 128
+    print("ok: _seg_box tiles a 401x301 floor (xlen<=128, vol<=32768, exact cover)")
+
+    # full shell around a small footprint: six faces watertight, interior excludes shell
+    _sh, _int, _bb = protection_shell(
+        {"enabled": True, "block": "minecraft:barrier", "margin_xz": 3,
+         "floor_margin": 2, "headroom": 5, "clear_interior": True},
+        bx0=0, bz0=0, bx1=10, bz1=6, y=64)
+    SX0, SZ0, SX1, SZ1, FY, CY = _bb
+    assert (SX0, SZ0, SX1, SZ1) == (-3, -3, 13, 9), _bb          # +/- margin_xz=3
+    assert FY == 64 - 2 - 2 and CY == 64 + 3 + 5, _bb            # floor/ceiling planes
+    _scells = _seg_ok(_sh)                                       # shell has no self-overlap
+    # every perimeter cell of the box is present, and no cell strictly interior is a shell cell
+    _shell_keys = set(_scells)
+    missing = []
+    for xx in range(SX0, SX1 + 1):
+        for yy in range(FY, CY + 1):
+            for zz in range(SZ0, SZ1 + 1):
+                on_face = (yy == FY or yy == CY or xx == SX0 or xx == SX1
+                           or zz == SZ0 or zz == SZ1)
+                if on_face and (xx, yy, zz) not in _shell_keys:
+                    missing.append((xx, yy, zz))
+                if (not on_face) and (xx, yy, zz) in _shell_keys:
+                    missing.append(("interior-has-shell", xx, yy, zz))
+    assert not missing, missing[:8]
+    # each of the six faces is fully covered (sample the four corners + center of each)
+    for (label, pts) in [
+        ("floor",  [(SX0, FY, SZ0), (SX1, FY, SZ1), (5, FY, 3)]),
+        ("ceil",   [(SX0, CY, SZ0), (SX1, CY, SZ1), (5, CY, 3)]),
+        ("west",   [(SX0, FY + 1, SZ0), (SX0, CY - 1, SZ1)]),
+        ("east",   [(SX1, FY + 1, SZ0), (SX1, CY - 1, SZ1)]),
+        ("north",  [(5, FY + 1, SZ0), (5, CY - 1, SZ0)]),
+        ("south",  [(5, FY + 1, SZ1), (5, CY - 1, SZ1)]),
+    ]:
+        for p in pts:
+            assert p in _shell_keys, (label, p)
+    # interior clear is strictly inside the shell (never a shell cell), fills the cavity
+    _icells = _seg_ok(_int)
+    for k in _icells:
+        assert k not in _shell_keys, ("interior touches shell", k)
+        xx, yy, zz = k
+        assert SX0 < xx < SX1 and SZ0 < zz < SZ1 and FY < yy < CY, k
+    assert len(_icells) == (SX1 - SX0 - 1) * (SZ1 - SZ0 - 1) * (CY - FY - 1), len(_icells)
+    # clear_interior=false -> no interior segments
+    _sh2, _int2, _ = protection_shell(
+        {"enabled": True, "block": "minecraft:barrier", "margin_xz": 1,
+         "floor_margin": 0, "headroom": 0, "clear_interior": False},
+        bx0=0, bz0=0, bx1=4, bz1=4, y=100)
+    assert _int2 == [], _int2
+    print("ok: protection_shell watertight (6 faces), interior clears cavity only")
+
+    # ── perfmode: capture-then-disable + precise restore (guards, enumerated RTS) ──
+    _on = perfon_fn("qz")
+    assert _on[0] == "execute if score PERF qz matches 1 run return 0", _on[0]
+    # all 5 gamerules captured via the query form BEFORE any mutation
+    assert "execute store result score ORIG_RTS qz run gamerule randomTickSpeed" in _on
+    for _s, _g in _PERF_BOOL_RULES:
+        assert f"execute store result score {_s} qz run gamerule {_g}" in _on, (_s, _g)
+    _first_cap = next(i for i, c in enumerate(_on) if c.startswith("execute store result"))
+    _first_set = next(i for i, c in enumerate(_on) if c.startswith("gamerule "))
+    assert _first_cap < _first_set, "must capture before disabling"
+    for _dis in ("gamerule randomTickSpeed 0", "gamerule doMobSpawning false",
+                 "gamerule doFireTick false", "gamerule doWeatherCycle false",
+                 "gamerule doDaylightCycle false", "scoreboard players set PERF qz 1"):
+        assert _dis in _on, _dis
+    _off = perfoff_fn("qz")
+    assert _off[0] == "execute unless score PERF qz matches 1 run return 0", _off[0]
+    # booleans restored from captured 0/1
+    for _s, _g in _PERF_BOOL_RULES:
+        assert f"execute if score {_s} qz matches 0 run gamerule {_g} false" in _off
+        assert f"execute if score {_s} qz matches 1 run gamerule {_g} true" in _off
+    # randomTickSpeed enumerated 0..3 + a 4.. fallback to 3 (+ a warn tellraw)
+    for _v in (0, 1, 2, 3):
+        assert (f"execute if score ORIG_RTS qz matches {_v} run gamerule "
+                f"randomTickSpeed {_v}") in _off, _v
+    assert "execute if score ORIG_RTS qz matches 4.. run gamerule randomTickSpeed 3" in _off
+    assert any(c.startswith("execute if score ORIG_RTS qz matches 4.. run tellraw")
+               for c in _off), "missing >3 fallback tellraw"
+    assert "scoreboard players set PERF qz 0" in _off
+    print("ok: perfon/perfoff capture-then-disable + precise enumerated restore")
+
+    # ── bossbars: three ids (four with pro), idempotent init, tracker, teardown ──
+    _bi = bossbar_init_lines("qz", with_pro=False)
+    for _bid, _lbl, _col in _BOSSBAR_DEFS:
+        assert f"bossbar remove qz:{_bid}" in _bi                       # remove before add
+        assert f'bossbar add qz:{_bid} {{"text":"[qz] {_lbl}"}}' in _bi
+        assert f"bossbar set qz:{_bid} color {_col}" in _bi
+        assert f"bossbar set qz:{_bid} visible false" in _bi
+        assert _bi.index(f"bossbar remove qz:{_bid}") < \
+            _bi.index(f'bossbar add qz:{_bid} {{"text":"[qz] {_lbl}"}}')
+    assert not any("qz:pro" in c for c in _bi), "pro bar must be off without protection"
+    _bip = bossbar_init_lines("qz", with_pro=True)
+    assert 'bossbar add qz:pro {"text":"[qz] 保护壳施工中"}' in _bip
+    assert "bossbar set qz:pro color yellow" in _bip
+    assert bossbar_show("qz", "bld", 7) == [
+        "bossbar set qz:bld max 7", "bossbar set qz:bld players @a",
+        "bossbar set qz:bld visible true"]
+    assert bossbar_hide("qz", "pre") == "bossbar set qz:pre visible false"
+    assert bossbar_track("qz", "bld", "BLD") == (
+        "execute if score BLD qz matches 0.. store result bossbar qz:bld value "
+        "run scoreboard players get BLD qz")
+    assert bossbar_remove_all("qz", with_pro=True) == [
+        "bossbar remove qz:bld", "bossbar remove qz:clr", "bossbar remove qz:pre",
+        "bossbar remove qz:pro"]
+    assert bossbar_remove_all("qz", with_pro=False) == [
+        "bossbar remove qz:bld", "bossbar remove qz:clr", "bossbar remove qz:pre"]
+    # the bossbar tracker survives direction rotation unchanged (no coords)
+    assert rotate_command(bossbar_track("qz", "clr", "CLR"), "-Z", 0, 0) == \
+        bossbar_track("qz", "clr", "CLR")
+    print("ok: bossbar init(idempotent)/show/hide/track/remove_all + rotation-safe")
 
     # ── Datapack writer (temp dir) ───────────────────────────────────────────
     import tempfile

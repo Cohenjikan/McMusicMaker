@@ -72,6 +72,7 @@ FIELD_TABLE = {
     "start_y":       (255,               _BOTH),
     "start_dir":     ("+X",              _BOTH),   # only +X implemented (§2.4)
     "signal_tracks": (None,              _MULTILANE),  # parallel repeater chains; consumes full 3D offset {dx,dy,dz} (multilane.py emit_chain)
+    "protection":    (None,              _LINE),   # barrier-shell (prosetup) — all line forms + multilane; validated shape in assert_supported
     # ── inplace-only ──────────────────────────────────────────────────────
     "palette_noteblocks": (DERIVED,      _INPLACE),  # preview hint; real size derived
     "PCOLS":              (16,           _INPLACE),
@@ -306,6 +307,42 @@ def assert_supported(params, form):
                         f"{type(val).__name__}"
                     )
 
+    # protection (barrier-shell / prosetup): all line forms + multilane consume it. Validate
+    # the SHAPE here so a malformed block raises a single clean RedPianoError up front instead
+    # of crashing the generator's fill-segmenter mid-build ("clean one-line error, never a
+    # traceback" contract). None / absent = feature off (zero-diff), never validated.
+    prot = _get("protection")
+    if prot is not None:
+        if not isinstance(prot, dict):
+            raise RedPianoError(
+                'protection must be an object, e.g. {"enabled":true,'
+                '"block":"minecraft:barrier","margin_xz":3,"floor_margin":2,'
+                '"headroom":5,"clear_interior":true} (got '
+                f"{type(prot).__name__})")
+        _prot_allowed = {"enabled", "block", "margin_xz", "floor_margin",
+                         "headroom", "clear_interior"}
+        _extra = set(prot) - _prot_allowed
+        if _extra:
+            raise RedPianoError(
+                f"protection has unknown key(s) {sorted(_extra)}; allowed keys are "
+                f"{sorted(_prot_allowed)}")
+        for _k in ("enabled", "clear_interior"):
+            if _k in prot and not isinstance(prot[_k], bool):
+                raise RedPianoError(
+                    f"protection.{_k} must be true/false, got "
+                    f"{type(prot[_k]).__name__}")
+        for _k in ("margin_xz", "floor_margin", "headroom"):
+            if _k in prot:
+                _v = prot[_k]
+                # bool is an int subclass — reject it explicitly (a margin isn't true/false)
+                if isinstance(_v, bool) or not isinstance(_v, int) or _v < 0:
+                    raise RedPianoError(
+                        f"protection.{_k} must be a non-negative integer, got {_v!r}")
+        if "block" in prot and not isinstance(prot["block"], str):
+            raise RedPianoError(
+                f"protection.block must be a string block id, got "
+                f"{type(prot['block']).__name__}")
+
     # form=custom REQUIRES a non-empty waypoints route — fail fast here (step 3) instead
     # of letting the build run MIDI-parse + melody-cut planning and only crash mid-way in
     # the generator, which violates the documented "fail fast custom" contract (§4).
@@ -424,5 +461,37 @@ if __name__ == "__main__":
     assert_supported(load_params({"XRUN": 6}, "swave"), "swave")
     assert_supported(load_params({"PCOLS": 24}, "inplace"), "inplace")
     print("ok: assert_supported passes clean params")
+
+    # K3: protection (barrier-shell) — consumed by all line forms + multilane; inplace rejects.
+    _prot_ok = {"enabled": True, "block": "minecraft:barrier", "margin_xz": 3,
+                "floor_margin": 2, "headroom": 5, "clear_interior": True}
+    for _f in ("swave", "straight", "multilane"):
+        assert_supported(load_params({"protection": dict(_prot_ok)}, _f), _f)
+    # a partial dict (defaults filled by the generator) also validates
+    assert_supported(load_params({"protection": {"enabled": True}}, "straight"), "straight")
+    # a disabled shell validates too (still a well-formed dict)
+    assert_supported(load_params({"protection": {"enabled": False}}, "multilane"), "multilane")
+    print("ok: well-formed protection passes on line forms + multilane")
+    # cross-form: protection is NOT an inplace field -> load_params rejects a non-default
+    expect_raise(lambda: load_params({"protection": dict(_prot_ok)}, "inplace"),
+                 "not supported by form 'inplace'", "protection under inplace")
+    # malformed shapes each raise a clean one-liner (never a generator traceback)
+    expect_raise(lambda: assert_supported(load_params({"protection": [1, 2]}, "swave"), "swave"),
+                 "protection must be an object", "protection not a dict")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"bogus": 1}}, "swave"), "swave"),
+                 "unknown key", "protection unknown key")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"enabled": 1}}, "swave"), "swave"),
+                 "protection.enabled must be true/false", "protection.enabled non-bool")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"clear_interior": "yes"}}, "swave"), "swave"),
+                 "protection.clear_interior must be true/false", "protection.clear_interior non-bool")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"margin_xz": -1}}, "swave"), "swave"),
+                 "protection.margin_xz must be a non-negative integer", "protection.margin_xz negative")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"headroom": 2.5}}, "swave"), "swave"),
+                 "protection.headroom must be a non-negative integer", "protection.headroom float")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"floor_margin": True}}, "swave"), "swave"),
+                 "protection.floor_margin must be a non-negative integer", "protection.floor_margin bool")
+    expect_raise(lambda: assert_supported(load_params({"protection": {"block": 12}}, "swave"), "swave"),
+                 "protection.block must be a string", "protection.block non-str")
+    print("ok: malformed protection each raise a clean RedPianoError")
 
     print("params_schema self-test PASSED")
