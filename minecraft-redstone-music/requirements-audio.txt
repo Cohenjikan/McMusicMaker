@@ -1,0 +1,40 @@
+# requirements-audio.txt - OPTIONAL deps for scripts/audio_to_midi.py only.
+#
+# audio_to_midi.py is an EXPLICIT front-end step: it turns an MP3/WAV/FLAC/OGG/M4A
+# recording into a .mid you can then run through midi_report.py + build_machine.py.
+# It is NOT part of the core pipeline (build_machine / prepare_all need ONLY mido -
+# see requirements.txt) and prepare_all.py never imports it.
+#
+# Install (from the repo root):
+#     pip install -r requirements-audio.txt
+#
+# Old GBK/cp936 pitfall on Chinese-locale Windows: if pip dies decoding a wheel's
+# metadata (UnicodeDecodeError 'gbk'), set UTF-8 mode first and retry:
+#     set PYTHONUTF8=1
+#     pip install -r requirements-audio.txt
+#
+# Compressed inputs (mp3/m4a) need an ffmpeg on PATH for decoding. If you get a decode
+# error, install it (winget install Gyan.FFmpeg) or feed a .wav instead.
+#
+# --------------------------------------------------------------------------------------
+# Default engine (--engine basic-pitch / auto). Spotify Basic Pitch, general-purpose
+# polyphonic audio->MIDI with pitch-bend detection. LICENSE: Apache-2.0.
+# On Python >=3.11 it pulls TensorFlow as its default inference runtime (heavier install,
+# but CPU-only is fine); on older Pythons it uses onnxruntime (Windows) / tflite (Linux).
+basic-pitch>=0.4.0
+
+# onnxruntime: the light, reliable Basic Pitch inference runtime. basic-pitch bundles an
+# ONNX copy of its model (nmp.onnx), and audio_to_midi.py PREFERS it whenever onnxruntime
+# is importable. This sidesteps the heavy TensorFlow runtime basic-pitch installs by
+# default on Python >=3.11, which on some Windows TF builds fails to load the SavedModel
+# ("module 'tensorflow' has no attribute 'saved_model'"). Apache-2.0.
+onnxruntime>=1.16
+
+# --------------------------------------------------------------------------------------
+# optional, piano-only, pulls torch: pip install piano_transcription_inference
+# High-resolution PIANO transcription (qiuqiangkong / ByteDance). LICENSE: MIT.
+# ONLY worth it for solo-piano recordings: markedly better than basic-pitch on piano,
+# useless on other instruments. Heavyweight - drags in torch and downloads a ~170MB
+# checkpoint on first run. NOT installed by this file on purpose; enable with:
+#     pip install piano_transcription_inference
+# then run audio_to_midi.py --engine piano.

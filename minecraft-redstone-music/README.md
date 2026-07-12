@@ -8,6 +8,9 @@ resourcepack, mod build, and profile install to
 your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max `pack.mcmeta`);
 **1.21.8 is the verified default & anchor**.
 
+- 支持 MP3/音频→MIDI 转换前置(basic-pitch/字节钢琴转录,开源代跑,质量提示见文档)——没有现成
+  MIDI、只有音频文件也能起步,见 [SKILL.md](SKILL.md) 「用户只有 MP3/音频,没有 MIDI 怎么办」。
+
 > **For any agent, on any platform.** This is a plain Python CLI — you read these docs and run a
 > command. It works the same whether you're driving it from Trae, Codex, Mavis, Work Buddy,
 > Claude, or a human shell. If you register it as a **Claude Code skill**, the YAML frontmatter in
@@ -24,6 +27,52 @@ your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max
 > **Windows-only** (Minecraft Java's usual home). On a non-Windows **native host** (not a
 > sandbox), install with `--install-now` instead, or copy `dist/` into the profile by hand —
 > there is no `.sh`/`.command` equivalent shipped today.
+
+---
+
+## 开场怎么说?(复制即用的提示词)
+
+不知道第一句话对 agent 说什么?整仓 clone 后打开你的 agent(Claude Code / Trae / Codex …),
+**按你的场景复制下面任意一条、填上 `<>` 里的内容发出去**即可——剩下的活 agent 会照
+[SKILL.md](SKILL.md) 自己干,并在需要你动手时(游戏内命令、双击安装器)明确告诉你。
+
+> **① 最简单:默认预设一条龙(推荐第一次用)**
+> ```
+> 我想把这首歌做成 Minecraft 红石音乐:<把 .mid 文件拖进对话或粘贴路径>。
+> 我的游戏版本是 1.21.8,存档的 datapacks 路径是 <粘贴 saves\你的世界\datapacks 的完整路径>。
+> 用默认预设帮我全程搞定,最后告诉我进游戏要敲哪几条命令。
+> ```
+>
+> **② 只有 MP3,没有 MIDI**
+> ```
+> 我只有 MP3 没有 MIDI:<拖入 .mp3>。先帮我转成 MIDI 并告诉我转换质量怎么样,
+> 值得做再继续做成红石音乐(游戏版本和存档路径:<填写>)。
+> ```
+>
+> **③ 想自己设计机器的形状和走线**
+> ```
+> 我想自己设计机器的走线和形状。请教我打开 designer/layout_designer.html
+> (整仓 clone 后浏览器直接打开),我画好导出 params JSON 之后你来构建
+> (游戏版本和存档路径:<填写>)。
+> ```
+>
+> **④ 我的 Minecraft 是老版本(1.16 / 1.12 …)**
+> ```
+> 我的 Minecraft 是 <版本号>(不是 1.21),还能做红石音乐吗?
+> 请按工匠路径评估,如实告诉我这个版本能做到什么程度、音色差在哪,再动手。
+> ```
+>
+> **⑤ 建好后要拍视频 / 展示**
+> ```
+> 机器建好后我要录视频:帮我配置好音色展台和保护壳,
+> 建好后给我一套拍摄操作顺序(预加载 → 播放 → 运镜)。
+> ```
+
+两个常见小问题:
+- **存档路径怎么找**:资源管理器打开存档文件夹(官方启动器在 `%APPDATA%\.minecraft\saves\`,
+  Modrinth App 在 `profiles\<档案名>\saves\`),进你的世界文件夹,和 `level.dat` 同级有个
+  `datapacks` 文件夹——把它的完整路径整个复制给 agent。
+- **MIDI 哪里找**:爱给网 / MuseScore / BitMidi 等,**首选钢琴独奏版**(音轨干净、还原度最好)。
 
 ---
 

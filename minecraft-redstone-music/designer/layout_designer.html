@@ -3,211 +3,309 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>红石音乐 走线设计器 — 直线/曲折直线(S波浪)/原地播放 · 任务7</title>
+<title>红石音乐 · 走线设计器</title>
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;
-        --acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--turn:#f0883e;--noteB:#bc8cff;}
+  :root{
+    /* 语义强调色 —— 与画布(JS 内硬编码 #58a6ff/#3fb950/#f0883e/#bc8cff/#0d1117)一一对应, 数值不可改, 否则图例与画布脱色 */
+    --bg:#0d1117;        /* 画布底色, 必须与 JS 内 #0d1117 一致 */
+    --acc:#58a6ff;       /* 主链脊柱 / 播放头 */
+    --ok:#3fb950;        /* 轨 A / 起点 */
+    --warn:#d29922; --bad:#f85149;
+    --turn:#f0883e;      /* 拐点 */
+    --noteB:#bc8cff;     /* 轨 B 镜像 */
+    /* 界面外壳 —— 现代深色工具风 */
+    --app:#0b0e14; --panel:#161b22;
+    --surface:#161c25; --surface-2:#1b222d; --code:#0a0e15;
+    --line:#28303c; --line-soft:#1f2732;
+    --fg:#e9eef6; --fg-dim:#c4ccdb; --mut:#8b95a4; --acc-ink:#08111f;
+    --radius:12px; --radius-sm:8px;
+    --ring:0 0 0 3px rgba(88,166,255,.30);
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 26px rgba(0,0,0,.30);
+    --font:"Segoe UI","Microsoft YaHei","PingFang SC",-apple-system,system-ui,sans-serif;
+    --mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  }
   *{box-sizing:border-box}
-  body{margin:0;font:13px/1.5 ui-monospace,"Cascadia Code",Consolas,monospace;background:var(--bg);color:var(--fg)}
-  header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
-  header h1{font-size:15px;margin:0;font-weight:600}
-  header .sub{color:var(--mut);font-size:12px}
-  .wrap{display:flex;min-height:calc(100vh - 46px)}
-  .left{flex:1;min-width:0;padding:12px;display:flex;flex-direction:column}
-  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:8px;color:var(--mut);font-size:11px}
+  html,body{height:100%}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;
+       font:13.5px/1.6 var(--font);background:var(--app);color:var(--fg);-webkit-font-smoothing:antialiased}
+  /* 顶栏 */
+  header{flex:none;padding:14px 20px;background:linear-gradient(180deg,#141b24,#0f151d);
+         border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+  .hrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .brand .logo{width:38px;height:38px;flex:none;border-radius:11px;display:grid;place-items:center;font-size:20px;
+        background:linear-gradient(135deg,var(--acc),#8957e5);color:#fff;box-shadow:var(--shadow)}
+  header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:12.5px}
+  .songtag{margin-left:auto;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+        color:var(--fg-dim);font-size:12px;white-space:nowrap}
+  .steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+  .steps li{display:flex;align-items:center;gap:8px;padding:5px 13px 5px 6px;background:var(--surface);
+        border:1px solid var(--line);border-radius:999px;color:var(--fg-dim);font-size:12.5px}
+  .steps li .n{width:20px;height:20px;flex:none;border-radius:50%;display:grid;place-items:center;
+        background:var(--acc);color:var(--acc-ink);font-weight:700;font-size:12px}
+  /* 布局 */
+  .wrap{flex:1 1 auto;min-height:0;display:flex}
+  .left{flex:1;min-width:0;overflow:auto;padding:18px;display:flex;flex-direction:column}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;color:var(--mut);font-size:12px}
   .toolbar .btn{margin-left:auto}
-  canvas{background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:default}
+  canvas{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);width:100%;display:block;
+        cursor:default;box-shadow:var(--shadow)}
   canvas.custom{cursor:grab}
-  .legend{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
-          padding:8px 12px;font-size:11px;color:var(--mut);display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
-  .legend>div{white-space:nowrap} .legend b{color:var(--fg);font-weight:600}
-  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
-  .right{width:392px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto;max-height:calc(100vh - 46px)}
-  .grp{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
-  .grp h2{font-size:12px;margin:0 0 8px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
-  label.row{display:flex;align-items:center;gap:8px;margin:6px 0}
-  label.row span.k{width:128px;color:var(--mut);flex:none}
-  input[type=range]{flex:1;min-width:0;accent-color:var(--acc)}
-  input[type=number]{width:62px;background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 5px;font:inherit}
-  input[type=text]{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:5px;padding:6px 8px;font:inherit}
-  .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:4px 0}
-  .seg button{flex:1;background:#0d1117;border:0;color:var(--mut);padding:7px 4px;cursor:pointer;font:inherit;border-right:1px solid var(--line)}
-  .seg button:last-child{border-right:0}
-  .seg button.on{background:var(--acc);color:#0d1117;font-weight:600}
-  .metric{display:flex;justify-content:space-between;margin:3px 0}.metric .v{font-weight:600}
-  .verdict{padding:8px 10px;border-radius:6px;margin:4px 0;font-size:12px}
-  .verdict.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:#7ee787}
-  .verdict.bad{background:rgba(248,81,73,.12);border:1px solid var(--bad);color:#ffa198}
-  .verdict.warn{background:rgba(210,153,34,.12);border:1px solid var(--warn);color:#e3b341}
-  pre#params{background:#010409;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;
-             white-space:pre-wrap;word-break:break-word;color:#c9d1d9;margin:6px 0}
-  .btn{background:var(--acc);color:#0d1117;border:0;border-radius:6px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}
-  .btn.sec{background:#21262d;color:var(--fg);border:1px solid var(--line)}
-  .btn:disabled{opacity:.4;cursor:default}
-  .hint{color:var(--mut);font-size:11px;margin-top:6px}
-  .blklist{max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px}
-  .blkitem{padding:5px 9px;cursor:pointer;display:flex;justify-content:space-between;border-bottom:1px solid #21262d}
-  .blkitem:hover{background:#1f2733}.blkitem.on{background:rgba(88,166,255,.16);color:#cae3ff}
-  .blkitem .id{color:var(--mut);font-size:10.5px}
-  /* v1: 未实现的控件灰显 + 内联说明 */
-  .v1off{opacity:.42;pointer-events:none;filter:grayscale(.6)}
-  .v1note{color:var(--warn);font-size:10.5px;margin:2px 0 4px;display:block}
-  .v1badge{display:inline-block;background:rgba(210,153,34,.16);border:1px solid var(--warn);color:#e3b341;
-           border-radius:4px;padding:0 5px;font-size:10px;margin-left:6px;vertical-align:1px}
-  textarea#importBox{width:100%;min-height:78px;background:#010409;border:1px solid var(--line);color:#c9d1d9;
-           border-radius:6px;padding:8px;font:inherit;font-size:11.5px;resize:vertical}
-  #importMsg{font-size:11px;margin-top:5px}
+  .legend{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+          padding:11px 15px;font-size:12px;color:var(--mut);display:flex;flex-wrap:wrap;gap:9px 20px;align-items:center}
+  .legend>div{white-space:nowrap;display:flex;align-items:center} .legend b{color:var(--fg);font-weight:600}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px}
+  /* 右侧控制栏 */
+  .right{width:406px;flex:none;border-left:1px solid var(--line);background:var(--app);
+         padding:18px 16px 44px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+  .grp{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px}
+  .grp h2{font-size:13.5px;margin:0 0 11px;color:var(--fg);font-weight:650;letter-spacing:.2px;
+        display:flex;align-items:center;gap:9px}
+  .grp h2 .ix{width:23px;height:23px;flex:none;border-radius:7px;display:grid;place-items:center;font-size:12px;
+        background:rgba(88,166,255,.15);color:var(--acc);font-weight:700}
+  .grp.primary{border-color:rgba(88,166,255,.45);box-shadow:0 0 0 1px rgba(88,166,255,.15)}
+  .grp.primary h2 .ix{background:var(--acc);color:var(--acc-ink)}
+  /* 行 / 标签 / 输入 */
+  label.row{display:flex;align-items:center;gap:10px;margin:8px 0}
+  label.row span.k{width:148px;color:var(--fg-dim);flex:none;font-size:12.5px;cursor:help}
+  input[type=range]{flex:1;min-width:0;height:5px;accent-color:var(--acc);cursor:pointer}
+  input[type=number]{width:66px;background:var(--surface-2);border:1px solid var(--line);color:var(--fg);
+        border-radius:var(--radius-sm);padding:5px 7px;font:inherit}
+  input[type=text]{width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--fg);
+        border-radius:var(--radius-sm);padding:8px 10px;font:inherit}
+  input[type=file]{color:var(--mut);font-size:12px;max-width:100%;min-width:0}
+  input:focus{outline:none;border-color:var(--acc);box-shadow:var(--ring)}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:pointer}
+  /* 分段控件 */
+  .seg{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+        padding:4px;margin:6px 0;flex-wrap:wrap}
+  .seg button{flex:1 1 auto;min-width:0;background:transparent;border:0;color:var(--mut);padding:8px 6px;cursor:pointer;
+        font:inherit;font-size:12.5px;border-radius:6px;transition:background .12s,color .12s;white-space:nowrap}
+  .seg button:hover:not(.on):not(:disabled){background:rgba(255,255,255,.05);color:var(--fg)}
+  .seg button.on{background:var(--acc);color:var(--acc-ink);font-weight:650;box-shadow:var(--shadow)}
+  /* 形态选择 —— 纵向卡片 */
+  .formsel{display:flex;flex-direction:column;gap:7px;margin:6px 0}
+  .formsel button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;width:100%;
+        background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 12px;
+        cursor:pointer;font:inherit;color:var(--fg-dim);transition:border-color .12s,background .12s}
+  .formsel button:hover:not(.on){border-color:#3a4453;background:rgba(255,255,255,.03)}
+  .formsel button.on{border-color:var(--acc);background:rgba(88,166,255,.10);color:var(--fg);box-shadow:inset 3px 0 0 var(--acc)}
+  .formsel .nm{font-weight:650;font-size:13px}
+  .formsel .nm em{font-style:normal;color:var(--mut);font-weight:500;font-size:11.5px}
+  .formsel .ds{font-size:11.5px;color:var(--mut);line-height:1.45}
+  /* 指标 / 结论 */
+  .metric{display:flex;justify-content:space-between;margin:5px 0;font-size:12.5px;color:var(--fg-dim)}
+  .metric .v{font-weight:650;color:var(--fg)}
+  .verdict{padding:9px 11px;border-radius:var(--radius-sm);margin:6px 0;font-size:12px;line-height:1.5}
+  .verdict.ok{background:rgba(63,185,80,.10);border:1px solid rgba(63,185,80,.5);color:#7ee787}
+  .verdict.bad{background:rgba(248,81,73,.10);border:1px solid rgba(248,81,73,.5);color:#ffa198}
+  .verdict.warn{background:rgba(210,153,34,.10);border:1px solid rgba(210,153,34,.5);color:#e3b341}
+  /* 参数输出 */
+  pre#params{background:var(--code);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;
+        font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+        color:#c9d1d9;margin:8px 0}
+  /* 按钮 */
+  .btn{background:var(--acc);color:var(--acc-ink);border:0;border-radius:var(--radius-sm);padding:8px 13px;font:inherit;
+        font-weight:650;cursor:pointer;transition:filter .12s,transform .04s}
+  .btn:hover{filter:brightness(1.08)} .btn:active{transform:translateY(1px)}
+  .btn.sec{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);font-weight:550}
+  .btn.sec:hover{background:#242c37;border-color:#3a4453;filter:none}
+  .btn.big{width:100%;padding:11px;font-size:14px;box-shadow:var(--shadow)}
+  .btn:disabled{opacity:.4;cursor:default;filter:none;transform:none}
+  /* 提示 / 说明 */
+  .hint{color:var(--mut);font-size:11.5px;line-height:1.5;margin-top:7px}
+  .note{display:block;font-size:11.5px;line-height:1.5;color:var(--fg-dim);margin:8px 0;
+        padding:8px 11px;border-radius:var(--radius-sm);background:var(--surface-2);border-left:3px solid var(--acc)}
+  .note b{color:var(--fg)}
+  /* v1note: 保留类名(JS 切换 display), 视觉改为中性信息条 */
+  .v1note{display:block;font-size:11.5px;line-height:1.5;color:var(--fg-dim);margin:8px 0;
+        padding:8px 11px;border-radius:var(--radius-sm);background:var(--surface-2);border-left:3px solid var(--warn)}
+  .v1note b{color:var(--fg)}
+  .v1badge{display:inline-block;background:rgba(210,153,34,.16);border:1px solid rgba(210,153,34,.5);color:#e3b341;
+        border-radius:5px;padding:1px 6px;font-size:10.5px;margin-left:6px}
+  .v1off{opacity:.45;pointer-events:none;filter:grayscale(.5)}
+  /* 方块列表 */
+  .blklist{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm);margin-top:8px;background:var(--surface-2)}
+  .blkitem{padding:7px 11px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;
+        border-bottom:1px solid var(--line-soft);font-size:12.5px}
+  .blkitem:last-child{border-bottom:0}
+  .blkitem:hover{background:rgba(255,255,255,.04)}
+  .blkitem.on{background:rgba(88,166,255,.14);color:#cae3ff}
+  .blkitem .id{color:var(--mut);font-size:11px;font-family:var(--mono)}
+  /* 导入 */
+  textarea#importBox{width:100%;min-height:80px;background:var(--code);border:1px solid var(--line);color:#c9d1d9;
+        border-radius:var(--radius-sm);padding:10px;font-family:var(--mono);font-size:11.5px;resize:vertical}
+  textarea#importBox:focus{outline:none;border-color:var(--acc);box-shadow:var(--ring)}
+  #importMsg{font-size:11.5px;margin-top:7px;line-height:1.5}
   #importMsg.ok{color:#7ee787}#importMsg.bad{color:#ffa198}#importMsg.warn{color:#e3b341}
+  /* 滚动条 */
+  .right::-webkit-scrollbar,.blklist::-webkit-scrollbar,.left::-webkit-scrollbar{width:9px;height:9px}
+  .right::-webkit-scrollbar-thumb,.blklist::-webkit-scrollbar-thumb,.left::-webkit-scrollbar-thumb{background:#2b3440;border-radius:9px}
+  .right::-webkit-scrollbar-thumb:hover,.blklist::-webkit-scrollbar-thumb:hover,.left::-webkit-scrollbar-thumb:hover{background:#3a4655}
 </style>
 </head>
 <body>
 <header>
-  <h1>红石音乐 · 走线设计器</h1>
-  <span class="sub">直线 / 曲折直线(S波浪)/ 原地播放 · 自由尺寸 + 自定义走线 + 信号基底方块 · 任务7</span>
-  <span class="sub" id="songtag" style="margin-left:auto"></span>
+  <div class="hrow">
+    <div class="brand">
+      <div class="logo">♪</div>
+      <div>
+        <h1>红石音乐 · 走线设计器</h1>
+        <div class="sub">把 MIDI 谱编排成能在 Minecraft 里搭建的红石播放机器</div>
+      </div>
+    </div>
+    <span class="songtag" id="songtag"></span>
+  </div>
+  <ol class="steps">
+    <li><span class="n">1</span>加载 MIDI</li>
+    <li><span class="n">2</span>选机器形态</li>
+    <li><span class="n">3</span>调参数看预览</li>
+    <li><span class="n">4</span>导出 params JSON 交给 agent</li>
+  </ol>
 </header>
 <div class="wrap">
   <div class="left">
-    <div class="toolbar"><span>🖱 滚轮缩放(以光标为中心)· 拖动空白处平移</span><button class="btn sec" id="fit">适应视图</button></div>
+    <div class="toolbar"><span>滚轮缩放(以光标为中心)· 拖动空白处平移画布</span><button class="btn sec" id="fit">适应视图</button></div>
     <canvas id="cv" width="1200" height="720"></canvas>
     <div class="legend">
       <div><span class="sw" style="background:var(--acc)"></span><b>主链脊柱</b>(中继器时间轴)</div>
-      <div><span class="sw" style="background:var(--ok)"></span>轨A音符列<span class="sw" style="background:var(--noteB);margin-left:8px"></span>轨B(镜像)</div>
+      <div><span class="sw" style="background:var(--ok)"></span>轨 A 音符列<span class="sw" style="background:var(--noteB);margin-left:10px"></span>轨 B(镜像)</div>
       <div><span class="sw" style="background:var(--turn)"></span>拐点 / 侧触发槽</div>
-      <div>X→ 时间前进 · Z↓ 折叠摆动</div>
-      <div>自定义:<b>拖动</b>节点 · <b>右键</b>删 · 加点/撤销见右栏</div>
+      <div>X → 时间前进 · Z ↓ 折叠摆动</div>
+      <div>自定义:<b>拖动</b>节点 · <b>右键</b>删除 · 加点/撤销见右栏</div>
     </div>
-    <div id="sidePanel" style="display:none;margin-top:10px">
-      <div class="toolbar"><span>📐 侧视(沿 +X 时间轴看横截面)· 拖每条轨调<b>相对 Z(横)/ Y(纵)</b>位</span></div>
-      <canvas id="cvSide" width="1200" height="240" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;width:100%;display:block;cursor:grab"></canvas>
+    <div id="sidePanel" style="display:none;margin-top:12px">
+      <div class="toolbar"><span>侧视图(沿 +X 时间轴看横截面)· 拖每条轨道调<b>相对 Z(横)/ Y(纵)</b>位置</span></div>
+      <canvas id="cvSide" width="1200" height="240" style="width:100%;display:block;cursor:grab"></canvas>
     </div>
   </div>
   <div class="right">
     <div class="grp">
-      <h2>⓪ 播放方法 · 媒体 · 实时回放</h2>
+      <h2><span class="ix">0</span>播放方法 · 媒体 · 实时回放</h2>
       <div class="seg" id="method">
-        <button data-method="redpiano" class="on">🎹 真音符盒(MIDI)</button>
-        <button data-method="slice" class="v1off" disabled>🎵 命令方块切片(MP3)</button>
+        <button data-method="redpiano" class="on">真音符盒(MIDI)</button>
+        <button data-method="slice" class="v1off" disabled>命令方块切片(MP3)</button>
       </div>
-      <span class="v1note">🎵 切片(slice)<span class="v1badge">外部 · 本 skill 不含</span>属<b>独立的外部仓库 mc-noteblock-demo</b>, <b>不在本 skill 范围内, 也不是本 skill 的待办项</b>。请到该仓库使用切片/MP3 管线。</span>
+      <span class="v1note">切片(slice)<span class="v1badge">外部 · 本 skill 不含</span>属<b>独立的外部仓库 mc-noteblock-demo</b>,<b>不在本 skill 范围内,也不是本 skill 的待办项</b>。请到该仓库使用切片 / MP3 管线。</span>
       <div id="midiCtl">
         <label class="row"><span class="k">MIDI 文件</span><input type="file" id="midiFile" accept=".mid,.midi"></label>
         <div class="hint" id="midiInfo">未载入 MIDI(可手填下方 cell 数预览)。载入后播放,光标沿路线<b>实时移到脉冲位置</b>。</div>
       </div>
       <div id="sliceCtl" style="display:none">
         <label class="row"><span class="k">音频 MP3/WAV</span><input type="file" id="audioFile" accept=".mp3,.wav,.ogg,.flac"></label>
-        <div class="hint" id="audioInfo">未载入。切片法=原曲音频分轨(Demucs)+逐音切片回放, <b>100%原音色、多乐器、无需模组</b>(tick20)。cell 数由切片管线决定;预览光标按音频进度推进。</div>
+        <div class="hint" id="audioInfo">未载入。切片法 = 原曲音频分轨(Demucs)+ 逐音切片回放,<b>100% 原音色、多乐器、无需模组</b>(tick20)。cell 数由切片管线决定;预览光标按音频进度推进。</div>
       </div>
-      <div class="seg" style="margin-top:4px">
+      <div class="seg" style="margin-top:6px">
         <button id="btnPlay">▶ 播放</button>
         <button id="btnPause">⏸ 暂停</button>
         <button id="btnStop">⏹ 停止</button>
       </div>
-      <label class="row"><span class="k">进度</span><input type="range" id="seek" min="0" max="1000" value="0" step="1"><span class="hint" id="tpos" style="width:74px;text-align:right">0:00 / 0:00</span></label>
+      <label class="row"><span class="k">进度</span><input type="range" id="seek" min="0" max="1000" value="0" step="1"><span class="hint" id="tpos" style="width:82px;text-align:right;margin-top:0">0:00 / 0:00</span></label>
     </div>
     <div class="grp">
-      <h2>① 曲目预算</h2>
-      <label class="row"><span class="k">骨架 cell 数</span><input type="number" id="cells" value="3347"><span class="hint" id="cellsHint">载入 MIDI 自动填</span></label>
-      <label class="row"><span class="k">发声 cell(列)</span><input type="number" id="sound" value="767"></label>
-      <div class="hint">cell=共享时间轴最小格;机器路径必须容纳全部 cell,顺序=时间顺序。折叠只改空间不改音乐。载入 MIDI 会自动填这两个数。</div>
+      <h2><span class="ix">1</span>曲目预算</h2>
+      <label class="row"><span class="k" title="共享时间轴的总格数 = 机器路径必须容纳的 cell 数">骨架 cell 数</span><input type="number" id="cells" value="3347"><span class="hint" id="cellsHint" style="margin-top:0">载入 MIDI 自动填</span></label>
+      <label class="row"><span class="k" title="其中真正发声的列(sounding)">发声 cell(列)</span><input type="number" id="sound" value="767"></label>
+      <div class="hint">cell = 共享时间轴最小格;机器路径必须容纳全部 cell,顺序 = 时间顺序。折叠只改空间不改音乐。载入 MIDI 会自动填这两个数。</div>
     </div>
-    <div class="grp">
-      <h2>② 走线 / 播放形式</h2>
-      <div class="seg" id="form">
-        <button data-f="straight">直线</button>
-        <button data-f="swave" class="on">S 波浪</button>
-        <button data-f="custom">自定义</button>
-        <button data-f="inplace">原地播放</button>
+    <div class="grp primary">
+      <h2><span class="ix">2</span>机器形态(走线 / 播放形式)</h2>
+      <div class="formsel" id="form">
+        <button data-f="straight"><span class="nm">直线型 <em>straight</em></span><span class="ds">一条直线跑到底,占地最长</span></button>
+        <button data-f="swave" class="on"><span class="nm">S 形折线型 <em>swave</em></span><span class="ds">默认推荐 · 脉冲沿 S 形路线巡游、灯流可看</span></button>
+        <button data-f="custom"><span class="nm">自定义路线 <em>custom</em></span><span class="ds">自己在画布上画走线(导出 waypoints)</span></button>
+        <button data-f="inplace"><span class="nm">原地紧凑型 <em>inplace</em></span><span class="ds">占地小、不随歌曲变长,长曲首选</span></button>
       </div>
-      <span class="v1note">支持 <b>S 波浪 / 直线 / 自定义(走线)/ 原地播放</b>。自定义=拖节点画路线(导出 waypoints)。<b>多轨分布</b>在下方③和弦模式里开启(导出 form=multilane)。</span>
+      <span class="v1note"><b>多轨并行型(multilane)</b>不在这里选,请到下方 ③ 和弦模式开启(每个声部一条并行轨道,导出 form=multilane)。</span>
       <div id="swaveCtl">
-        <label class="row"><span class="k">每折 X 长 XRUN</span><input type="range" id="xrun" min="2" max="30" value="6"><input type="number" id="xrunN" value="6"></label>
-        <label class="row"><span class="k">Z 振幅 ZMAX</span><input type="range" id="zmax" min="2" max="40" value="10"><input type="number" id="zmaxN" value="10"></label>
+        <label class="row"><span class="k" title="XRUN:每段直线的长度(格),越小越紧凑">每段长度 (XRUN)</span><input type="range" id="xrun" min="2" max="30" value="6"><input type="number" id="xrunN" value="6"></label>
+        <label class="row"><span class="k" title="ZMAX:折返摆动的宽度(格),越大越宽">折返宽度 (ZMAX)</span><input type="range" id="zmax" min="2" max="40" value="10"><input type="number" id="zmaxN" value="10"></label>
         <div class="hint">XRUN 小 / ZMAX 大 → X 更短(压缩更高)、Z 更宽。只改形状不改节奏。</div>
       </div>
       <div id="customCtl" style="display:none">
-        <div class="hint"><b>拖动</b>节点调位(画布不会误加点);<b>右键</b>删。加点/撤销用按钮。路径 X→Z 直角连,cell 顺序铺=时间不变。</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-          <button class="btn sec" id="addWp">➕ 在选中后加点</button>
-          <button class="btn sec" id="delWp">🗑 删除选中</button>
-          <button class="btn sec" id="undo" disabled>↶ 撤销 Ctrl+Z</button>
+        <div class="hint"><b>拖动</b>节点调位(画布不会误加点);<b>右键</b>删除。加点 / 撤销用按钮。路径 X→Z 直角连,cell 顺序铺 = 时间不变。</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">
+          <button class="btn sec" id="addWp">在选中后加点</button>
+          <button class="btn sec" id="delWp">删除选中</button>
+          <button class="btn sec" id="undo" disabled>撤销 Ctrl+Z</button>
           <button class="btn sec" id="resetWp">重置为 S 波浪</button>
         </div>
-        <div class="hint" id="selInfo" style="margin-top:6px">选中节点:无</div>
+        <div class="hint" id="selInfo" style="margin-top:8px">选中节点:无</div>
       </div>
       <div id="inplaceCtl" style="display:none">
-        <label class="row"><span class="k">调色板音符盒数</span><input type="number" id="pal" value="47"><span class="hint" id="palHint">载入 MIDI 自动填</span></label>
-        <label class="row"><span class="k">网格宽 PCOLS</span><input type="range" id="pcols" min="4" max="48" value="16"><input type="number" id="pcolsN" value="16"></label>
-        <label class="row"><span class="k">行距 ROWGAP</span><input type="range" id="rowgap" min="2" max="6" value="3"><input type="number" id="rowgapN" value="3"></label>
-        <div class="hint">原地播放=不铺线,只摆<b>调色板音符盒</b>(用到的不同音各一个),数据包按节奏在<b>方块侧面</b>点红石块反复触发。调整主体=方块本身/网格。</div>
+        <label class="row"><span class="k" title="palette_noteblocks:调色板音符盒数量(用到的不同音各一个)">音符盒数 (palette)</span><input type="number" id="pal" value="47"><span class="hint" id="palHint" style="margin-top:0">载入 MIDI 自动填</span></label>
+        <label class="row"><span class="k" title="PCOLS:调色板每行的格数">每行格数 (PCOLS)</span><input type="range" id="pcols" min="4" max="48" value="16"><input type="number" id="pcolsN" value="16"></label>
+        <label class="row"><span class="k" title="ROWGAP:相邻行之间的距离">行距 (ROWGAP)</span><input type="range" id="rowgap" min="2" max="6" value="3"><input type="number" id="rowgapN" value="3"></label>
+        <div class="hint">原地紧凑 = 不铺线,只摆<b>调色板音符盒</b>(用到的不同音各一个),数据包按节奏在<b>方块侧面</b>点红石块反复触发。调整主体 = 方块本身 / 网格。</div>
       </div>
     </div>
     <div class="grp" id="modeGrp">
-      <h2>③ 和弦模式</h2>
+      <h2><span class="ix">3</span>和弦模式</h2>
       <div class="seg" id="chordMode">
         <button data-m="radiate" class="on">合并和弦(辐射)</button>
-        <button data-m="multilane">多轨分布(每声部一轨)</button>
+        <button data-m="multilane">多轨并行(multilane)</button>
       </div>
-      <span class="v1note">v1 支持 <b>合并和弦(辐射)</b> 与 <b>多轨分布</b>(导出 form=multilane;每声部一轨,直线,过 forceload 上限会硬失败→改 S 波浪)。</span>
+      <span class="v1note">支持 <b>合并和弦(辐射)</b> 与 <b>多轨并行型(multilane)</b>(导出 form=multilane;每声部一轨、直线,超 forceload 上限会硬失败 → 改 S 波浪)。</span>
       <div id="multiLaneCtl" style="display:none">
-        <label class="row"><span class="k">音轨数量 / 最大复调 MAXPOLY</span><input type="range" id="maxPoly" min="1" max="12" value="7"><input type="number" id="maxPolyN" value="7"></label>
-        <label class="row"><span class="k">轨间距 LANE_DZ</span><input type="range" id="laneDz" min="1" max="6" value="2"><input type="number" id="laneDzN" value="2"></label>
-        <button class="btn sec" id="toggleSide" style="margin-top:4px">📐 侧视编辑器(拖轨调相对位)</button>
-        <div class="hint">多轨分布=每条声部单独一轨、共享唯一延迟骨架(绝对同步+列对齐, 旧版24/30)。轨间距防红石串扰。侧视里拖每条轨调相对 Z 位。</div>
+        <label class="row"><span class="k" title="max_poly:每刻最大复音数 = 并行轨道数量">最大复音 (max_poly)</span><input type="range" id="maxPoly" min="1" max="12" value="7"><input type="number" id="maxPolyN" value="7"></label>
+        <label class="row"><span class="k" title="lane_dz:相邻轨道之间的间距,防红石串扰">轨道间距 (lane_dz)</span><input type="range" id="laneDz" min="1" max="6" value="2"><input type="number" id="laneDzN" value="2"></label>
+        <button class="btn sec" id="toggleSide" style="margin-top:6px">侧视编辑器(拖轨调相对位)</button>
+        <div class="hint">多轨并行 = 每条声部单独一轨、共享唯一延迟骨架(绝对同步 + 列对齐)。轨道间距防红石串扰。侧视里拖每条轨调相对 Z 位。</div>
       </div>
-      <div class="hint" id="radiateHint">合并辐射=一个导体同刻向上+左右辐射 ≤3 音(紧凑, 当前 48/43)。关掉它=改用左边多轨分布。</div>
+      <div class="hint" id="radiateHint">合并辐射 = 一个导体同刻向上 + 左右辐射 ≤3 音(紧凑)。关掉它 = 改用上方多轨并行。</div>
     </div>
     <div class="grp">
-      <h2>④ 起点 与 播放方向</h2>
-      <label class="row"><span class="k">起点 X (OX)</span><input type="number" id="startX" value="0"></label>
-      <label class="row"><span class="k">起点 Z (OZ)</span><input type="number" id="startZ" value="0"></label>
-      <label class="row"><span class="k">起点 Y (高度)</span><input type="number" id="startY" value="255"></label>
+      <h2><span class="ix">4</span>起点 与 播放方向</h2>
+      <label class="row"><span class="k" title="start_x:起点 X 坐标">起点 X (start_x)</span><input type="number" id="startX" value="0"></label>
+      <label class="row"><span class="k" title="start_z:起点 Z 坐标">起点 Z (start_z)</span><input type="number" id="startZ" value="0"></label>
+      <label class="row"><span class="k" title="start_y:起点 Y 高度">起点 Y (start_y)</span><input type="number" id="startY" value="255"></label>
+      <div class="note"><b>注意:</b>构建命令的坐标顺序是 <b>X Z Y</b>(先横向 X、再纵深 Z、最后高度 Y),别按 X Y Z 填。</div>
       <div class="seg" id="startDir">
         <button data-d="+X" class="on">→ +X</button>
         <button data-d="-X">← -X</button>
         <button data-d="+Z">↓ +Z</button>
         <button data-d="-Z">↑ -Z</button>
       </div>
-      <span class="v1note">脉冲从起点沿所选方向推进。预览按 <b>+X</b> 画形状, 生成器按 <b>start_dir</b> 旋转摆放(+X / -X / +Z / -Z 均支持)。</span>
-      <div class="hint">脉冲从起点沿此方向推进(中继器朝向随之)。预览用起点标记+方向读数表示;生成器按此摆放/朝向机器。</div>
+      <span class="v1note"><b>出发方向(start_dir):</b>脉冲从起点沿所选方向推进。预览按 <b>+X</b> 画形状,生成器按 <b>start_dir</b> 旋转摆放(+X / -X / +Z / -Z 均支持)。</span>
     </div>
     <div class="grp" id="lineGrp">
-      <h2>⑤ 线宽 与 空格</h2>
+      <h2><span class="ix">5</span>线宽 与 空格</h2>
       <div id="lwGate">
-        <label class="row"><span class="k">线宽(每侧音符列)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
-        <label class="row"><span class="k">折间空格 gap</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
-        <span class="v1note" id="lwNote" style="display:none">线宽/gap <b>仅多轨分布(multilane)</b> 生效, S波浪/直线/自定义尚未接入(导出恒为默认 3/1)。</span>
+        <label class="row"><span class="k" title="line_width_radiate:发声列向脊柱两侧各伸出的音符盒数">线宽 (line_width)</span><input type="range" id="rad" min="1" max="3" value="3"><input type="number" id="radN" value="3"></label>
+        <label class="row"><span class="k" title="fold_gap:相邻折之间额外留空,防音符列重叠">折间空格 (fold_gap)</span><input type="range" id="gap" min="0" max="8" value="1"><input type="number" id="gapN" value="1"></label>
+        <span class="v1note" id="lwNote" style="display:none">线宽 / gap <b>仅多轨并行(multilane)</b> 生效,S 波浪 / 直线 / 自定义尚未接入(导出恒为默认 3/1)。</span>
       </div>
-      <label class="row"><span class="k">双轨(中轴镜像)</span><input type="checkbox" id="dual" checked></label>
-      <label class="row"><span class="k">双轨间距 SEP</span><input type="range" id="sep" min="2" max="20" value="3"><input type="number" id="sepN" value="3"></label>
-      <div class="hint">线宽=发声列向脊柱两侧伸的音符盒数。gap=相邻折额外留空,防音符列重叠/红石串扰。</div>
+      <label class="row"><span class="k" title="dual_track_mirror:是否沿中轴镜像出第二条轨">双轨镜像 (dual_track)</span><input type="checkbox" id="dual" checked></label>
+      <label class="row"><span class="k" title="track_sep:两条镜像轨之间的间距">双轨间距 (track_sep)</span><input type="range" id="sep" min="2" max="20" value="3"><input type="number" id="sepN" value="3"></label>
+      <div class="hint">线宽 = 发声列向脊柱两侧伸的音符盒数。gap = 相邻折额外留空,防音符列重叠 / 红石串扰。</div>
     </div>
     <div class="grp">
-      <h2>⑥ 信号基底方块</h2>
+      <h2><span class="ix">6</span>信号基底方块</h2>
       <input type="text" id="blkSearch" placeholder="搜索可导红石的方块… 如 concrete / 石英 / deepslate">
       <div id="blkList" class="blklist"></div>
-      <div class="hint">仅列<b>能承载红石信号</b>的实心不透明方块(已自动滤掉 玻璃/台阶/楼梯/树叶/荧石 等不导通方块)。当前:<b id="blkCur">minecraft:stone</b></div>
+      <div class="hint">仅列<b>能承载红石信号</b>的实心不透明方块(已自动滤掉玻璃 / 台阶 / 楼梯 / 树叶 / 荧石 等不导通方块)。当前:<b id="blkCur">minecraft:stone</b></div>
     </div>
     <div class="grp">
-      <h2>⑦ 信号轨道(粒子同步)</h2>
-      <span class="v1note"><b>多轨分布(multilane)</b> 形态消费信号轨, 支持 3D 偏移 <b>dx / dy / dz</b>。完整的关键帧粒子请用 <b>particle_editor.html</b>。</span>
-      <div class="hint">平行跟随主脉冲的<b>中继器链</b>(与音乐完全同步, 无音符盒), 供玩家在旁摆命令方块触发粒子。相对脊柱偏移 (dx, dy, dz)。</div>
+      <h2><span class="ix">7</span>信号轨道(粒子同步)</h2>
+      <span class="v1note"><b>多轨并行(multilane)</b> 形态消费信号轨(signal_tracks),支持 3D 偏移 <b>dx / dy / dz</b>。完整的关键帧粒子请用 <b>particle_editor.html</b>。</span>
+      <div class="hint">平行跟随主脉冲的<b>中继器链</b>(与音乐完全同步,无音符盒),供玩家在旁摆命令方块触发粒子。相对脊柱偏移 (dx, dy, dz)。</div>
       <div>
-      <label class="row"><span class="k">轨道名</span><input type="text" id="sigName" placeholder="如 粒子轨1"></label>
-      <label class="row"><span class="k">X 偏移 dx</span><input type="number" id="sigDx" value="0"></label>
-      <label class="row"><span class="k">Z 偏移 dz</span><input type="number" id="sigDz" value="6"></label>
-      <label class="row"><span class="k">Y 偏移 dy</span><input type="number" id="sigDy" value="0"></label>
-      <div style="display:flex;gap:6px;margin-top:6px">
-        <button class="btn sec" id="addSig">➕ 加轨道</button>
-        <button class="btn sec" id="delSig">🗑 删最后</button>
-        <button class="btn sec" id="toggleSide2">📐 侧视调位</button>
+      <label class="row"><span class="k">轨道名称</span><input type="text" id="sigName" placeholder="如 粒子轨1"></label>
+      <label class="row"><span class="k" title="dx:信号轨相对脊柱的 X 偏移">X 偏移 (dx)</span><input type="number" id="sigDx" value="0"></label>
+      <label class="row"><span class="k" title="dz:信号轨相对脊柱的 Z 偏移">Z 偏移 (dz)</span><input type="number" id="sigDz" value="6"></label>
+      <label class="row"><span class="k" title="dy:信号轨相对脊柱的 Y 偏移">Y 偏移 (dy)</span><input type="number" id="sigDy" value="0"></label>
+      <div style="display:flex;gap:7px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn sec" id="addSig">加轨道</button>
+        <button class="btn sec" id="delSig">删最后</button>
+        <button class="btn sec" id="toggleSide2">侧视调位</button>
       </div>
-      <span class="v1note" id="sigNote" style="display:none">信号轨 <b>仅多轨分布(multilane)</b> 消费, 当前形态导出会置空。到③和弦模式切到「多轨分布」再加轨道。</span>
-      <div id="sigList" class="blklist" style="max-height:110px"></div>
+      <span class="v1note" id="sigNote" style="display:none">信号轨 <b>仅多轨并行(multilane)</b> 消费,当前形态导出会置空。到 ③ 和弦模式切到「多轨并行」再加轨道。</span>
+      <div id="sigList" class="blklist" style="max-height:120px"></div>
       </div>
     </div>
     <div class="grp">
-      <h2>⑧ 实测(估算)</h2>
+      <h2><span class="ix">8</span>实测(估算)</h2>
       <div class="metric"><span>X 跨度(长)</span><span class="v" id="mX">–</span></div>
       <div class="metric"><span>Z 总宽(宽)</span><span class="v" id="mZ">–</span></div>
       <div class="metric"><span id="mCk">压缩比</span><span class="v" id="mC">–</span></div>
@@ -216,20 +314,20 @@
       <div class="metric"><span>forceload 区块 ≈</span><span class="v" id="mF">–</span></div>
       <div id="verdict"></div>
     </div>
-    <div class="grp">
-      <h2>⑨ 参数(截图给我即可)</h2>
+    <div class="grp primary">
+      <h2><span class="ix">9</span>导出参数(交给 agent)</h2>
       <pre id="params"></pre>
-      <button class="btn" id="copy">复制参数 JSON</button>
-      <button class="btn sec" id="png">下载预览 PNG</button>
-      <div class="hint">截图把右侧参数 + 左侧形状一起拍给我(或导出 JSON),我按这些数字生成对应的红石机器。</div>
+      <button class="btn big" id="copy">复制参数 JSON</button>
+      <button class="btn sec" id="png" style="width:100%;margin-top:8px">下载预览 PNG</button>
+      <div class="hint">把右侧参数 + 左侧形状一起截图发给我(或复制 JSON),我按这些数字生成对应的红石机器。</div>
     </div>
     <div class="grp">
-      <h2>⑩ 导入参数(JSON 回填)</h2>
-      <div class="hint">把之前导出的参数 JSON 粘进来(或选文件),点<b>导入</b>回填到设计器,继续编辑。schema_version 不符会<b>警告</b>但仍尽力导入。</div>
+      <h2><span class="ix">10</span>导入参数(JSON 回填)</h2>
+      <div class="hint">把之前导出的参数 JSON 粘进来(或选文件),点<b>导入</b>回填到设计器继续编辑。schema_version 不符会<b>警告</b>但仍尽力导入。</div>
       <textarea id="importBox" placeholder='粘贴参数 JSON, 如 {"schema_version":1,"form":"swave",...}'></textarea>
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button class="btn" id="importBtn">⬆ 导入</button>
-        <label class="btn sec" style="cursor:pointer">📂 选 JSON 文件<input type="file" id="importFile" accept=".json,application/json" style="display:none"></label>
+      <div style="display:flex;gap:7px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" id="importBtn">导入</button>
+        <label class="btn sec" style="cursor:pointer">选 JSON 文件<input type="file" id="importFile" accept=".json,application/json" style="display:none"></label>
       </div>
       <div id="importMsg"></div>
     </div>

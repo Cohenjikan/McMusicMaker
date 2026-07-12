@@ -221,12 +221,43 @@ below, then run the build command in step 4.
    burying them in step 5 — that's how the user discovers the option. You don't need a rigid
    two-round quiz; read what the user wants and only ask when it's genuinely ambiguous.
 
+   > **中文用户术语对照(必须遵守)**:面向中文用户呈现形态选项时,**一律用下表的中文名+一句话
+   > 解释(括号带英文参数名),不要甩 inplace/swave 裸词让用户猜**;命令行参数值照旧用英文。
+   >
+   > | 参数值 | 对中文用户说 | 一句话解释 |
+   > |---|---|---|
+   > | `inplace` | 原地紧凑型 | 占地小、不随歌曲变长,长曲首选 |
+   > | `swave` | S形折线型 | 默认推荐,脉冲沿 S 形巡游、灯流好看 |
+   > | `straight` | 直线型 | 一条直线跑到底,占地最长 |
+   > | `custom` | 自定义路线 | 用户自己在设计器里画走线 |
+   > | `multilane` | 多轨并行型 | 每个声部一条并行轨道,列对齐壮观 |
+   >
+   > 另:根 README 的「开场怎么说」小节提供了 5 条可复制的开场提示词,用户很可能照着它开场——
+   > **提示词里已给出的信息(版本/存档路径/意图)不要再重复问**。
+
 1. **收集输入** — ask for these things:
    - **MIDI 文件** path (`.mid`). **拿到 MIDI 先跑质量预检**, before choosing a form:
      `python scripts/midi_report.py --midi <mid> [--form <form>]`. It prints a build-time preflight —
      duration, instrument-family distribution, estimated dropped notes, estimated footprint, and a
      one-line verdict. **Show that verdict to the user** and let it inform the form choice (step 2):
      e.g. a long/dense MIDI on `swave`/`straight` may report a large footprint → suggest `inplace`.
+   - **用户只有 MP3/音频,没有 MIDI 怎么办** — agent 可以代跑转换,不用把用户打回去自己找 MIDI:
+     ```
+     python scripts/audio_to_midi.py --audio 歌.mp3 [--out 歌.mid] [--engine auto|basic-pitch|piano] [--min-note-ms 60]
+     # 依赖: pip install -r requirements-audio.txt   (默认引擎 basic-pitch, Apache 2.0, CPU 可跑)
+     # 可选钢琴专用引擎: pip install piano_transcription_inference  (质量更好但拖 torch, 钢琴独奏曲用)
+     # mp3 解码可能需要 ffmpeg (winget install ffmpeg), wav/flac 不需要
+     ```
+     (没有现成的 mp3→midi 独立 skill 可嵌,本功能是包装两个开源项目代跑,不是自研转录:默认引擎
+     Spotify **basic-pitch**(Apache 2.0),可选钢琴专用引擎 ByteDance
+     **piano_transcription_inference**。)
+     > **⚠ 强制诚实提示(必须放在显著位置,转换前告知用户,不能静默转完直接建机器):**
+     > 音频转录出来的 MIDI **质量必然低于原生 MIDI**——和声粘连、幽灵音、时值破碎是转录算法的
+     > 常态,不是 bug。**纯钢琴独奏曲效果最好**;**人声/多乐器混音效果最差**,经常惨不忍睹。
+     > **转完必须先跑上面那条 `midi_report.py` 预检**再决定要不要照常建机器——预检显示掉音多/
+     > 音符破碎,就该老实劝用户去找**原生 MIDI**(爱给网、musescore.com 等站点搜同名曲目)而不是
+     > 硬着头皮拿一份烂转录去建。**agent 行为准则:转换前要向用户说明这个质量落差,不要拿到
+     > mp3 就默默转完直接进入建机器流程。**
    - **存档路径** — the world's `datapacks/` folder, for deployment. If it looks like
      `<profile>/saves/<world>/datapacks`, infer `<profile>` from it.
    - **Minecraft profile root** (or confirm the inferred one). The resourcepack must land in
@@ -271,9 +302,11 @@ below, then run the build command in step 4.
      [docs/VERSION_TACTICS.md](docs/VERSION_TACTICS.md)**. The build scripts still `raise` off the
      green band (they only *auto*-build green), and their error text now points here too; that's a
      signal to open VERSION_TACTICS and build by hand, not to stop.
-   > If the user uploads an **MP3 / audio** instead of MIDI: only the **slice** form
-   > (Family B) reproduces original timbre, and that lives in the **external
-   > `mc-noteblock-demo` repo — this skill cannot build it.** Say so and ask for a MIDI.
+   > If the user uploads an **MP3 / audio** instead of MIDI: agent 现在可以代跑
+   > `scripts/audio_to_midi.py` 把音频转成 MIDI,再走上面「用户只有 MP3/音频,没有 MIDI 怎么办」
+   > 的流程,然后照常进入下面这套正常构建步骤。但这条转录路径**不是** Family B——转录出的 MIDI
+   > 质量必然低于原生 MIDI(见该小节的强制诚实提示),真正「音色和原曲一模一样」的还原只有
+   > **slice** 形态(Family B)能做到,它活在**外部 `mc-noteblock-demo` 仓库,本技能不构建它**。
 
 2. **选播放形态 — pick a form.** Default = **`inplace` 原地调色板**: functionally complete and
    the user confirmed a build as "特别好", but it has been **tested in-game fewer times** than

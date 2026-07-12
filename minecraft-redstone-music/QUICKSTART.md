@@ -120,6 +120,13 @@ After any mod jar change, fully restart Minecraft (`/reload` is not enough for m
 
 ## 1a. (pre-check) Inspect the MIDI before choosing a form
 
+**只有 MP3?** 先转成 MIDI 再做预检:
+`python scripts/audio_to_midi.py --audio 歌.mp3 [--out 歌.mid] [--engine auto|basic-pitch|piano] [--min-note-ms 60]`
+(依赖 `pip install -r requirements-audio.txt`,默认引擎 basic-pitch;mp3 解码可能需要 ffmpeg,
+wav/flac 不需要)。**⚠ 转录音质必然低于原生 MIDI**(和声粘连/幽灵音/时值破碎是常态,人声/多乐器
+混音尤甚,纯钢琴独奏最好)——转完同样要跑下面的 `midi_report.py` 预检,预检烂就优先去找原生
+MIDI。完整说明 + agent 行为准则见 [SKILL.md](SKILL.md) 「用户只有 MP3/音频,没有 MIDI 怎么办」。
+
 ```bash
 python scripts/midi_report.py --midi path/to/song.mid [--form swave]
 ```
