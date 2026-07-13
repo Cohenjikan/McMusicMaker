@@ -16,9 +16,8 @@ What it does (Family A audio for the RedPiano mod):
     SHAPE: single `pack_format` (<=1.21.8) or `min_format`/`max_format` (>=1.21.9);
   * zips the pack to <out>.
 
-The samples themselves are large/licensed and DO NOT ship in this folder (see
-BINARIES.md) — point `--samples-root` at the folder that holds the
-`samples_manifest_*.json` + `samples_<inst>/` directories (the source repo's `poc/`).
+The skill ships a ready-to-use sampled pack under assets/qzpno_mv.zip. Use this
+script when rebuilding it from sample folders or deriving a version-matched copy.
 
 Pure stdlib. Run e.g.:
   python scripts/build_resourcepack.py --mc-version 1.21.8 \
@@ -44,6 +43,33 @@ LIBS = [("piano", "samples_piano"), ("bass", "samples_bass"), ("lead", "samples_
         ("pad", "samples_pad"), ("drums", "samples_drums")]
 
 PACK_DESCRIPTION = "qzpno 钢琴+乐队(piano/bass/lead/pad/drums) for RedPiano mod"
+
+CREDITS_TEXT = """McMusicMaker qzpno_mv resource pack — credits and licenses
+================================================================
+
+Piano samples
+-------------
+Salamander Grand Piano v3 by Alexander Holm.
+Licensed under Creative Commons Attribution 3.0 Unported (CC BY 3.0).
+Source: https://github.com/sfzinstruments/SalamanderGrandPiano
+License: https://creativecommons.org/licenses/by/3.0/
+
+The piano samples in this resource pack are derived from the above instrument:
+selected notes and velocity layers were cropped, converted to OGG, and mapped for
+the McMusicMaker / RedPiano Minecraft runtime.
+
+Drum samples
+------------
+VCSL / Karoryfer drum samples, released under CC0 1.0.
+
+Other instruments
+-----------------
+Bass, lead, and pad sounds were generated synthetically by the McMusicMaker
+sample-building scripts and do not contain third-party sampled recordings.
+
+McMusicMaker project: https://github.com/Cohenjikan/McMusicMaker
+This file must remain inside redistributed copies of qzpno_mv.zip.
+"""
 
 
 def rp_packmeta(profile, description=PACK_DESCRIPTION):
@@ -100,8 +126,7 @@ def assemble_pack(samples_root, pack_dir, allow_partial=False):
     if not found_any_manifest:
         raise RedPianoError(
             f"no sample manifests found under {samples_root} "
-            f"(expected samples_manifest_piano.json etc.). The qzpno samples ship "
-            f"separately — see BINARIES.md. Point --samples-root at the folder holding "
+            f"(expected samples_manifest_piano.json etc.). Point --samples-root at the folder holding "
             f"the manifests + samples_<inst>/ dirs."
         )
     if missing_manifests and not allow_partial:
@@ -142,6 +167,9 @@ def build_resourcepack(mc_version, samples_root, out_zip, staging_dir=None,
     meta = rp_packmeta(profile)
     json.dump(meta, open(os.path.join(staging_dir, "pack.mcmeta"), "w", encoding="utf-8"),
               ensure_ascii=False, indent=2)
+    with open(os.path.join(staging_dir, "CREDITS.txt"), "w", encoding="utf-8",
+              newline="\n") as f:
+        f.write(CREDITS_TEXT)
 
     # zip (root contains pack.mcmeta + assets/)
     os.makedirs(os.path.dirname(out_zip) or ".", exist_ok=True)
@@ -170,7 +198,7 @@ def repack_from_zip(mc_version, src_zip, out_zip):
     passing every other entry through byte-for-byte. Returns a stats dict.
 
     This lets ANY 1.21.x pack be derived from one shipped zip without needing the
-    (separately-licensed) sample folder — the sounds/*.ogg + sounds.json inside the source
+    sample folder — the sounds/*.ogg + sounds.json inside the source
     zip are exactly what the target version needs; only the pack.mcmeta format number/shape
     differs across versions (e.g. 1.21.8 single rp_format 64 -> 1.21.9 min/max 69). The
     source zip's own pack.mcmeta is DISCARDED and replaced; the DEFLATE recompress on copy
@@ -203,13 +231,14 @@ def repack_from_zip(mc_version, src_zip, out_zip):
             zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zout:
         for info in zin.infolist():
             arc = info.filename.replace("\\", "/")
-            if arc == "pack.mcmeta":
-                continue  # drop the source pack.mcmeta; we write a fresh one below
+            if arc in ("pack.mcmeta", "CREDITS.txt"):
+                continue  # replace version metadata and canonical attribution below
             # pass every other entry through verbatim (per-entry copy; no dir walk needed)
             zout.writestr(arc, zin.read(info.filename))
             if not arc.endswith("/"):
                 copied += 1
         zout.writestr("pack.mcmeta", new_meta_bytes)
+        zout.writestr("CREDITS.txt", CREDITS_TEXT.encode("utf-8"))
 
     return {
         "mc_version": mc_version,
@@ -233,8 +262,8 @@ def build_argparser():
                    help="target Minecraft version (drives rp_format; default 1.21.8).")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--samples-root", dest="samples_root",
-                     help="folder holding samples_manifest_*.json + samples_<inst>/ dirs "
-                          "(ships separately — see BINARIES.md). Builds the pack from "
+                     help="folder holding samples_manifest_*.json + samples_<inst>/ dirs. "
+                          "Builds a replacement pack from "
                           "scratch. Mutually exclusive with --from-zip.")
     src.add_argument("--from-zip", dest="from_zip",
                      help="derive from an EXISTING qzpno_mv.zip: rewrite only its "
@@ -298,7 +327,7 @@ if __name__ == "__main__":
     except (AttributeError, ValueError):
         pass
     # tiny self-test path: `python build_resourcepack.py --selftest` checks the
-    # version-driven pack.mcmeta shape without needing the (separately-shipped) samples.
+    # version-driven pack.mcmeta shape without needing unpacked sample folders.
     if "--selftest" in sys.argv:
         p8 = get_version_profile("1.21.8")
         m8 = rp_packmeta(p8)

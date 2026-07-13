@@ -127,19 +127,23 @@ The `binaries/` folder ships two kinds of runtime binary alongside the source:
 - **Fabric API jar** (`fabric-api-*.jar`) is redistributed under its own
   **Apache License 2.0** — see the Fabric project for its terms.
 
-## Instrument samples (NOT covered by the software license above, NOT shipped)
+## Instrument samples (bundled, NOT covered by the software license above)
 
 The sampled-instrument resource pack (`qzpno_mv.zip`, ~103 note-block instrument
-samples) is **not distributed with this repository** — you supply it yourself
-(see `minecraft-redstone-music/BINARIES.md`). Any samples you use keep their
-upstream licenses and rights:
+samples) is distributed at `minecraft-redstone-music/assets/qzpno_mv.zip`.
+Its contents retain their own upstream licenses and are not relicensed under
+PolyForm Noncommercial:
 
-- The **Karoryfer** electric-guitar samples are **CC0**.
-- The **VCSL** drum samples are **CC0**; the **Salamander** piano samples are
-  **CC BY** (attribution required).
-- Other instrument samples (e.g. general piano packs of unknown provenance)
-  remain the copyright of their original authors, are used here for
-  **noncommercial** use only, and are your responsibility to license.
+- Piano: **Salamander Grand Piano v3** by **Alexander Holm**, licensed under
+  **Creative Commons Attribution 3.0 Unported (CC BY 3.0)**. Source:
+  https://github.com/sfzinstruments/SalamanderGrandPiano . License:
+  https://creativecommons.org/licenses/by/3.0/ . The included samples were
+  selected, cropped, converted to OGG, and mapped for McMusicMaker/RedPiano.
+- Drums: **VCSL / Karoryfer**, released under **CC0 1.0**.
+- Bass, lead, and pad: generated synthetically by McMusicMaker's sample scripts.
+
+The same notice is embedded in `qzpno_mv.zip/CREDITS.txt`. That file must remain
+inside redistributed copies of the resource pack.
 
 Song MIDI files and any data derived from them are the copyright of their
 respective authors and are **not** included in this repository.

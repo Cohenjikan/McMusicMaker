@@ -4,9 +4,9 @@
   "resourcepack": {
     "file": "qzpno_mv.zip",
     "rp_format": 64,
-    "sha256": null,
-    "in_repo": false,
-    "note": "piano samples = Salamander Grand Piano (CC-BY, attribution required); drums = VCSL (CC0); bass/lead/pad = synthesized. The qzpno_mv resourcepack ships separately (not in this repo); supply your own via build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"
+    "sha256": "947779cbe34762aa0caf6ac1d8c709ba49455c2b5e86a1971517060c1c4c4758",
+    "in_repo": true,
+    "note": "bundled at minecraft-redstone-music/assets/qzpno_mv.zip; piano = Salamander Grand Piano (CC-BY 3.0 with attribution in CREDITS.txt); drums = VCSL (CC0); bass/lead/pad = synthesized. prepare_all.py auto-repacks it for the target Minecraft version"
   },
   "jars": {
     "1.21.1": {

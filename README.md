@@ -2,266 +2,166 @@
 
 # McMusicMaker · 红石音乐机
 
-**中文** · MIDI → Minecraft Redstone Music Machine
+把一首歌交给 AI agent，在 Minecraft 里搭成一台真正会演奏的音符盒红石机器。
 
-### 把任意一首 MIDI，在 Minecraft 里用真·音符盒 + 红石线路演奏出来。<br/>不是回放原曲音频 —— 是分轨转写音高、映射到真实乐器采样、按节奏在世界里搭一台会响的机器。
-
-*一个「红石音乐 + Claude Code skill」的作品：你给 agent 一首 MIDI 和一个存档，它替你把机器搭进世界。*
+**你不用会写代码，也不用自己研究红石。告诉 agent 你想要什么，它会带着你一步步完成。**
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg?style=flat-square)](LICENSE)
 [![Minecraft: Java 1.21–1.21.10](https://img.shields.io/badge/Minecraft-Java%201.21%E2%80%931.21.10-62B47A.svg?style=flat-square)](minecraft-redstone-music/docs/VERSION_TACTICS.md)
-[![Fabric](https://img.shields.io/badge/Mod-Fabric%20%2B%20JDK%2021-DBB863.svg?style=flat-square)](minecraft-redstone-music/docs/MOD_ARCHITECTURE.md)
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB.svg?style=flat-square&logo=python&logoColor=white)](minecraft-redstone-music/requirements.txt)
-[![Stars](https://img.shields.io/github/stars/Cohenjikan/McMusicMaker?style=flat-square&logo=github)](https://github.com/Cohenjikan/McMusicMaker/stargazers)
+[![Windows](https://img.shields.io/badge/交付-Windows-4B8BF5.svg?style=flat-square)](#开始前准备)
 
 </div>
 
 ---
 
-<!-- DEMO-PATH -->
+## 它能做什么？
 
-## 🔊 5 分钟先听个响（官方最小 demo，不用自备任何采样）
+你给 agent 一首 MIDI（也可以先给 MP3）和一个 Minecraft 存档，它会：
 
-第一次上手、只想快速验证「这套东西真能在 Minecraft 里响」？走这条**开放音源最小路径**：用随仓自带的 `assets/demo.mid`，音色由脚本**当场用 numpy 合成**（我们自产的开放音源，无任何许可负担），全程**不下载、不需要 ffmpeg**，一条链就能把完整 `dist/` 建出来。
+- 分析歌曲，判断适合哪种红石机器；
+- 把不同声部安排成钢琴、贝斯、主音、铺底和鼓；
+- 生成数据包、资源包和需要的模组；
+- 给你一个可以双击安装的文件；
+- 告诉你进游戏后该输入什么命令、按哪个按钮播放。
 
-> ⚠️ **两条硬前提**（和主流程一致）：**① 仅 Windows 交付**（安装器是 `.bat`）；**② 必须整仓 clone**——脚本依赖仓库结构（如 `../binaries/` 里的模组 jar），**不要**只单独拷 `minecraft-redstone-music/` 子目录。
->
-> 说明：这里的合成音色是**能出声的最小验证**，不是精修的 Salamander 钢琴采样；先听个响，满意后再按 [采样与署名](#采样与署名) / [`BINARIES.md`](minecraft-redstone-music/BINARIES.md) 换成更好的采样即可。
+最终听到的不是直接播放原曲音频，而是 Minecraft 世界里的**真实音符盒和红石线路在演奏**。
 
-**准备一次**（安装 Python 依赖 —— demo 路径比主流程多两个轻量包 `numpy`/`soundfile`）：
+## 最简单的使用方法
 
-```bash
-cd minecraft-redstone-music
-pip install -r requirements.txt -r requirements-demo.txt
+### 1. 把整个项目交给 agent
+
+下载或 clone **完整仓库**，然后用 Codex、Claude Code 或其他可以读写文件的 agent 打开这个文件夹。
+
+> 不要只复制 `minecraft-redstone-music` 子文件夹，完整仓库里还有运行所需的文件。
+
+### 2. 准备三样信息
+
+- 你的歌曲文件：最好是 `.mid`；只有 `.mp3`、`.wav` 或 `.flac` 也可以先问 agent。
+- 你的 Minecraft **Java 版**版本，例如 `1.21.8`。
+- 你的存档文件夹。实在找不到也没关系，让 agent 帮你找。
+
+如果你已经知道机器要建在哪里，再告诉 agent 游戏 F3 画面上的 `X / Y / Z` 坐标。第一次尝试建议使用创造模式测试存档，并提前备份。
+
+### 3. 复制这段话发给 agent
+
+```text
+请使用这个仓库里的 minecraft-redstone-music skill，帮我把一首歌做成 Minecraft 红石音乐机。
+
+我的 Minecraft 是 Java 版，版本是【填写版本】。
+歌曲文件在【填写 MIDI 路径，或直接附上文件】。
+存档在【填写存档路径；不知道就先帮我找】。
+
+我不懂技术参数。请先检查歌曲，再用中文告诉我适合哪种机器、预计占地多大，并替我选择推荐方案。先不要假设已经安装成功；需要我双击文件或进入游戏操作时，请明确提醒我。
 ```
 
-> 若 pip 报 UnicodeDecodeError，先执行 `$env:PYTHONUTF8=1`（PowerShell）/ `export PYTHONUTF8=1`（bash）再重试。
+然后正常回答 agent 的问题即可。你不需要先读其他 `.md` 文档，也不需要自己拼命令。
 
-**三步出 `dist/`**（把 `<你的世界>` 换成你存档名；下面 PowerShell / bash 双版任选）：
+## 选择你喜欢的机器
 
-<details open>
-<summary><b>PowerShell</b>（反引号续行）</summary>
+McMusicMaker 有 5 种机型。你可以自己选，也可以让 agent 分析歌曲后推荐：
 
-```powershell
-# 1) 解析随仓模组 jar（这里用 1.21.7，随仓也带 Fabric API jar，全程离线）
-python scripts/fetch_binaries.py --mc-version 1.21.7
+| 机型 | 它是什么样 | 适合谁 | 需要注意 |
+|---|---|---|---|
+| **原地紧凑型** (`inplace`) | 所有音符集中在一个小型调色板中演奏，不铺设很长的线路 | 长歌曲、小场地、只想稳定听歌 | 占地最小，但看不到脉冲沿整条线路前进 |
+| **S 形折线型** (`swave`) | 红石线路来回折叠成 S 形，播放时脉冲会沿线路移动 | 想兼顾观赏性和占地的用户 | 线路会随歌曲变长；歌曲越长，占地和性能压力越大 |
+| **直线型** (`straight`) | 把整首歌沿一条直线铺开，结构最直观 | 短歌、教学展示、拥有超长空地的世界 | 通常占地最长，很容易穿过已有建筑或地形 |
+| **自定义路线** (`custom`) | 在可视化设计器里自己画路线，让机器绕着建筑或景观行进 | 有明确造型想法、愿意自己设计路线的用户 | 需要多一步设计和导出；复杂路线应先检查是否相交或越界 |
+| **多轨并行型** (`multilane`) | 不同声部各走一条并行轨道，同一时刻的音符横向对齐 | 想展示歌曲层次、追求大型舞台效果的用户 | 最壮观，也最容易占用大量区块；长歌需要谨慎 |
 
-# 2) 合成 103 个开放音源 demo 采样（写到 assets/demo_samples/，无网络/无 ffmpeg）
-python scripts/make_demo_samples.py
+拿不准时，可以直接对 agent 说：
 
-# 3) 端到端：datapack + 资源包 + 模组 -> dist/ + 安装器
-python scripts/prepare_all.py `
-    --midi assets/demo.mid `
-    --form swave `
-    --ns demo `
-    --origin 0 0 255 `
-    --mc-version 1.21.7 `
-    --world-dir "<profile>/saves/<你的世界>/datapacks" `
-    --profile-dir "<profile>" `
-    --dist dist `
-    --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.7.jar" `
-    --fabric-api-jar "../binaries/fabric-api-0.129.0+1.21.7.jar" `
-    --samples-root assets/demo_samples
+```text
+请先分析 MIDI 的时长、音符密度和预计占地，再对照 README 的机型表推荐两个方案。告诉我各自的尺寸和取舍，等我选择后再生成。
 ```
 
-</details>
+还可以追加一句你的偏好，例如“尽量小”“脉冲要看得见”“绕着城堡走”或“不同乐器分轨展示”。
+
+> 只有 MP3、WAV 或 FLAC 时，也可以先交给 agent 转成 MIDI。但音频转录会产生错音和漏音，钢琴独奏通常比人声、多乐器混音更适合转换。
+
+## 进阶用户：两个自定义设计器
+
+仓库里有两个可以直接在浏览器打开的 HTML 工具：
+
+| 工具 | 可以自定义什么 | 交给 agent 什么 |
+|---|---|---|
+| [`layout_designer.html`](minecraft-redstone-music/designer/layout_designer.html) | 机器线路、形状、尺寸、折叠方式和起点，例如让线路绕着城堡或舞台行进 | 导出的线路参数 JSON |
+| [`particle_editor.html`](minecraft-redstone-music/designer/particle_editor.html) | 跟随音乐时间轴安排命令方块、粒子、烟花和其他命令，决定它们在何时、何地触发 | 导出的命令方块关键帧 JSON |
+
+你不需要自己研究 JSON。对 agent 说“带我使用线路设计器”或“我想制作命令方块跟轨”，它应该指导你打开对应 HTML，等你设计完成后再接手构建。
+
+## 开始前准备
+
+目前最顺畅的使用条件是：
+
+- **Windows**；
+- **Minecraft Java Edition**，不是基岩版；
+- 推荐版本为 **1.21 到 1.21.10**，这些版本支持自动构建；
+- 存档已开启作弊，或你在服务器中拥有 OP 权限；
+- 愿意在安装模组后重启一次游戏。
+
+更老或更新的 Java 版本也可以让 agent 尝试适配，但步骤会更多，音色和节奏精度也可能不同。基岩版目前不支持。
+
+## 完成时你需要亲手做什么？
+
+agent 完成构建后，会在 `dist` 文件夹里准备一个 `DEPLOY_TO_GAME.bat`。接下来通常只需要：
+
+1. 关闭 Minecraft；
+2. 在 Windows 资源管理器中双击 `DEPLOY_TO_GAME.bat`；
+3. 重新启动游戏并进入目标存档；
+4. 按 agent 给出的顺序启用资源包、输入命令并按下播放按钮。
+
+这一步需要你亲手双击。agent 只有看到安装回执后，才应该告诉你“已经安装”。
+
+> 音乐播放时会把整个世界的 tick rate 提高到 80，农作物、生物和其他红石也会一起加速。听完后按 agent 的提示恢复到 20。共享服务器上请先征得其他玩家同意。
+
+## 常见问题
+
+**会破坏我的存档吗？**
+
+机器会清理并占用建造范围内的方块。请使用空旷区域，第一次先在测试存档尝试，并保留备份。不要让 agent 在没有确认坐标和占地的情况下直接建造。
+
+**为什么默认音色不像真实钢琴？**
+
+默认已经随包提供包含钢琴、贝斯、主音、铺底和鼓的采样资源包。钢琴来自 Salamander Grand Piano；如果听到的是简单合成音色，说明当前使用的是备用 demo 包，可以让 agent 检查并切回随包资源。
+
+**一定要 MIDI 吗？**
+
+不一定，但 MIDI 最可靠。MP3 等音频可以先转录，效果取决于歌曲复杂度。
+
+**能在老版本 Minecraft 使用吗？**
+
+Java 版老版本可以尝试手工适配，但不会像 1.21–1.21.10 一样全自动。让 agent 先说明能做到什么、需要牺牲什么，再决定是否继续。
+
+**为什么退出世界后歌曲变慢了？**
+
+`tick rate 80` 不会永久保存，重新进入世界后需要再次设置。把现象告诉 agent，它会给你正确的命令。
 
 <details>
-<summary><b>bash</b>（反斜杠续行；Windows 上用 Git Bash）</summary>
+<summary><strong>给开发者和想深入了解的人</strong></summary>
 
-```bash
-# 1) 解析随仓模组 jar（这里用 1.21.7，随仓也带 Fabric API jar，全程离线）
-python scripts/fetch_binaries.py --mc-version 1.21.7
+普通使用不需要阅读以下内容：
 
-# 2) 合成 103 个开放音源 demo 采样（写到 assets/demo_samples/，无网络/无 ffmpeg）
-python scripts/make_demo_samples.py
-
-# 3) 端到端：datapack + 资源包 + 模组 -> dist/ + 安装器
-python scripts/prepare_all.py \
-    --midi assets/demo.mid \
-    --form swave \
-    --ns demo \
-    --origin 0 0 255 \
-    --mc-version 1.21.7 \
-    --world-dir "<profile>/saves/<你的世界>/datapacks" \
-    --profile-dir "<profile>" \
-    --dist dist \
-    --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.7.jar" \
-    --fabric-api-jar "../binaries/fabric-api-0.129.0+1.21.7.jar" \
-    --samples-root assets/demo_samples
-```
+- [Skill 完整工作流程](minecraft-redstone-music/SKILL.md)
+- [游戏内操作与排错](minecraft-redstone-music/QUICKSTART.md)
+- [模组与资源包说明](minecraft-redstone-music/BINARIES.md)
+- [不同 Minecraft 版本的适配策略](minecraft-redstone-music/docs/VERSION_TACTICS.md)
+- [能力与限制列表](minecraft-redstone-music/docs/FEATURE_MATRIX.md)
+- [RedPiano 模组架构](minecraft-redstone-music/docs/MOD_ARCHITECTURE.md)
 
 </details>
 
-跑完 `dist/` 里就有：数据包 `demo/` + `qzpno_mv.zip`（含 103 个合成采样）+ `mods/`（模组 jar + Fabric API）+ `DEPLOY_TO_GAME.bat`。**接着由你本人在资源管理器里双击** `dist\DEPLOY_TO_GAME.bat` 安装（脚本不碰你的游戏目录），进游戏后按 [`QUICKSTART.md`](minecraft-redstone-music/QUICKSTART.md) 手动 `/tick rate 80`、启用资源包、`/function demo:setup` → 播放。
+## 关于与致谢
 
-> 上面是 **1.21.7** 的例子（随仓正好带了 1.21.7 的 Fabric API jar，可完全离线）。其它绿档版本（如 1.21.8）把三处 `1.21.7` 一起改掉，并**去掉** `--fabric-api-jar` 那行——`prepare_all.py` 会自动从 Modrinth 拉取匹配的 Fabric API（需联网一次）。
->
-> ℹ️ 上述为**构建级验证**（`dist/` 产物齐全、资源包含全部 103 音效、`pack.mcmeta` 版本号正确）；**游戏内实听**请自行按 QUICKSTART 完成。
+项目由 [Cohen](https://cohenjikan.com) 设计并把关方向，主要代码由 Anthropic 的 Claude 协助编写。更多项目见 GitHub [@Cohenjikan](https://github.com/Cohenjikan)。
 
----
-
-## 这是什么
-
-你把一首 **`.mid`** 文件和一个 **Minecraft 存档**交给 agent，它替你跑完整条流水线，最后在世界里交付一台**真的会响**的音符盒机器：每个音符是一次真正的音符盒演奏，由自研的 **RedPiano** Fabric 模组把音色替换成对应乐器采样，并**以每个玩家为中心**发声，所以音乐会跟着你走、不会因为走远而断掉。
-
-它有两条腿：**绿档全自动**（Minecraft Java **1.21 – 1.21.10** —— 这些版本随仓带有编好的模组 jar，一条命令端到端出活）；以及**工匠路径**（其余任意版本 —— 按 [`docs/VERSION_TACTICS.md`](minecraft-redstone-music/docs/VERSION_TACTICS.md) 手工适配模组 / 采样 / `pack_format`）。
-
----
-
-## 它能做什么
-
-| 你得到什么 | 说明 |
-|---|---|
-| **一首 MIDI → 一台会响的机器** | 交给 agent `.mid` + 存档，产出世界里可直接演奏的音符盒机器，无需你手搓红石。 |
-| **多乐器音色，不是一个音色到底** | 一张 **103 块 / 5 乐器**采样映射，把 MIDI 各分轨对应到不同乐器音色。 |
-| **主旋律不被伴奏埋掉** | pad / lead / bass 采样会盖住旋律；对每个旋律音**逐音 `stopsound` 截断**（精确到具体音效事件），让主旋律浮上来。 |
-| **多种机型任你选** | `swave`（行进脉冲波，游戏内多次实测的推荐机型）/ `inplace`（原地调色板，占地极小）/ `straight`（直线）/ `custom`（自定义走线）/ `multilane`（多轨共享时间轴）。 |
-| **浏览器可视化设计器** | `layout_designer.html`（加载真 MIDI + 路线播放头 + 多轨 / 侧视图，导出参数 JSON）与 `particle_editor.html`（粒子编辑）。 |
-| **一个版本号自适应** | `--mc-version` 自动同步 `pack_format`、数据包文件夹单复数、`pack.mcmeta` 形态、告示牌 sign 方言（1.21.5+ 走 SNBT）。 |
-| **播前预检 + 没声体检** | `midi_report.py` 播前预检（时长 / 乐器分布 / 掉音估计 / 占地估计 + 一句话选型建议）；`doctor.py` 一键体检整条「没声」链路，逐项 ✓/✗ + 修复建议。 |
-| **一键安装器，双击即装，回执确认** | 在工作区构建到 `dist/`，产出原生 `DEPLOY_TO_GAME.bat`（你双击安装）+ 部署回执，根治「AI 在沙箱里部署、真游戏读不到」的静默失败（见 [`docs/RUNTIME_SANDBOX.md`](minecraft-redstone-music/docs/RUNTIME_SANDBOX.md)）。 |
-
----
-
-## 快速开始
-
-### 前置
-
-- **仅支持 Windows 交付。** 安装器是 `.bat` 脚本，交付链目前只覆盖 Windows。
-- **必须整仓 clone 使用。** 脚本依赖仓库结构（如 `../binaries/` 里的模组 jar）——**不要**只单独拷 `minecraft-redstone-music/` 子目录，那样会缺依赖。
-- **Minecraft Java Edition**（**不是**基岩版 —— 数据包、`/function`、`/tick rate`、Fabric 模组在基岩版都不存在）。
-- **Fabric Loader + Fabric API + JDK 21**（模组运行依赖）。Loader 安装见官方安装器：<https://fabricmc.net/use/installer/>。
-- **Python 3.8+**：`pip install -r minecraft-redstone-music/requirements.txt`（核心只依赖 `mido`）。若 pip 报 UnicodeDecodeError，先执行 `$env:PYTHONUTF8=1`（PowerShell）/ `export PYTHONUTF8=1`（bash）再重试。
-- 存档需开**作弊 / OP**（`/reload`、`/tick rate`、`/function` 需要）。
-
-> ⚠️ **乐器采样不随仓分发。** 成品采样资源包 `qzpno_mv.zip`**不在本仓库**里 —— 请自备（见下方[采样与署名](#采样与署名)）。随仓的运行时二进制只有 **11 颗自编 RedPiano 模组 jar**（绿档 1.21 – 1.21.10）与 **Fabric API jar**（Apache-2.0）。详见 [`minecraft-redstone-music/BINARIES.md`](minecraft-redstone-music/BINARIES.md)。
-
-### 🟢 绿档路径（golden 命令，照抄可跑）
-
-在**仓库根目录**整仓 clone 之后，进入 `minecraft-redstone-music/`（这样 `../binaries/…` 能解析到随仓模组 jar），分两步：
-
-**第一步 —— 解析出版本匹配的模组 jar**（把它作为 `--prebuilt-mod-jar` 传给第二步）：
-
-```bash
-# 挑选并校验绿档模组 jar，落到仓库的 binaries/ 目录
-python scripts/fetch_binaries.py --mc-version 1.21.8
-# → 产物路径: ../binaries/redpiano-1.0.0-mc1.21.8.jar
-```
-
-**第二步 —— 端到端准备数据包 + 资源包 + 模组，产出安装器**。
-
-采样参数**三选一**（下面示例用第一种，另两种在注释里）：
-
-<details open>
-<summary><b>PowerShell</b>（反引号续行）</summary>
-
-```powershell
-python scripts/prepare_all.py `
-    --midi "path/to/song.mid" `
-    --form swave `
-    --ns mysong `
-    --origin 0 0 255 `
-    --mc-version 1.21.8 `
-    --world-dir "<profile>/saves/<world>/datapacks" `
-    --profile-dir "<profile>" `
-    --dist dist `
-    --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.8.jar" `
-    --samples-root "path/to/your/samples"
-# 采样三选一（上一行任选其一）:
-#   --samples-root "path/to/your/samples"    你自备的采样目录(内含 samples_manifest_*.json + samples_<inst>/), 脚本现打 qzpno_mv.zip
-#   --prebuilt-rp  "path/to/qzpno_mv.zip"    你已有的现成采样资源包, 直接复制
-#   --skip-resourcepack                      不打资源包: 世界端没装匹配资源包时 = 原版音符盒音色 或 静音(不保证出你要的采样音色)
-```
-
-</details>
-
-<details>
-<summary><b>bash</b>（反斜杠续行）</summary>
-
-```bash
-python scripts/prepare_all.py \
-    --midi "path/to/song.mid" \
-    --form swave \
-    --ns mysong \
-    --origin 0 0 255 \
-    --mc-version 1.21.8 \
-    --world-dir "<profile>/saves/<world>/datapacks" \
-    --profile-dir "<profile>" \
-    --dist dist \
-    --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.8.jar" \
-    --samples-root "path/to/your/samples"
-# 采样三选一（上一行任选其一）:
-#   --samples-root "path/to/your/samples"    你自备的采样目录(内含 samples_manifest_*.json + samples_<inst>/), 脚本现打 qzpno_mv.zip
-#   --prebuilt-rp  "path/to/qzpno_mv.zip"    你已有的现成采样资源包, 直接复制
-#   --skip-resourcepack                      不打资源包: 世界端没装匹配资源包时 = 原版音符盒音色 或 静音(不保证出你要的采样音色)
-```
-
-</details>
-
-- `--origin` 顺序是 **X Z Y**（不是 F3 显示的 X Y Z）。`--samples-root` 指向**你自备**的采样目录 —— 仓库里**不含**成品采样。
-- 产物在工作区 `dist/`（数据包 + `qzpno_mv.zip` + `mods/*.jar`）+ 原生安装器 `dist/DEPLOY_TO_GAME.bat`。脚本**不碰**你的游戏目录 —— 由**你本人在资源管理器里双击** `DEPLOY_TO_GAME.bat` 安装，再用 `python scripts/deploy_bundle.py --verify dist` 确认 `✓ INSTALLED`。
-- 装好后在游戏里手动 `/tick rate 80`、确认资源包已在游戏内启用，再演奏。完整清单（含「没声？先跑 doctor」排查框）见 [`minecraft-redstone-music/QUICKSTART.md`](minecraft-redstone-music/QUICKSTART.md)。
-
-### 🔨 工匠路径（任意版本）
-
-目标版本落在绿档之外（远古 / 未来新版）时，按 [`minecraft-redstone-music/docs/VERSION_TACTICS.md`](minecraft-redstone-music/docs/VERSION_TACTICS.md) 手工适配：重编对应版本的模组、按 `--mc-version` 调 `pack_format` / 文件夹 / sign 方言、必要时换采样。
-
----
-
-## 采样与署名
-
-本仓库**不分发成品采样包**。各乐器采样的来源与许可如下 —— 若你自备并分发采样包，**须遵守各自许可**：
-
-- **钢琴 —— Salamander Grand Piano**：**CC BY**，**需署名**（这是本项目当前**待落实的义务**：分发时请在你的资源包 / 说明里给出对 Salamander Grand Piano 作者的署名）。
-- **鼓组 —— VCSL**：**CC0**（公有领域，无署名义务）。
-- **bass / lead / pad**：**合成音色**（脚本生成，非采样上游作品）。
-
-从采样目录现打资源包、或从你已有的 `qzpno_mv.zip` 派生版本匹配包的具体命令，见 [`minecraft-redstone-music/BINARIES.md`](minecraft-redstone-music/BINARIES.md) 与 `scripts/build_resourcepack.py --help`。
-
----
-
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [`minecraft-redstone-music/SKILL.md`](minecraft-redstone-music/SKILL.md) | skill 主入口：agent 该怎么问、怎么选型、怎么一步步交付。 |
-| [`minecraft-redstone-music/QUICKSTART.md`](minecraft-redstone-music/QUICKSTART.md) | 从 `.mid` 到游戏里响的端到端清单 + 「没声」三步排查。 |
-| [`minecraft-redstone-music/BINARIES.md`](minecraft-redstone-music/BINARIES.md) | 两类运行时二进制（模组 jar / 采样资源包）从哪来、怎么解析、许可归属。 |
-| [`minecraft-redstone-music/docs/VERSION_TACTICS.md`](minecraft-redstone-music/docs/VERSION_TACTICS.md) | 版本战术：绿档之外任意版本怎么手工适配。 |
-| [`minecraft-redstone-music/docs/CONTRACT.md`](minecraft-redstone-music/docs/CONTRACT.md) | 设计器 → 生成器的参数契约（导出 JSON 的 schema）。 |
-| [`minecraft-redstone-music/docs/MOD_ARCHITECTURE.md`](minecraft-redstone-music/docs/MOD_ARCHITECTURE.md) | RedPiano Fabric 模组架构：音色替换 + 以玩家为中心发声。 |
-| [`minecraft-redstone-music/docs/FEATURE_MATRIX.md`](minecraft-redstone-music/docs/FEATURE_MATRIX.md) | 权威能力矩阵：5 种机型 / 各特性的状态与边界。 |
-| [`minecraft-redstone-music/docs/RUNTIME_SANDBOX.md`](minecraft-redstone-music/docs/RUNTIME_SANDBOX.md) | 沙箱交付：为什么必须工作区构建 + 原生 `.bat` + 回执握手。 |
-| [`docs/history/`](docs/history/) | 开发过程记录（继承分析 / 可行性调研 / 开发日记等，可能与当前实现矛盾，仅作留档）。 |
-
-> 目录导览：`poc/` = 开发期实验脚本，**普通使用者请忽略**；日常使用只需 `minecraft-redstone-music/`。
-
----
-
-## 关于
-
-由 [Cohen](https://cohenjikan.com) 设计并把关方向，**主要代码由 Anthropic 的 Claude 编写处理**（vibecoding）。完整的人机协作开发史留档在 [`docs/history/`](docs/history/)。这也是我一系列**非商业、源码公开**项目中的一个 —— 更多见 **[cohenjikan.com](https://cohenjikan.com)** 与 GitHub **[@Cohenjikan](https://github.com/Cohenjikan)**。
-
----
-
-## 开源致谢
-
-- **Fabric API** —— RedPiano 模组的运行依赖（[Apache-2.0](https://github.com/FabricMC/fabric)），jar 随仓分发。
-- **Salamander Grand Piano** —— 钢琴采样（**CC BY**，需署名）；**VCSL** —— 鼓组采样（**CC0**）。
-- **[mido](https://github.com/mido/mido)** —— MIDI 解析。
-- **Minecraft / Mojang** —— 音符盒、红石、数据包、`/function` 与 `/tick rate` 这套可编程世界本身。
-- **红石音乐社区 / RedPiano 思路** —— 「用真·音符盒重新演奏、而非回放原曲」的方向来自这个社区的探索。
-- **开发协作** —— 主要代码由 **Anthropic 的 Claude** 编写处理（vibecoding）。
-
----
+感谢 Fabric API、mido、Minecraft 红石音乐社区，以及 Salamander Grand Piano、VCSL 等开放音源项目。
 
 ## 许可
 
-代码以 **[PolyForm Noncommercial 1.0.0](LICENSE)** 许可发布 —— **源码公开、仅限非商业使用**；商用授权请联系作者。随仓的 **RedPiano 模组 jar** 同样按 PolyForm NC 授权；**Fabric API jar** 按其自身的 **Apache-2.0** 再分发。
+代码以 [PolyForm Noncommercial 1.0.0](LICENSE) 发布，仅限非商业使用；商用授权请联系作者。
 
-**乐器采样各自保留上游许可，且不随仓分发** —— 钢琴为 **Salamander Grand Piano（CC BY，需署名）**，鼓组 **VCSL 为 CC0**，bass / lead / pad 为**合成音色**。你自行获取采样并遵守其许可；分发采样包时请落实 Salamander 的署名义务。歌曲 MIDI 及其衍生数据的版权归原作者，不包含在本仓库中。详见 [`LICENSE`](LICENSE) 与 [`minecraft-redstone-music/BINARIES.md`](minecraft-redstone-music/BINARIES.md)。
+随包资源中的钢琴采样 Salamander Grand Piano v3 由 Alexander Holm 制作，以 CC BY 3.0 授权；署名与来源已写入资源包内的 `CREDITS.txt`。VCSL 鼓组为 CC0；歌曲 MIDI 及衍生数据的版权归原作者。详细说明见 [BINARIES.md](minecraft-redstone-music/BINARIES.md)。
 
 <div align="center">
-<sub>把任意一首 MIDI，在 Minecraft 里用真·音符盒演奏出来。</sub>
+<sub>把你想听的歌告诉 agent，剩下的交给它。</sub>
 </div>

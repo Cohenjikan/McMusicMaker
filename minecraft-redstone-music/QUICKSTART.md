@@ -12,30 +12,26 @@ the **RedPiano (Family A)** pipeline. Default & verified on **Minecraft 1.21.8**
 
 ---
 
-## 🔊 只想先听个响？走开放音源最小 demo（不用自备采样）
+## 🔊 只想先听个响？直接使用随包采样资源
 
-第一次上手、只想验证「真能响」，别急着准备你自己的 MIDI 和采样——用随仓 `assets/demo.mid` + 脚本**当场合成**的开放音源（numpy，无网络/无 ffmpeg），三步就能建出完整 `dist/`。**这是开源仓库的默认资源包路径**——本仓库不随附 Salamander 采样，见 [SKILL.md](SKILL.md) 「收集输入」一步的资源包来源①。
+第一次上手可以使用随仓 `assets/demo.mid` 和 `assets/qzpno_mv.zip`。资源包包含 103 个钢琴、贝斯、主音、铺底与鼓音效；钢琴采样的 Salamander Grand Piano / Alexander Holm / CC BY 3.0 署名已写入 zip 根目录的 `CREDITS.txt`。`prepare_all.py` 会自动选择它，不需要资源包参数。
 
 > **两条硬前提**：**① 仅 Windows 交付**（`.bat` 安装器）；**② 必须整仓 clone**（脚本依赖 `../binaries/` 等仓库结构，不能只拷本子目录）。
 >
-> **⚠ 音色诚实话术（交付时必须告知用户）**：这套 `make_demo_samples.py` 产物是**合成 demo 音色**（numpy 生成的简单波形），**不是** RedPiano 原装的 Salamander 真钢琴采样。能验证「机器真的会响、时序对不对」，但音色比较朴素。想换真钢琴音色，见 [BINARIES.md](BINARIES.md) 「Sampled resourcepack」一节（`--prebuilt-rp` / `--from-zip`）。
-
 > 若 `pip install` 报 UnicodeDecodeError，先执行 `$env:PYTHONUTF8=1`（PowerShell）/ `export PYTHONUTF8=1`（bash）再重试。
 
 ```bash
 cd minecraft-redstone-music
-pip install -r requirements.txt -r requirements-demo.txt        # demo 多两个轻量包 numpy/soundfile
+pip install -r requirements.txt
 
 python scripts/fetch_binaries.py --mc-version 1.21.7            # 1) 解析随仓模组 jar
-python scripts/make_demo_samples.py                            # 2) 合成 103 个开放音源采样 -> assets/demo_samples/
 python scripts/prepare_all.py \
     --midi assets/demo.mid --form swave --ns demo --origin 0 0 255 \
     --mc-version 1.21.7 \
     --world-dir "<profile>/saves/<你的世界>/datapacks" --profile-dir "<profile>" \
     --dist dist \
     --prebuilt-mod-jar "../binaries/redpiano-1.0.0-mc1.21.7.jar" \
-    --fabric-api-jar "../binaries/fabric-api-0.129.0+1.21.7.jar" \
-    --samples-root assets/demo_samples                          # 3) 端到端 -> dist/ + 安装器
+    --fabric-api-jar "../binaries/fabric-api-0.129.0+1.21.7.jar" # 2) 端到端 -> dist/ + 安装器
 ```
 
 跑完**你本人双击** `dist\DEPLOY_TO_GAME.bat` 安装，再按下面主清单进游戏（`/tick rate 80`、启用资源包、`/function demo:setup` → 播放）。换其它绿档版本：把三处 `1.21.7` 一起改掉并**去掉** `--fabric-api-jar` 行（改为联网自动拉取）。完整版与说明见根 [`README.md`](../README.md) 的「5 分钟先听个响」小节。**这是构建级验证；游戏内实听按下面清单完成。**
@@ -198,15 +194,9 @@ This produces `dist/` (staged datapack + `qzpno_mv.zip` + `mods/*.jar`) and
   picks the version-matched mod jar from the sibling `binaries/` folder (local-first,
   sha256-verified) — no Gradle/JDK. Pass it as `--prebuilt-mod-jar`. (`fetch_binaries` picks the
   right jar — Fabric rejects a jar whose `~<ver>` range doesn't cover the game.)
-- **Supply your own resourcepack:** the sampled `qzpno_mv.zip` is **not in the repo** — its piano
-  samples are Salamander Grand Piano (**CC-BY**), which requires attribution on redistribution
-  that isn't packaged into the zip, so it ships separately (drums are CC0, bass/lead/pad are
-  synthesized — only piano carries the obligation; see [BINARIES.md](BINARIES.md) for the credit
-  line). `fetch_binaries` reports it as `separate`, not an error. From a `qzpno_mv.zip` you have,
-  derive a version-matched pack with
-  `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out dist/qzpno_mv.zip`
-  (a base rp-64 pack serves 1.21.7/1.21.8 as-is; other versions get only `pack.mcmeta` rewritten), or
-  build from sample folders with `--samples-root`. Pass the result as `--prebuilt-rp`.
+- **Use the bundled resourcepack:** `assets/qzpno_mv.zip` ships with complete attribution and all
+  103 sound events. Pass no resourcepack flag; `prepare_all.py` selects it and derives the target
+  version automatically. Use `--prebuilt-rp` / `--samples-root` only to replace its sounds.
 - **Or skip the resourcepack entirely:** `--skip-resourcepack` builds without staging one. **诚实
   后果(取决于装没装模组):** 装了 **RedPiano 模组**时,音符盒会**彻底静音**——模组把原版声音换成
   `qzpno:` 自定义事件,没有资源包=那个事件没有任何 `.ogg`=无声(**不会**退回原版 harp/bass 音色);

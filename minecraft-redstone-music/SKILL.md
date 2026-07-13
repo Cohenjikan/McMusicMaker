@@ -81,9 +81,9 @@ Options -> Resource Packs.
   under `scripts/` resolve sibling paths like `../binaries/` (prebuilt jars) **relative to the repo
   root** — so registering the skill only works if `minecraft-redstone-music/` stays inside the full
   repo tree. **Do not copy just this folder out on its own**; it will build datapacks but silently
-  lose access to the prebuilt binaries described in [BINARIES.md](BINARIES.md). (The open-source
-  repo does **not** ship a sample-carrying `poc/` — get a resourcepack via
-  `scripts/make_demo_samples.py` or your own `qzpno_mv.zip`, see step 1 below.)
+  lose access to the prebuilt binaries described in [BINARIES.md](BINARIES.md). The sampled,
+  attributed resourcepack ships at `assets/qzpno_mv.zip`; keep the complete skill folder so the
+  default build can find it.
 - **交付链只支持 Windows.** The generated installer is `DEPLOY_TO_GAME.bat` — a Windows batch
   file. This skill's install path assumes a Windows machine running Minecraft Java Edition. On a
   non-Windows native host, skip the `.bat` and either use `--install-now` (native, non-sandboxed
@@ -146,7 +146,7 @@ below, then run the build command in step 4.
 > valid; VERSION_TACTICS §2.D. What's never valid is a silent `playsound` scheduler passed off as
 > a redstone machine.)
 >
-> **Sound needs version-matched binaries — jar via `fetch_binaries.py`, resourcepack you supply.**
+> **Sound needs version-matched binaries — both are bundled and selected automatically.**
 > The datapack auto-adapts the *commands/format*, but the SOUND needs a **mod jar + `qzpno_mv.zip`
 > that match the MC version**; a mismatch makes the note blocks fall back to **vanilla** tones (faint
 > harp + booming basedrum). The **mod jar** is self-service: run
@@ -155,17 +155,12 @@ below, then run the build command in step 4.
 > (sha256-verified; **local hit = instant**), and prints a VERDICT (listened in-game vs only
 > bytecode-checked). The jar is per-version: `fabric.mod.json` pins a `"minecraft"` range and Fabric
 > **refuses to load a jar whose range doesn't cover the running game** — `fetch_binaries` selects the
-> right one (`redpiano-1.0.0-mc<ver>.jar`). The **`qzpno_mv.zip` resourcepack is NOT in the repo** —
-> its piano samples are **Salamander Grand Piano (CC-BY)**, which requires attribution on
-> redistribution that was never packaged into the zip, so it ships separately (see
-> [BINARIES.md](BINARIES.md) for the credit line; drums are CC0 and bass/lead/pad are
-> synthesized, so only the piano slice carries an attribution obligation); `fetch_binaries`
-> reports it as `separate` (not a failure) and prints how to build your own. Supply a
-> `qzpno_mv.zip` you already
-> have and derive a version-matched pack with **`build_resourcepack.py --from-zip <your qzpno_mv.zip>
-> --mc-version <ver>`** (a base rp-64 pack serves 1.21.7/1.21.8 directly; other versions get only
-> `pack.mcmeta` rewritten), or build from sample folders with `--samples-root`. Then feed the jar to
-> `prepare_all.py` via `--prebuilt-mod-jar` (+ `--fabric-api-jar`) and your pack via `--prebuilt-rp`.
+> right one (`redpiano-1.0.0-mc<ver>.jar`). The sampled resourcepack ships at
+> **`assets/qzpno_mv.zip`**. Its root `CREDITS.txt` attributes Salamander Grand Piano v3 / Alexander
+> Holm under CC BY 3.0; drums are VCSL CC0 and bass/lead/pad are synthesized. With no resourcepack
+> flags, `prepare_all.py` selects this asset and automatically rewrites `pack.mcmeta` for the target
+> version. Use `--prebuilt-rp` or `--samples-root` only when the user deliberately wants other
+> sounds. Then feed the jar to `prepare_all.py` via `--prebuilt-mod-jar` (+ `--fabric-api-jar`).
 > If the target version has **no jar in the manifest**, `fetch_binaries` says so and points you to
 > recompile (`mod_build.py --write` + Gradle) — a stripped sandbox usually can't build the jar, so
 > prefer a version the manifest already carries. See [BINARIES.md](BINARIES.md).
@@ -265,25 +260,12 @@ below, then run the build command in step 4.
      **Using PCL2 / HMCL with per-version isolation (版本隔离/独立)?** `--profile-dir` must point
      to that specific version's own folder — typically `.minecraft/versions/<你的版本>/` — **not**
      the shared `.minecraft` root. Full guidance: [QUICKSTART.md](QUICKSTART.md) §"--profile-dir".
-   - **Resourcepack source — pick exactly one of these four (开源仓库默认走第①条):**
-     1. **没有自己的音源?先跑 `python scripts/make_demo_samples.py`**(合成 103 个开放音源到
-        `assets/demo_samples/`,纯 numpy,不用网络/ffmpeg,无版权顾虑),再把
-        `--samples-root assets/demo_samples` 传给 `prepare_all.py`。**这是开源仓库的默认路径** ——
-        本仓库不随附 Salamander 采样,`poc/` 里也没有音源文件,所以「自动探测」不是一个可用的默认值。
-        **交付时必须如实告知用户:这是合成 demo 音色,不是 Salamander 真钢琴**;想要真钢琴音色见下面
-        第②条 + [BINARIES.md](BINARIES.md)。完整演示链见
-        [QUICKSTART.md](QUICKSTART.md) 顶部「只想先听个响」小节。
-     2. **`--prebuilt-rp <qzpno_mv.zip>`** — a `qzpno_mv.zip` **you already have** (the sampled
-        pack ships separately; build/derive one per [BINARIES.md](BINARIES.md), the piano samples
-        are Salamander Grand Piano under CC-BY and need attribution if you redistribute — see
-        BINARIES.md for the credit line).
-     3. **`--samples-root <dir>`** — a full samples folder you have of your own (containing
-        `samples_manifest_*.json` + `samples_*/*.ogg`), when it is **not** the demo folder from
-        option ①. Pass an absolute path or one relative to your shell's cwd — there is no
-        working auto-detect fallback in the open-source repo (the old `../../poc` auto-detect
-        assumed a private, sample-carrying checkout; the public repo's `poc/` ships **without**
-        any samples, so omitting `--samples-root` here will fail, not silently find something).
-     4. **`--skip-resourcepack`** — build the datapack/mod runtime **without** staging any
+   - **Resourcepack source — default to bundled; override only on purpose:**
+     1. **Default:** pass no resourcepack flag. `prepare_all.py` finds `assets/qzpno_mv.zip`, checks
+        it, and derives the correct version automatically.
+     2. **`--prebuilt-rp <zip>` / `--samples-root <dir>`:** use a replacement pack or the user's
+        own five-instrument sample library.
+     3. **`--skip-resourcepack`** — build the datapack/mod runtime **without** staging any
         resourcepack. **诚实后果(取决于装没装模组):** 装了 **RedPiano 模组**时 → **彻底静音**
         (模组的 mixin 会取消原版音符盒声音、改播 `qzpno:` 自定义事件，没有资源包=那个事件没有
         任何 `.ogg` 支撑=无声);**不装模组**时 → 原版 16 种音符盒音色。**它绝不会**"自己退回原版
@@ -329,21 +311,14 @@ below, then run the build command in step 4.
      installs them — see step 4). It does not copy into `<profile>` from a sandbox.
    - **the jar is one command** — `python scripts/fetch_binaries.py --mc-version <ver>`
      reads `binaries/binaries_manifest.json` and resolves the version's jar from the local
-     `binaries/` folder (sha256-verified; local hit is instant). It also reports the resourcepack
-     as `separate` (○) with self-supply guidance — that's expected, not an error. Its VERDICT tells
+     `binaries/` folder (sha256-verified; local hit is instant). It also verifies the bundled
+     resourcepack asset. Its VERDICT tells
      you whether that jar was **listened in-game** or only **check-jar clean** (so you know to listen
      once). If the manifest has **no jar for the version**, it says so and points you to build one.
-   - **resourcepack (you supply it — not in the repo)** — the sampled `qzpno_mv.zip` ships
-     separately because its piano samples (Salamander Grand Piano, CC-BY) need attribution on
-     redistribution that isn't packaged into the zip (see [BINARIES.md](BINARIES.md)). Provide your own and pass it as
-     `--prebuilt-rp`. Have a `qzpno_mv.zip`? derive a version-matched pack:
-     `build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver> --out <derived.zip>`
-     — rewrites only `pack.mcmeta` (rp_format + single/minmax shape from the version table), no
-     sample folder needed; a base rp-64 pack serves 1.21.7/1.21.8 directly. `prepare_all.py`
-     validates the rp_format matches, so a mismatch is caught either way. (Building from scratch —
-     `--samples-root <dir>` — is also supported and pure stdlib: it only **copies already-encoded
-     `.ogg`** into the zip, no ffmpeg. Prerequisite: a samples folder with `samples_manifest_*.json`
-     + `samples_*/*.ogg`; see BINARIES.md for sample licensing.)
+   - **resourcepack** — use bundled `assets/qzpno_mv.zip`; do not ask the user to locate one.
+     `prepare_all.py` automatically derives the target rp_format. If the asset is missing or its
+     hash is wrong, search the repository and target profile for another `qzpno_mv.zip`; only after
+     that fails should you rebuild from sample folders or ask the user for a replacement.
    - **mod** — pass `fetch_binaries`'s jar as `--prebuilt-mod-jar`. A stripped sandbox usually
      cannot run Gradle/JDK, so prefer the resolved jar. Only when the manifest lacks the version
      do you retarget (number-only within 1.21.x: `mod_build.py --write` + a Gradle build on a
@@ -355,16 +330,11 @@ below, then run the build command in step 4.
    installer (it does **not** and should **not** write into `C:\Minecraft` from a sandbox):
    `python scripts/prepare_all.py --midi <mid> --ns <ns> --origin X Z Y --mc-version <ver>
    --form swave --world-dir <profile>/saves/<world>/datapacks --profile-dir <profile>
-   [--samples-root <dir> | --prebuilt-rp <qzpno_mv.zip>]
    [--prebuilt-mod-jar <redpiano.jar>] [--fabric-api-jar <fabric-api.jar>] --dist dist`.
    `--world-dir`/`--profile-dir` are the **real** game paths — they get baked into the
-   generated `.bat`, not written to now. For **1.21.8 / 1.21.7**, pass the prebuilt
-   `--prebuilt-mod-jar` (ships in `binaries/`) plus a `--prebuilt-rp` you supply (the sampled
-   resourcepack is **not** in the repo — build/derive your own, see step 3), so no Gradle/JDK is
-   needed. No resourcepack yet? run `python scripts/make_demo_samples.py` and pass
-   `--samples-root assets/demo_samples` (see step 1's resourcepack option ①) — there is **no**
-   working auto-detect fallback in this open-source repo. Do not add `--skip-*` flags unless the
-   user explicitly asks for a partial artifact.
+   generated `.bat`, not written to now. Pass the prebuilt mod jar from `binaries/`; omit all
+   resourcepack flags to use the bundled sampled pack. Do not add `--skip-*` flags unless the user
+   explicitly asks for a partial artifact.
 
    > **⚠ `--origin` order is `X Z Y`, NOT `X Y Z`.** The in-game F3 debug screen shows coordinates
    > as `X Y Z` — copying them in that order swaps height and Z and puts the machine somewhere
@@ -388,17 +358,11 @@ below, then run the build command in step 4.
    four steps are the same — only `<ver>` changes:
    1. **Ask the user their MC version** (`<ver>`, e.g. 1.21.7 / 1.21.8 / 1.21.9).
    2. **`python scripts/fetch_binaries.py --mc-version <ver>`** — resolves the **jar** from the
-      local `binaries/` folder (local hit = instant; note its VERDICT re: listened vs
-      check-jar-only) and reports the resourcepack as `separate` (you supply it). No manifest jar
-      for `<ver>`? it tells you to build one (or pick a version that has one).
-   3. **Supply your own resourcepack** (not in the repo). From a `qzpno_mv.zip` you have, derive a
-      version-matched pack:
-      `python scripts/build_resourcepack.py --from-zip <your qzpno_mv.zip> --mc-version <ver>
-      --out dist/qzpno_mv.zip`. For 1.21.7/1.21.8 (both rp 64) you can use the base zip as-is; other
-      versions get only `pack.mcmeta` rewritten. (No `qzpno_mv.zip`? build from sample folders with
-      `--samples-root` — see BINARIES.md for sample licensing.)
-   4. **`prepare_all.py`** as below, with `--prebuilt-rp` / `--prebuilt-mod-jar` pointing at the
-      fetch/derive outputs. **Fabric API version note:** `binaries/` only bundles the **1.21.7**
+      local `binaries/` folder and verifies bundled `assets/qzpno_mv.zip`. No manifest jar for
+      `<ver>`? it tells you to build one (or pick a version that has one).
+   3. **`prepare_all.py`** as below, with `--prebuilt-mod-jar` pointing at the fetch output and no
+      resourcepack flag. It selects the bundled pack and converts its metadata automatically.
+      **Fabric API version note:** `binaries/` only bundles the **1.21.7**
       Fabric API jar in-repo; for any other `<ver>`, leave `--fabric-api-jar` unset (default
       `auto`) so `prepare_all.py` downloads the matching build from Modrinth automatically — this
       needs network. **Offline on a non-1.21.7 version?** you must supply your own matching
@@ -410,9 +374,8 @@ below, then run the build command in step 4.
    folder and a user on **Fabric 1.21.7**. Run it **from the `minecraft-redstone-music/`
    directory**, so `../binaries/…` resolves. Every path here is real — `--world-dir` and
    `--profile-dir` **must be the user's actual game paths (ask them first)**; the two shown are
-   only placeholders. The **jar + Fabric API** come from `binaries/`; the **`--prebuilt-rp` is a
-   resourcepack you supplied** (not in the repo — build it per step 3 first). With all three passed
-   explicitly, **no Modrinth / network is needed**:
+   only placeholders. The **jar + Fabric API** come from `binaries/`; the resourcepack comes from
+   bundled `assets/qzpno_mv.zip`. With these assets, **no Modrinth / network is needed**:
 
    > bash 语法（行尾 `\` 续行）；PowerShell 用户请用 Git Bash 运行，或把整条命令改写成不带 `\` 的单行。
 
@@ -425,15 +388,14 @@ below, then run the build command in step 4.
        --mc-version 1.21.7 \
        --world-dir  "<profile>/saves/<world>/datapacks" \
        --profile-dir "<profile>" \
-       --prebuilt-rp      dist/qzpno_mv.zip \
        --prebuilt-mod-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar \
        --fabric-api-jar   ../binaries/fabric-api-0.129.0+1.21.7.jar \
        --dist dist
    ```
 
    Notes: the **mod jar is the `mc1.21.7` one** (the `mc1.21.8` jar declares `~1.21.8` and Fabric
-   would reject it on a 1.21.7 game); a base rp-64 `qzpno_mv.zip` is the same for 1.21.7/1.21.8
-   (`--prebuilt-rp dist/qzpno_mv.zip` = the pack you built in step 3). If the supplied
+   would reject it on a 1.21.7 game); the bundled base rp-64 `qzpno_mv.zip` serves both
+   1.21.7/1.21.8. If the supplied
    jar is still named `…-mc1.21.7-UNVERIFIED.jar`, use that filename verbatim (the `-UNVERIFIED`
    just means "listen once to confirm"); optionally gate it first with
    `python scripts/mod_build.py --mc-version 1.21.7 --check-jar ../binaries/redpiano-1.0.0-mc1.21.7.jar`
@@ -572,10 +534,8 @@ steps by default; this section is a checklist, not a reason to stop and hand wor
    total silence.** The `pack_format` is version-specific (e.g. **64** for 1.21.8); a base
    `qzpno_mv.zip` is rp 64, and for any other version `scripts/build_resourcepack.py --from-zip`
    derives a matching pack from it (rp_format + shape from the version table, no re-encoding needed).
-   This zip is **not in the repo** — its piano samples (Salamander Grand Piano, CC-BY) need
-   attribution on redistribution that isn't packaged into the zip, so it ships separately; **you
-   supply your own** (build/derive it per [BINARIES.md](BINARIES.md), which has the credit line).
-   `fetch_binaries.py` resolves only the mod jar, not this pack.
+   The base zip ships at `assets/qzpno_mv.zip`; its `CREDITS.txt` carries the required Salamander
+   Grand Piano / Alexander Holm / CC BY 3.0 attribution. `fetch_binaries.py` verifies this asset.
 4. **tick80** is required for playback timing. **The user must manually type `/tick rate 80`
    in-game** before pressing `[play]` — the machine does **NOT** self-set it (auto-set via a
    command block was tested and does not work). Without it, playback runs **~4× too slow** and
@@ -586,11 +546,9 @@ steps by default; this section is a checklist, not a reason to stop and hand wor
    N ticks behind` (server overload can defeat tick80 even when it's set) — see step 4's
    in-game-order notes above for the full triage.
 
-> **Large binary assets bundled separately.** The prebuilt **RedPiano mod jar** and
-> **`qzpno_mv.zip`** resourcepack are large binaries and are **not** in this folder.
-> Bundle/distribute them alongside it — full obtain/build instructions are in
-> **[BINARIES.md](BINARIES.md)**. The text assets that *are* bundled here are
-> `assets/redpiano_map_multi.json` (103-block instrument map) and `assets/demo.mid`.
+> **Bundled runtime assets.** Prebuilt RedPiano jars ship in the repository's `binaries/` folder;
+> the attributed `qzpno_mv.zip`, 103-block map, and demo MIDI ship in this skill's `assets/`.
+> Keep the complete repository structure when distributing the skill.
 
 ## 音色与资源包(换音色 · 默认加载保障)
 

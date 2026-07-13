@@ -10,7 +10,7 @@
 # Install for the demo path:
 #   pip install -r requirements.txt -r requirements-demo.txt
 #
-# You do NOT need these for the normal workflow where you supply your own qzpno_mv.zip
+# You do NOT need these for the normal workflow, which uses bundled assets/qzpno_mv.zip
 # (--prebuilt-rp) or a sample folder (--samples-root); they are ONLY for generating the
 # self-contained demo samples.
 numpy>=1.21

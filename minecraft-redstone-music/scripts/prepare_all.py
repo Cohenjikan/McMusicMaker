@@ -8,7 +8,7 @@ NoteBlock bytecode, so a recompiled jar must be heard once before it is trusted)
 
   1. datapack        -> build_machine.py   (pack_format / folders / pack.mcmeta shape /
                                              sign dialect all auto-derived from the version)
-  2. resourcepack    -> build_resourcepack.py  (rp_format auto; needs --samples-root)
+  2. resourcepack    -> bundled assets/qzpno_mv.zip (auto-repacked for target rp_format)
   3. mod build-config-> mod_build.py --write    (sets gradle.properties + the loom line)
   4. mod jar        -> auto-detected Gradle + JDK 21, unless explicitly skipped
   5. mods install   -> copy RedPiano jar + matching Fabric API into the profile mods/
@@ -77,6 +77,12 @@ def _default_samples_root():
     """
     candidate = os.path.normpath(os.path.join(_HERE, "..", "..", "poc"))
     return candidate if _has_sample_manifests(candidate) else None
+
+
+def _bundled_resourcepack():
+    """Return the attributed sampled pack shipped as a skill asset, when present."""
+    candidate = os.path.normpath(os.path.join(_HERE, "..", "assets", "qzpno_mv.zip"))
+    return candidate if os.path.isfile(candidate) else None
 
 
 def _is_auto(value):
@@ -414,18 +420,12 @@ def _copy_prebuilt_resourcepack(src, out_zip, profile):
     lo, hi = _read_resourcepack_format(src)
     if not (lo <= profile.rp_format <= hi):
         actual = str(lo) if lo == hi else f"{lo}..{hi}"
-        raise RedPianoError(
-            f"这个资源包是格式 {actual}，但 MC {profile.mc_version} 需要 rp 格式 "
-            f"{profile.rp_format} —— 格式不符 MC 会【静默禁用】整个包，导致全静音。\n"
-            f"  修法(任选其一):\n"
-            f"    1) 用它换版本重打包(不用采样文件夹): python scripts/build_resourcepack.py "
-            f"--from-zip \"{src}\" --mc-version {profile.mc_version} --out <derived.zip>，再把 "
-            f"<derived.zip> 作为 --prebuilt-rp 传进来;\n"
-            f"    2) 若手头有全套采样文件夹，直接为本版本重建: python scripts/build_resourcepack.py "
-            f"--mc-version {profile.mc_version} --samples-root <采样目录>。\n"
-            f"  (prebuilt resourcepack {src} has rp format {actual}, MC {profile.mc_version} "
-            f"needs rp {profile.rp_format}.)"
-        )
+        print(f"  [auto] resourcepack format {actual} -> {profile.rp_format} "
+              f"for MC {profile.mc_version}")
+        from build_resourcepack import repack_from_zip
+        repack_from_zip(profile.mc_version, src, out_zip)
+        _warn_missing_events(out_zip)
+        return out_zip
     # Format is OK (MC will load it). Now warn — not fail — if it does not carry all 103
     # qzpno: events: a subset pack installs fine but leaves the uncovered blocks silent.
     _warn_missing_events(src)
@@ -479,10 +479,12 @@ def _run_main(argv=None):
                    help="pass --force-cap to build_machine (forceload auto-fold).")
     # resourcepack
     p.add_argument("--samples-root", default=None, dest="samples_root",
-                   help="folder with samples_manifest_*.json + samples_<inst>/ (ships "
-                        "separately). Auto-detects ../../poc in a full source checkout.")
+                   help="optional replacement sample library: folder with "
+                        "samples_manifest_*.json + samples_<inst>/. By default the bundled "
+                        "assets/qzpno_mv.zip is used.")
     p.add_argument("--prebuilt-rp", default=None, dest="prebuilt_rp",
-                   help="existing qzpno_mv.zip to copy instead of rebuilding from samples.")
+                   help="optional replacement qzpno_mv.zip. By default the bundled attributed "
+                        "pack is selected and repacked automatically for --mc-version.")
     p.add_argument("--skip-resourcepack", action="store_true", dest="skip_resourcepack",
                    help="explicitly skip the resourcepack step. Consequence: with the RedPiano "
                         "mod installed, note blocks go COMPLETELY SILENT (the mod remaps sound to "
@@ -566,13 +568,17 @@ def _run_main(argv=None):
         sys.stderr.write("error: choose either --samples-root or --prebuilt-rp, not both\n")
         return 2
     if not args.samples_root and not args.prebuilt_rp and not args.skip_resourcepack:
+        bundled_rp = _bundled_resourcepack()
         auto_samples = _default_samples_root()
-        if auto_samples:
+        if bundled_rp:
+            args.prebuilt_rp = bundled_rp
+            print(f"[auto] using bundled resourcepack: {args.prebuilt_rp}")
+        elif auto_samples:
             args.samples_root = auto_samples
             print(f"[auto] using samples-root: {args.samples_root}")
         else:
             sys.stderr.write(
-                "error: resourcepack is required. Pass --samples-root <dir> to build "
+                "error: bundled resourcepack is missing. Pass --samples-root <dir> to build "
                 "qzpno_mv.zip, --prebuilt-rp <zip> to install an existing pack, or "
                 "--skip-resourcepack only if a matching qzpno_mv.zip is already installed "
                 "and enabled.\n"

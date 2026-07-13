@@ -18,10 +18,11 @@ your target. The supported auto band is **1.21 … 1.21.10** (1.21.9 via min/max
 > *required* to just use the folder directly.
 >
 > **Clone the whole repo — this folder alone is not enough.** The scripts under `scripts/`
-> resolve sibling paths like `../binaries/` (prebuilt jars) and `../../poc` (sample sources)
+> resolve sibling paths like `../binaries/` (prebuilt jars)
 > relative to the repo root. **Do not copy just `minecraft-redstone-music/` out on its own** —
 > keep it inside the full repo checkout, or those lookups silently fail to find the prebuilt
-> binaries and sample sources (see [BINARIES.md](BINARIES.md)).
+> binaries (see [BINARIES.md](BINARIES.md)). The attributed resourcepack is bundled locally at
+> `assets/qzpno_mv.zip`.
 >
 > One OS caveat: the delivery chain (the generated **`DEPLOY_TO_GAME.bat` installer**) is
 > **Windows-only** (Minecraft Java's usual home). On a non-Windows **native host** (not a
@@ -122,33 +123,25 @@ python scripts/prepare_all.py --midi path/to/song.mid --form swave --ns mysong \
        --origin 0 0 255 --mc-version 1.21.8 \
        --world-dir "<profile>/saves/<world>/datapacks" \
        --profile-dir "<profile>" --dist dist \
-       [--samples-root path/to/poc | --prebuilt-rp path/to/qzpno_mv.zip] \
        [--prebuilt-mod-jar path/to/redpiano.jar] [--fabric-api-jar path/to/fabric-api.jar]
 ```
 
 `--world-dir`/`--profile-dir` are the **real** game paths; they get baked into the `.bat`, not
-written to now. In a full source checkout, `prepare_all.py` auto-detects `../../poc` as the
-sample root (anchored to `scripts/`, i.e. repo-root `poc/`; a hand-passed `--samples-root` is
-relative to your shell's cwd, so use `./poc` from the repo root or an absolute path). In a
-packaged skill bundle, pass `--samples-root` or `--prebuilt-rp`; otherwise it
-refuses to silently skip the resourcepack. Do not use `--skip-*` flags for normal handoff; a
+written to now. `prepare_all.py` automatically finds `assets/qzpno_mv.zip` and converts its
+metadata for the target version. Do not use `--skip-*` flags for normal handoff; a
 missing RedPiano jar or Fabric API means the runtime is **not ready**, not complete.
 
-**Resourcepack: pick exactly one.** `--samples-root <dir>` (build from a full samples folder),
-`--prebuilt-rp <qzpno_mv.zip>` (a pack you already have), or `--skip-resourcepack` (build without
-one). The honest effect of `--skip-resourcepack`: the machine plays either **vanilla note-block
+**Resourcepack: bundled by default.** Use `--samples-root <dir>` or `--prebuilt-rp <zip>` only to
+replace the included sounds. `--skip-resourcepack` builds without one. Its honest effect: the machine plays either **vanilla note-block
 timbres** or **total silence** (if `qzpno_mv` sound events are referenced but nothing matching is
 enabled in the world) — it is **not** a promise of RedPiano's sampled sound. Only use it when a
 matching `qzpno_mv.zip` is already installed and enabled in the target profile.
 
-> **Packaged bundle? Resolve the binaries with one command.** The prebuilt jars + shared
-> `qzpno_mv.zip` + a `binaries_manifest.json` ship in a sibling `binaries/` folder (`../binaries/`).
+> **Packaged bundle? Resolve the binaries with one command.** The prebuilt jars and manifest ship
+> in sibling `binaries/`; `qzpno_mv.zip` ships in this skill's `assets/`.
 > Run **`python scripts/fetch_binaries.py --mc-version <ver>`** — it picks the version-matched mod
-> jar and the resourcepack from `binaries/` (local-first, sha256-verified; remote once the repo is
-> public) and tells you whether that jar was listened in-game or only bytecode-checked. Pass its
-> outputs as `--prebuilt-rp` / `--prebuilt-mod-jar`. `qzpno_mv.zip` is `rp_format 64` (serves
-> 1.21.7/1.21.8 directly); for another version derive a matching pack with
-> `build_resourcepack.py --from-zip`. No manifest jar for `<ver>`? recompile. See
+> jar and verifies the resourcepack. Pass the jar as `--prebuilt-mod-jar`; the resourcepack needs
+> no flag. No manifest jar for `<ver>`? recompile. See
 > [BINARIES.md](BINARIES.md) and the golden path in [QUICKSTART.md](QUICKSTART.md) §2.
 
 **Install (the user's job, once):** tell the user to **double-click `dist\DEPLOY_TO_GAME.bat` in
@@ -195,7 +188,7 @@ and skip the `.bat`.
 | `scripts/deploy_bundle.py` | `--verify dist`: checks the `DEPLOY_RECEIPT.txt` handshake — the only proof the `.bat` really installed into the game |
 | `scripts/doctor.py` | `--dist dist [--profile-dir --world-dir --mc-version --ns]`: one-shot "no sound?" health check — numbered ✓/✗ list, a fix under each ✗, final VERDICT; all-green exits 0 |
 | `scripts/midi_report.py` | `--midi <mid> [--form]`: pre-build MIDI quality check (duration / family mix / est. dropped notes / est. footprint / one-line verdict) — run before choosing a form |
-| `scripts/fetch_binaries.py` | `--mc-version <ver>`: resolve the version-matched RedPiano jar + shared `qzpno_mv.zip` from the sibling `binaries/` folder (local-first, sha256-verified); `--gen-manifest <dir>` (re)writes the manifest |
+| `scripts/fetch_binaries.py` | `--mc-version <ver>`: resolve the version-matched RedPiano jar and verify bundled `assets/qzpno_mv.zip`; `--gen-manifest <dir>` (re)writes the manifest |
 | `scripts/build_resourcepack.py` | version-driven `qzpno_mv` resourcepack repack (`--mc-version`; `--from-zip` derives any 1.21.x pack from one shipped zip, or `--samples-root` builds from scratch — see BINARIES.md) |
 | `scripts/mod_build.py` | low-level helper: prints/applies the verified mod toolchain per `--mc-version`; `prepare_all.py` runs the build by default |
 | `scripts/redpiano_core.py`, `params_schema.py`, `generators/` | the engine (`VERSION_TABLE` in `redpiano_core.py` is the single source of truth for per-version facts) |
@@ -220,10 +213,10 @@ or environment variable is required for this path.
 **The full runtime pipeline (`prepare_all.py`, `fetch_binaries.py`, `mod_build.py`) needs the
 whole repo**, not just this folder — see the "Clone the whole repo" note near the top of this
 file. Those scripts auto-detect sibling paths **outside** `minecraft-redstone-music/`:
-`../../binaries` (prebuilt jars), `../../poc` (sample sources), `../../mod/redpiano` (mod
+`../../binaries` (prebuilt jars), `../../mod/redpiano` (mod
 source). If you copy only `minecraft-redstone-music/` elsewhere, those lookups won't find
-anything — the two large runtime binaries (RedPiano mod jar + `qzpno_mv.zip`) still need the
-sibling `binaries/`/`poc/` folders described in [BINARIES.md](BINARIES.md); they matter only
+anything — the RedPiano jars still need sibling `binaries/`, while `qzpno_mv.zip` stays inside
+this skill's `assets/`. These runtime assets matter only
 **in-game**, not to build a bare datapack.
 
 ## Scope

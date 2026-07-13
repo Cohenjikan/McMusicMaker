@@ -7,12 +7,10 @@ binaries a target version needs:
 
   * the version-matched RedPiano mod jar (``redpiano-1.0.0-mc<ver>.jar``) — the one binary
     that ships in the repo's ``binaries/`` folder and is resolved here; and
-  * the ``qzpno_mv.zip`` sampled-instrument resourcepack — piano samples are Salamander
-    Grand Piano (CC-BY, attribution required), drums are VCSL (CC0), and bass/lead/pad are
-    synthesized; the pack **ships separately, NOT in this repo** (see BINARIES.md).
-    This tool does not ship it; when a target version needs it, the tool prints exactly how
-    to supply your own (``build_resourcepack.py --from-zip <your qzpno_mv.zip>`` or
-    ``--samples-root <dir>``, or any other qzpno-shaped pack).
+  * the bundled ``assets/qzpno_mv.zip`` sampled-instrument resourcepack — piano samples
+    are Salamander Grand Piano (CC-BY 3.0 with attribution inside the zip), drums are VCSL
+    (CC0), and bass/lead/pad are synthesized. ``prepare_all.py`` derives the target
+    version's pack automatically when its rp_format differs from the 1.21.8 base.
 
 against a manifest (``binaries_manifest.json``) that ships INSIDE the repo snapshot
 next to a top-level ``binaries/`` folder. (Fabric API is NOT resolved here — it stays
@@ -30,10 +28,9 @@ Honesty: the manifest records per-jar ``bytecode_checked`` / ``listened`` flags.
 1.21.8 is ``listened`` (the single in-game anchor); every other jar is bytecode-clean but
 NOT yet heard, so the VERDICT tells you to listen once after installing.
 
-Samples are separate: the ``resourcepack`` manifest entry is now just a POINTER (it names
-``qzpno_mv.zip`` and carries ``in_repo: false``), because the sampled instruments are not
-in this repo. The report always tells you to build/supply the pack yourself; the exit code
-depends ONLY on the mod jar (the thing this repo actually ships).
+The ``resourcepack`` manifest entry records the bundled asset and its hash. The exit code
+still depends only on the mod jar because ``prepare_all.py`` owns resourcepack staging and
+version conversion.
 
 CLI:
   python scripts/fetch_binaries.py --mc-version 1.21.8
@@ -41,8 +38,8 @@ CLI:
   python scripts/fetch_binaries.py --gen-manifest ../../binaries   # (re)write the manifest
   python scripts/fetch_binaries.py --selftest
 
-Exit codes: 0 = the mod jar is present + verified (the resourcepack is user-supplied and
-never fails the run); 1 = the jar is missing/unfetchable; 2 = usage / manifest error.
+Exit codes: 0 = the mod jar is present + verified; 1 = the jar is missing/unfetchable;
+2 = usage / manifest error.
 Pure stdlib.
 """
 
@@ -225,16 +222,19 @@ def fetch(mc_version, dest, manifest_path, base_url=None):
         "listened": bool(jar_row.get("listened")),
     })
 
-    # resourcepack — piano=Salamander Grand Piano (CC-BY, attribution required), drums=VCSL
-    # (CC0), bass/lead/pad=synthesized; the pack ships SEPARATELY (not in this repo). We
-    # do NOT fail on it. If the manifest still carries a real in-repo entry with a sha (legacy
-    # snapshots) AND the file happens to be present locally, we verify it as a courtesy;
-    # otherwise we emit a 'separate' status with a clear self-supply pointer.
+    # resourcepack — a canonical rp64 base ships under the skill's assets/. prepare_all
+    # repacks it for other supported versions. Report and hash-check it here as a courtesy;
+    # jar resolution remains the only condition controlling this command's exit code.
     rp_file = rp.get("file") or RP_ZIP_NAME
     rp_in_repo = bool(rp.get("in_repo", False))
     rp_sha = rp.get("sha256")
-    if rp_in_repo and rp_sha and os.path.isfile(os.path.join(dest, rp_file)):
-        rstatus, rdetail = resolve_one(rp_file, rp_sha, dest, base_url)
+    bundled_rp = os.path.normpath(os.path.join(_HERE, "..", "assets", rp_file))
+    if rp_in_repo and rp_sha and os.path.isfile(bundled_rp):
+        actual = sha256_file(bundled_rp)
+        if actual == rp_sha:
+            rstatus, rdetail = "local", f"bundled skill asset: {bundled_rp} (sha256 verified)"
+        else:
+            rstatus, rdetail = "bad-hash", f"bundled asset sha256 mismatch: {actual}"
     else:
         rstatus, rdetail = "separate", _rp_supply_hint(rp_file, dest)
     items.append({
@@ -242,7 +242,7 @@ def fetch(mc_version, dest, manifest_path, base_url=None):
         "bytecode_checked": None, "listened": None,
     })
 
-    # ok = the jar resolved. The resourcepack is user-supplied, so 'separate' does NOT fail.
+    # ok = the jar resolved. Resourcepack status is reported separately; prepare_all owns staging.
     jar_item = items[0]
     ok = jar_item["status"] in ("local", "fetched")
     return {
@@ -252,14 +252,10 @@ def fetch(mc_version, dest, manifest_path, base_url=None):
 
 
 def _rp_supply_hint(rp_file, dest):
-    """The graceful-degradation guidance printed when the sampled resourcepack is not in the
-    repo (piano samples are Salamander Grand Piano CC-BY, drums are VCSL CC0, bass/lead/pad
-    are synthesized, and the pack ships separately). Names the exact self-supply
-    commands rather than crashing or pretending the pack is available."""
+    """Recovery guidance when a packaged snapshot is missing its bundled asset."""
     return (
-        f"{rp_file} is NOT in this repo — piano samples are Salamander Grand Piano (CC-BY, "
-        f"attribution required), drums are VCSL (CC0), and bass/lead/pad are synthesized; the "
-        f"pack ships SEPARATELY (see BINARIES.md). Supply your own pack:\n"
+        f"bundled skill asset assets/{rp_file} is missing. Re-clone the complete repository, "
+        f"or supply a replacement pack:\n"
         f"        • have your own qzpno_mv.zip? derive a version-matched pack with:\n"
         f"            python scripts/build_resourcepack.py --from-zip <your qzpno_mv.zip> "
         f"--mc-version <ver> --out dist/qzpno_mv.zip\n"
@@ -268,8 +264,7 @@ def _rp_supply_hint(rp_file, dest):
         f"--mc-version <ver> --out dist/qzpno_mv.zip\n"
         f"        • or drop any qzpno-shaped resourcepack into {dest} and pass it as "
         f"--prebuilt-rp.\n"
-        f"      (The mod jar above is all this repo ships; without a resourcepack you get "
-        f"vanilla note-block tones.)"
+        f"      (The official attributed pack normally ships with the skill.)"
     )
 
 
@@ -319,23 +314,18 @@ def gen_manifest(binaries_dir, base_url=None):
 
     names = sorted(os.listdir(binaries_dir))
 
-    # resourcepack — piano samples are Salamander Grand Piano (CC-BY, attribution required),
-    # drums are VCSL (CC0), and bass/lead/pad are synthesized; the pack ships SEPARATELY, so
-    # the zip is normally ABSENT from binaries/. That is NOT an error: we write a POINTER
-    # entry (in_repo=false, no sha) so the manifest documents the pack's shape without
-    # claiming to carry it. If a local qzpno_mv.zip IS present (a maintainer's own copy),
-    # we hash it and mark in_repo=true as a courtesy — but it must never be committed.
-    rp_path = os.path.join(binaries_dir, RP_ZIP_NAME)
+    # resourcepack — canonical attributed base lives under skill assets/, not binaries/.
+    rp_path = os.path.normpath(os.path.join(_HERE, "..", "assets", RP_ZIP_NAME))
     if os.path.isfile(rp_path):
         resourcepack = {
             "file": RP_ZIP_NAME,
             "rp_format": RP_BASE_FORMAT,
             "sha256": sha256_file(rp_path),
             "in_repo": True,
-            "note": ("local copy present (piano samples = Salamander Grand Piano, CC-BY, "
-                     "attribution required; drums = VCSL, CC0; bass/lead/pad = synthesized) "
-                     "— do NOT commit; other 1.21.x: repack pack.mcmeta with "
-                     "build_resourcepack.py --from-zip"),
+            "note": ("bundled attributed skill asset: piano = Salamander Grand Piano "
+                     "(CC-BY 3.0; CREDITS.txt included), drums = VCSL (CC0), "
+                     "bass/lead/pad = synthesized; prepare_all.py auto-repacks it for "
+                     "the target Minecraft version"),
         }
     else:
         resourcepack = {
@@ -343,10 +333,8 @@ def gen_manifest(binaries_dir, base_url=None):
             "rp_format": RP_BASE_FORMAT,
             "sha256": None,
             "in_repo": False,
-            "note": ("piano samples = Salamander Grand Piano (CC-BY, attribution required); "
-                     "drums = VCSL (CC0); bass/lead/pad = synthesized. The qzpno_mv "
-                     "resourcepack ships separately (not in this repo); supply your own via "
-                     "build_resourcepack.py --from-zip / --samples-root (see BINARIES.md)"),
+            "note": ("bundled assets/qzpno_mv.zip is missing from this snapshot; re-clone "
+                     "the complete repository or supply a replacement pack"),
         }
 
     # jars
@@ -384,7 +372,7 @@ def _print_report(report):
         if it["status"] in ("local", "fetched"):
             mark = "✓"
         elif it["status"] == "separate":
-            mark = "○"  # user-supplied, not a failure
+            mark = "○"  # recovery path for an incomplete snapshot
         else:
             mark = "✗"
         verified = ""
@@ -396,35 +384,32 @@ def _print_report(report):
             else:
                 verified = " [UNVERIFIED]"
         elif it["role"] == "resourcepack" and it["status"] == "separate":
-            verified = " [samples ship separately — supply your own]"
+            verified = " [bundled asset missing]"
         print(f"  {mark} {it['role']:12s} {it['name']}  ({it['status']}){verified}")
         if it["status"] in ("missing", "separate"):
             print(f"      -> {it['detail']}")
     if report["rp_note"]:
         print(f"  note       : {report['rp_note']}")
-    # VERDICT — hinges on the mod jar only (the resourcepack is user-supplied by design).
+    # VERDICT — hinges on the mod jar; prepare_all also checks/stages the resourcepack.
     if report["ok"]:
         jar = next(i for i in report["items"] if i["role"] == "mod jar")
         if jar["listened"]:
-            print("  VERDICT: mod jar present + verified; jar was listened in-game. Install "
-                  "it, supply your own qzpno_mv resourcepack (see ○ above), then confirm sound.")
+            print("  VERDICT: mod jar present + verified; jar was listened in-game. "
+                  "prepare_all.py will stage the bundled qzpno_mv resourcepack.")
         else:
             print("  VERDICT: mod jar present; jar is check-jar clean but NOT yet listened — "
-                  "install it, supply your own qzpno_mv resourcepack (see ○ above), then "
-                  "LISTEN ONCE to confirm sound/pitch.")
+                  "prepare_all.py will stage the bundled resourcepack; LISTEN ONCE to confirm "
+                  "sound/pitch.")
     else:
         print("  VERDICT: mod jar MISSING (see ✗ above). Supply it locally in the binaries "
-              "dir, or (once the repo is public) let base_url fetch it — then supply your own "
-              "resourcepack (see ○).")
+              "dir, or let base_url fetch it. The resourcepack is bundled separately in assets/.")
 
 
 def build_argparser():
     p = argparse.ArgumentParser(
         prog="fetch_binaries.py",
-        description="Resolve the version-matched RedPiano mod jar for a target MC version "
-                    "(local-first; remote once the repo is public). The qzpno_mv resourcepack "
-                    "(piano = Salamander Grand Piano CC-BY, drums = VCSL CC0, bass/lead/pad = "
-                    "synthesized) ships SEPARATELY (not in this repo) — supply your own.")
+        description="Resolve the version-matched RedPiano mod jar and verify the bundled "
+                    "assets/qzpno_mv.zip resourcepack for a target MC version.")
     p.add_argument("--mc-version", dest="mc_version", default=None,
                    help="target Minecraft version (selects the jar row from the manifest).")
     p.add_argument("--dest", default=None,
@@ -460,11 +445,11 @@ def main(argv=None):
         rpm = man["resourcepack"]
         if rpm.get("in_repo"):
             print(f"  resourcepack: {rpm['file']} (rp_format {rpm['rp_format']}, "
-                  f"LOCAL copy — piano=Salamander CC-BY/drums=VCSL CC0/bass-lead-pad="
-                  f"synthesized, do NOT commit)")
+                  f"bundled asset — piano=Salamander CC-BY 3.0 with CREDITS.txt, "
+                  f"drums=VCSL CC0, bass/lead/pad=synthesized)")
         else:
             print(f"  resourcepack: {rpm['file']} (rp_format {rpm['rp_format']}, "
-                  f"ships SEPARATELY — not in repo; supply your own)")
+                  f"MISSING bundled asset; re-clone or supply a replacement)")
         print(f"  jars        : {len(man['jars'])}")
         for ver in sorted(man["jars"]):
             row = man["jars"][ver]
@@ -495,9 +480,8 @@ def main(argv=None):
 # ── self-test ────────────────────────────────────────────────────────────────────────────
 
 def _selftest():
-    """tempfile-based: a fake manifest + fake files exercise gen-manifest (no zip) /
-    local-hit / hash-mismatch / separate-resourcepack / missing-version. Pure stdlib,
-    no network."""
+    """Exercise manifest generation, bundled-resourcepack verification, jar local hit,
+    hash mismatch, and missing-version handling. Pure stdlib; no network."""
     import tempfile
 
     def _write(path, data):
@@ -512,30 +496,26 @@ def _selftest():
         _write(os.path.join(binaries, jar_name), jar_bytes)
         jar_sha = hashlib.sha256(jar_bytes).hexdigest()
 
-        # (0) --gen-manifest with NO qzpno_mv.zip present (the normal open-source state):
-        #     it must NOT fail; it writes an in_repo=false pointer resourcepack entry and
-        #     still records the jar + marks 1.21.8 listened.
+        # (0) --gen-manifest records the skill's bundled attributed resourcepack.
         man = gen_manifest(binaries, base_url="http://127.0.0.1:0/nope")
         assert man["schema"] == 1 and man["jars"]["1.21.8"]["file"] == jar_name
         assert man["jars"]["1.21.8"]["listened"] is True, man["jars"]["1.21.8"]
         assert man["jars"]["1.21.8"]["sha256"] == jar_sha
-        assert man["resourcepack"]["in_repo"] is False, man["resourcepack"]
-        assert man["resourcepack"]["sha256"] is None, man["resourcepack"]
-        assert "separately" in man["resourcepack"]["note"].lower(), man["resourcepack"]
+        assert man["resourcepack"]["in_repo"] is True, man["resourcepack"]
+        assert man["resourcepack"]["sha256"] == sha256_file(
+            os.path.normpath(os.path.join(_HERE, "..", "assets", RP_ZIP_NAME)))
         manifest_path = os.path.join(binaries, MANIFEST_NAME)
-        print("ok: --gen-manifest with no qzpno_mv.zip skips the resourcepack (pointer entry)")
+        print("ok: --gen-manifest records bundled qzpno_mv.zip")
 
-        # (1) LOCAL HIT + SEPARATE RP: jar present -> ok True; resourcepack absent -> status
-        #     'separate' (NOT a failure) with a self-supply hint. No network.
+        # (1) jar and bundled resourcepack both verify locally. No network.
         rpt = fetch("1.21.8", binaries, manifest_path, base_url="http://127.0.0.1:0/nope")
         assert rpt["ok"] is True, rpt
         jar_item = next(i for i in rpt["items"] if i["role"] == "mod jar")
         rp_item = next(i for i in rpt["items"] if i["role"] == "resourcepack")
         assert jar_item["status"] == "local", jar_item
-        assert rp_item["status"] == "separate", rp_item
-        assert "ships SEPARATELY" in rp_item["detail"], rp_item
-        assert "build_resourcepack.py --from-zip" in rp_item["detail"], rp_item
-        print("ok: jar local hit -> ok; resourcepack 'separate' with self-supply guidance")
+        assert rp_item["status"] == "local", rp_item
+        assert "sha256 verified" in rp_item["detail"], rp_item
+        print("ok: jar and bundled resourcepack local hits")
 
         # (2) HASH MISMATCH: corrupt the local jar; with a dead base_url the remote repair
         #     also fails, so it must report missing (never silently trust a wrong hash) and
@@ -548,21 +528,7 @@ def _selftest():
         print("ok: local hash mismatch is rejected (reported missing, not trusted)")
         _write(os.path.join(binaries, jar_name), jar_bytes)  # restore for cleanliness
 
-        # (3) COURTESY LOCAL RP: if a maintainer DOES keep a private qzpno_mv.zip in the dir,
-        #     --gen-manifest marks it in_repo=true and fetch verifies it as 'local'.
-        rp_bytes = b"FAKE-QZPNO-MV-ZIP"
-        _write(os.path.join(binaries, RP_ZIP_NAME), rp_bytes)
-        man_local = gen_manifest(binaries, base_url="http://127.0.0.1:0/nope")
-        assert man_local["resourcepack"]["in_repo"] is True, man_local["resourcepack"]
-        assert man_local["resourcepack"]["sha256"] == hashlib.sha256(rp_bytes).hexdigest()
-        rpt3 = fetch("1.21.8", binaries, manifest_path, base_url="http://127.0.0.1:0/nope")
-        rp_item3 = next(i for i in rpt3["items"] if i["role"] == "resourcepack")
-        assert rp_item3["status"] == "local", rp_item3
-        os.remove(os.path.join(binaries, RP_ZIP_NAME))  # back to the shipped (no-zip) state
-        gen_manifest(binaries, base_url="http://127.0.0.1:0/nope")
-        print("ok: a maintainer's private qzpno_mv.zip is verified in_repo (never committed)")
-
-        # (4) MISSING VERSION: a version with no jar row raises a clear usage error.
+        # (3) MISSING VERSION: a version with no jar row raises a clear usage error.
         try:
             fetch("1.21.99", binaries, manifest_path)
             raise AssertionError("missing version should have raised")
