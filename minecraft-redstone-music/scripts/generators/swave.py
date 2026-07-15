@@ -446,11 +446,13 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     #    坐标 int() 失败原样放行, 所以 write_function 不会二次旋转 (刻意依赖, 勿改格式)。──
     #    几何: 双镜像轨 = 两轨正中(镜像对中点 Z 与 local_z 无关, 恒为
     #    (TRACK_Z[0]+TRACK_Z[-1]+PATH_ZSPAN-1)/2); 单轨 = 沿蛇形路径本身。
+    #    方块中心对齐: 方块 z 占 [z, z+1), 全部锚点 +0.5 取几何正中(坐标中线会向
+    #    -Z/-X 偏半格 — 多轨机器用户实测一边比另一边多一格, 同病同修)。
     if n_tracks > 1:
-        _cam_zmid = (TRACK_Z[0] + TRACK_Z[-1] + PATH_ZSPAN - 1) / 2.0
-        cam_pts = [(float(OX + xo), _cam_zmid) for (xo, _zo, _d) in pos]
+        _cam_zmid = (TRACK_Z[0] + TRACK_Z[-1] + PATH_ZSPAN) / 2.0
+        cam_pts = [(OX + xo + 0.5, _cam_zmid) for (xo, _zo, _d) in pos]
     else:
-        cam_pts = [(float(OX + xo), float(TRACK_Z[0] + (zo - PATH_ZMIN)))
+        cam_pts = [(OX + xo + 0.5, TRACK_Z[0] + (zo - PATH_ZMIN) + 0.5)
                    for (xo, zo, _d) in pos]
     (cam_body, camoff_body, cam_ladder, cam_buckets,
      n_cam_windows, cam_home) = core.cam_follow_plan(

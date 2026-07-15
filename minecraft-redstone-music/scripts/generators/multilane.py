@@ -302,10 +302,12 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # ── §E cam-follow plan (core.cam_follow_plan §1.6c, 与 swave 共享管线):
     #    直线多轨的几何最简 — 相机锚点 = 轨带中线(恒定 Z), x 随 cell 索引即前沿。
     #    坐标由 core 预旋转成 world 系浮点字面量, write_function 原样放行(勿改格式)。──
-    _cam_zmid = (min(lane_zs) + max(lane_zs)) / 2.0
+    # 方块中心中线: 方块 z 实体占 [z, z+1), 视觉正中 = (min+max+1)/2 — 用坐标中线
+    # (min+max)/2 会向 -Z 偏半格, 骑乘视角一边比另一边多一格(用户实测)。
+    _cam_zmid = (min(lane_zs) + max(lane_zs) + 1) / 2.0
     # 相机高度基准计入最高轨的垫高(lane_offsets 有 y 的阶梯机器, 相机不再贴着外侧高轨)。
     _cam_ybase = Y + max(int(L.get("y", 0)) for L in LANES)
-    cam_pts = [(float(OX + i), _cam_zmid) for i in range(ncells)]
+    cam_pts = [(OX + i + 0.5, _cam_zmid) for i in range(ncells)]
     (cam_body, camoff_body, cam_ladder, cam_buckets,
      n_cam_windows, cam_home) = core.cam_follow_plan(
         ns, cam_pts, arr, MUSIC_TICKS, _cam_ybase, params.get("start_dir", "+X"), OX, OZ,
