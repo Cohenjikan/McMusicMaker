@@ -304,7 +304,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     cam_pts = [(float(OX + i), _cam_zmid) for i in range(ncells)]
     (cam_body, camoff_body, cam_ladder, cam_buckets,
      n_cam_windows, cam_home) = core.cam_follow_plan(
-        ns, cam_pts, arr, MUSIC_TICKS, Y, params.get("start_dir", "+X"), OX, OZ)
+        ns, cam_pts, arr, MUSIC_TICKS, Y, params.get("start_dir", "+X"), OX, OZ,
+        height=_get(params, "cam_height", None),
+        back=_get(params, "cam_back", None),
+        dz=_get(params, "cam_dz", None))
 
     # ── protection (prosetup) barrier-shell geometry, author +X frame. None unless
     #    protection.enabled — every emission below is gated on prot_cfg so the OFF path

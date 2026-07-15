@@ -466,7 +466,9 @@ below, then run the build command in step 4.
         重按 `[play]` 重播时相机自动弹回起点。退出:按 `[stop]`(会 tp 回控制台自动下架)或
         `/function <ns>:camoff`。为什么不用飞行跟/tp 玩家:脉冲速度本就不恒定(中继器 1..4 档
         延迟 + 0 延迟 U 弯),人工飞必漂出模拟距离,tp 玩家又触发区块重发断音——骑乘实体走的是
-        客户端载具插值,每刻一小步即丝滑,这是二者的结合点。
+        客户端载具插值,每刻一小步即丝滑,这是二者的结合点。相机位置不合适(横向偏/太高/太贴脸)?
+        在 layout_designer 起点区调「跟拍相机 高/退/横移」或 params 里给 `cam_height`/`cam_back`/
+        `cam_dz`(默认自动取轨带中线)。
    > **⚠ 「完全没声」先跑一键体检 `doctor.py`, 再看这三项.** The fastest triage is
    > `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir <world>/datapacks
    > --mc-version <ver> --ns <ns>` — it prints a numbered ✓/✗ checklist (receipt present?

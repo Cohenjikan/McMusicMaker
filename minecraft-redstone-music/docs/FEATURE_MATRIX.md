@@ -175,7 +175,8 @@ front via the same `arr[]`/ELAPSED time base the kill plan uses (variable speed 
 repeater delays are 1..4). Client vehicle interpolation makes riding smooth; free mouse-look
 is preserved; replays snap the camera back to the start. Exit via **[stop]** or
 `/function <ns>:camoff`. Emitted as `cam`, `camoff`, `cam/step` (two-level ELAPSED ladder,
-~130 evals/tick) + `cam/c<n>` buckets; ~2 lines per 8 gt window.
+~130 evals/tick) + `cam/c<n>` buckets; ~2 lines per 8 gt window. Camera anchor is tunable via designer/params
+`cam_height` / `cam_back` / `cam_dz` (author frame; defaults 10/6/0 = auto track-band midline).
 
 ---
 

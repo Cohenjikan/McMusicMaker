@@ -92,6 +92,10 @@ FIELD_TABLE = {
     "lane_dz":            (2,            _MULTILANE),
     "lane_offsets":       (None,         _MULTILANE),
     "side_view":          (False,        "ignore"),  # render toggle, not a build param
+    # ── §E cam-follow tuning([跟拍]相机锚点微调, line 形态; inplace 无相机) ──
+    "cam_height":         (10,           _LINE),   # 相机悬停高度 (start_y + cam_height)
+    "cam_back":           (6.0,          _LINE),   # 相机沿作者系 -X 退后量
+    "cam_dz":             (0.0,          _LINE),   # 相机相对自动中线的横向偏移(作者系 +Z)
     # ── slice-only (Family B, OUT OF SCOPE) ───────────────────────────────
     "audio_file":     (None,  "scope-fail"),
     "audio_duration": (0,     "scope-fail"),
@@ -281,6 +285,12 @@ def assert_supported(params, form):
         raise RedPianoError(
             f"start_dir must be one of {' / '.join(VALID_DIRS)} (got {_get('start_dir')!r})"
         )
+
+    # §E cam-follow tuning: 数值旋钮([跟拍]相机锚点微调); 非数值硬失败, 不静默建坏相机。
+    for _ck in ("cam_height", "cam_back", "cam_dz"):
+        _cv = _get(_ck)
+        if _cv is not None and (isinstance(_cv, bool) or not isinstance(_cv, (int, float))):
+            raise RedPianoError(f"{_ck} must be a number (got {_cv!r})")
 
     # signal_tracks: multilane now consumes the FULL 3D offset (dx/dy/dz). Validate the
     # shape AND each element — a bad JSON (e.g. [1,2,3] instead of a list of objects)

@@ -260,6 +260,7 @@
       <label class="row"><span class="k" title="start_x:起点 X 坐标">起点 X (start_x)</span><input type="number" id="startX" value="0"></label>
       <label class="row"><span class="k" title="start_z:起点 Z 坐标">起点 Z (start_z)</span><input type="number" id="startZ" value="0"></label>
       <label class="row"><span class="k" title="start_y:起点 Y 高度">起点 Y (start_y)</span><input type="number" id="startY" value="255"></label>
+      <label class="row"><span class="k" title="cam_height/cam_back/cam_dz:[跟拍]相机盔甲架生成位置微调——高度=起点Y+cam_height, 退后=沿-X 距脉冲前沿, 横移=相对自动中线的Z偏移。默认自动取轨带中线; 实测发现相机偏了就调横移, 不用改机器">跟拍相机 高/退/横移</span><input type="number" id="camH" value="10" style="width:52px"><input type="number" id="camB" value="6" style="width:52px"><input type="number" id="camDz" value="0" style="width:52px"></label>
       <div class="note"><b>注意:</b>构建命令的坐标顺序是 <b>X Z Y</b>(先横向 X、再纵深 Z、最后高度 Y),别按 X Y Z 填。</div>
       <div class="seg" id="startDir">
         <button data-d="+X" class="on">→ +X</button>
@@ -349,11 +350,15 @@ let S={form:'swave', xrun:6, zmax:10, rad:3, gap:1, dual:true, sep:3, cells:3347
        // 和弦模式: 'radiate'(合并辐射, 当前) | 'multilane'(每声部一轨, 旧版24/30)
        chord_mode:'radiate', max_poly:7, lane_dz:2, lane_offsets:null, side_view:false,
        // 播放方法: 'redpiano'(真音符盒重演, 需MIDI+模组) | 'slice'(命令方块切片, 需MP3, 无模组)
-       method:'redpiano', audio_file:null, audio_duration:0};
+       method:'redpiano', audio_file:null, audio_duration:0,
+       // §E [跟拍]相机锚点微调(默认自动居中; camTouched=false 时不导出, 后端用默认)
+       cam_h:10, cam_back:6, cam_dz:0};
 let waypoints=null, drag=null, selWp=null, history=[], dragSnap=null, pan=null, viewInit=false;
 // 用户是否手动改过双轨间距 SEP。false=沿用后端按歌推导(PATH_ZSPAN+3, 安全)→导出时不写 track_sep;
 // true=用户执意用自定值→导出该值, 并在校验区提示按当前 MIDI 估算的安全下限。
 let sepTouched=false;
+// 用户是否动过[跟拍]相机微调; false=不导出 cam_* 键(后端自动居中)。
+let camTouched=false;
 let view={s:1,ox:0,oy:0};
 let synth=null, midiTimeline=null, playCell=null, songName='';   // ⓪ MIDI 实时播放 + 路线光标
 const PX=x=>view.ox+x*view.s, PZ=z=>view.oy+z*view.s;
@@ -532,8 +537,9 @@ function updateUI(m){
        // track_sep: 用户没动过 SEP 滑块时 **不导出**(后端按歌推导 PATH_ZSPAN+3, 真正的安全值);
        // 只有用户手动接管才写他的值。死值 3 曾必炸 dual_track_mirror collision, 故不再无条件导出。
        const sepFld=(!isML&&sepTouched)?{track_sep:S.sep}:{};
+       const camFld=camTouched?{cam_height:S.cam_h,cam_back:S.cam_back,cam_dz:S.cam_dz}:{};
        P={schema_version:SCHEMA_VERSION,song:songName,form:isML?'multilane':S.form,method:S.method,cells:S.cells,sounding:S.sound,XRUN:S.xrun,ZMAX:S.zmax,
-          line_width_radiate:3,fold_gap:1,dual_track_mirror:S.dual,...sepFld,base_block:S.base,  // 线宽/gap 未接入任何形态(none-yet), 恒写默认 3/1 否则后端拒收
+          line_width_radiate:3,fold_gap:1,dual_track_mirror:S.dual,...sepFld,...camFld,base_block:S.base,  // 线宽/gap 未接入任何形态(none-yet), 恒写默认 3/1 否则后端拒收
           start_x:S.start_x,start_z:S.start_z,start_y:S.start_y,start_dir:S.start_dir,
           chord_mode:S.chord_mode,...(isML?ml:{}),signal_tracks:isML?sig:null,...aud,
           result:{X_span:m.Xspan,Z_width:m.Zwidth,compression:+m.comp.toFixed(2),turns:m.turns,forceload_chunks:m.fl},
@@ -617,6 +623,8 @@ $('blkSearch').oninput=e=>renderBlkList(e.target.value);
 // ========== ③ 和弦模式 / ④ 起点·方向 / ⑦ 信号轨道 控制 ==========
 [['startX','start_x'],['startZ','start_z'],['startY','start_y']].forEach(([id,key])=>{
   $(id).oninput=e=>{S[key]=+e.target.value||0;render();};});
+[['camH','cam_h'],['camB','cam_back'],['camDz','cam_dz']].forEach(([id,key])=>{
+  $(id).oninput=e=>{S[key]=+e.target.value||0;camTouched=true;render();};});
 document.querySelectorAll('#startDir button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#startDir button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   S.start_dir=b.dataset.d;render();});
@@ -821,6 +829,9 @@ function applyImportedParams(P){
   // 载入的 JSON 若带 track_sep, 说明是手动指定值 → 标记接管, 保持导出该值; 否则维持"未接管"。
   if(P.track_sep!==undefined&&P.track_sep!==null){S.sep=num(P.track_sep,S.sep);sepTouched=true;}
   else sepTouched=false;
+  if(P.cam_height!==undefined||P.cam_back!==undefined||P.cam_dz!==undefined){
+    S.cam_h=num(P.cam_height,S.cam_h);S.cam_back=num(P.cam_back,S.cam_back);S.cam_dz=num(P.cam_dz,S.cam_dz);camTouched=true;}
+  else camTouched=false;
   // inplace 字段
   S.pal=Math.max(1,num(P.palette_noteblocks,S.pal));S.pcols=num(P.PCOLS,S.pcols);S.rowgap=num(P.ROWGAP,S.rowgap);
   // 多轨分布(multilane)字段
@@ -849,6 +860,7 @@ function applyImportedParams(P){
   setRN('pcols','pcols');setRN('rowgap','rowgap');setRN('maxPoly','max_poly');setRN('laneDz','lane_dz');
   $('cells').value=S.cells;$('sound').value=S.sound;$('pal').value=S.pal;
   $('startX').value=S.start_x;$('startZ').value=S.start_z;$('startY').value=S.start_y;
+  $('camH').value=S.cam_h;$('camB').value=S.cam_back;$('camDz').value=S.cam_dz;
   $('dual').checked=S.dual;
   $('blkCur').textContent=S.base;renderBlkList($('blkSearch').value);
   if(S.form==='custom'){S.form='swave';}   // 防御: custom 不应到这, 但若到了回退 swave

@@ -1516,7 +1516,8 @@ CAM_BUCKET_GT = 1024     # 两级派发桶宽(对齐 killzone 手法, 压低每�
 CAM_FIRE_OFS = 2         # playcore 后 fire 延迟 2t: arr=0 对应 ELAPSED≈2
 
 
-def cam_follow_plan(ns, pts, arr, music_ticks, y, start_dir, ox, oz):
+def cam_follow_plan(ns, pts, arr, music_ticks, y, start_dir, ox, oz,
+                    height=None, back=None, dz=None):
     """§1.6c cam-follow: 生成实体锁定跟拍的全部函数体。
 
     输入: ``pts[i]`` = 生成器给的 cell i 相机锚点(作者 +X 系, float (x,z));
@@ -1536,6 +1537,13 @@ def cam_follow_plan(ns, pts, arr, music_ticks, y, start_dir, ox, oz):
     渲染成带小数点的浮点字面量 — rotate_command 对非整数坐标 int() 失败原样放行,
     write_function 不会二次旋转。相对步进包在 execute 里, 本就不被旋转, 故 (dx,dz)
     同样预旋转。summon 不在 rotate_command 处理表内(任何方向都原样放行)。"""
+    # §E 可调旋钮(params: cam_height/cam_back/cam_dz)。None = 模块默认, 输出零差异;
+    # 自动中线判断不准时(用户实测有偏移的机器), 用 cam_dz 手动修正, 不必改几何代码。
+    height = CAM_HEIGHT if height is None else float(height)
+    if float(height).is_integer():
+        height = int(height)          # 整数高度保持整数字面量(与历史输出逐字节一致)
+    back = CAM_BACK if back is None else float(back)
+    dz = 0.0 if dz is None else float(dz)
     n = len(pts)
     a = [g + CAM_FIRE_OFS for g in arr]          # 到达刻 -> ELAPSED 域
     T = music_ticks + CAM_FIRE_OFS
@@ -1567,10 +1575,10 @@ def cam_follow_plan(ns, pts, arr, music_ticks, y, start_dir, ox, oz):
         lo = max(0, t - CAM_SMOOTH_GT)
         hi = min(T, t + CAM_SMOOTH_GT)
         cnt = hi - lo + 1
-        sx = (px[hi + 1] - px[lo]) / cnt - CAM_BACK   # 作者系 -X 退后
-        sz = (pz[hi + 1] - pz[lo]) / cnt
+        sx = (px[hi + 1] - px[lo]) / cnt - back       # 作者系 -X 退后
+        sz = (pz[hi + 1] - pz[lo]) / cnt + dz         # 中线 + 用户横向修正
         cam.append(rot_xz(sx, sz, start_dir, ox, oz))
-    CY = y + CAM_HEIGHT
+    CY = y + height
 
     # 3. 压缩成窗口: 窗口 k 覆盖 ELAPSED [s, e] (e = min(s+W-1, T))。tick s 一条绝对
     #    校准 tp(把上个窗口的舍入残差一并归零, 残差 ≤ 8gt x 5e-5 ≈ 4e-4 格, 不可见),

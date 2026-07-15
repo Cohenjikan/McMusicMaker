@@ -183,51 +183,8 @@ and skip the `.bat`.
 
 ### 游戏内指令表 (in-game command reference)
 
-以 `<ns>` 代指你的命名空间(`--ns` 传的名字)。下表是 **swave / straight / custom / multilane** 形态的
-完整控制面(multilane 的按钮是同功能中文标签,如 [直接播放]/[停止]);inplace 为其子集。**控制台按钮和 `/function` 等价** —— 按钮
-只是替你敲了那条 function。
-
-**① 每次进世界必敲(顺序固定):**
-
-| 指令 | 作用 |
-|---|---|
-| `/reload` | 注册数据包函数(装包后/改包后一次) |
-| `/tick rate 80` | **必须手敲**,机器不会自设;不敲=慢 4 倍。播完记得 `/tick rate 20` 还原 |
-| `/function <ns>:setup` | 建机器 + 控制台(等 "built" 提示) |
-
-**② 控制台按钮(= 对应 `/function <ns>:<名字>`):**
-
-| 按钮 | function | 作用 |
-|---|---|---|
-| [play] | `play` | 播放全曲(带 preload 门禁:沿线区块没加载完会拒绝并提示) |
-| [stop] | `stop` | 立停:静音 + 物理挖断行进脉冲(4gt 后自动补回),可立即重播 |
-| [overview] | `view` | 旁观者俯瞰全机 |
-| [preload] | `preload` | 沿线验证式预加载区块(非超平坦世界先按这个再 play) |
-| [poly gain] | `cfg/polytoggle` | 大和弦增益开关(防糊) |
-| [humanize] | `cfg/humantoggle` | 人性化微扰开关(去复印感) |
-| [音色展台] | `stand` | tp 到实体音色展台(按墙面石按钮试听;**勿右键音符盒**) |
-| [跟拍] | `cam` | **录制用**:骑上隐形相机架,play 后与脉冲前沿逐刻锁定(§E) |
-
-**③ 可选手敲:**
-
-| 指令 | 作用 |
-|---|---|
-| `/function <ns>:camoff` | 下相机架(中途退出跟拍;[stop] 也会自动下架) |
-| `/function <ns>:prosetup` | **代替** setup:先建屏障保护壳再建机器(需 params 开 protection) |
-| `/function <ns>:unprotect` | 只拆保护壳,机器保留 |
-| `/function <ns>:cleanup` | 整机拆除(分段清空 + 撤 forceload) |
-
-**④ 救援(异常后手动恢复):**
-
-| 指令 | 何时用 |
-|---|---|
-| `/function <ns>:perfoff` | 闪退/强杀后 gamerule 没恢复(生物不刷/庄稼不长)时手动还原 |
-| `/function <ns>:halt` | 万能复位:停一切状态机、清 schedule、撤相机架(不动已建好的机器) |
-
-**⑤ 内部函数,勿手动调用:** `load` `tick` `playgo` `playcore` `fire` `firestop` `done`
-`cutmel` `unsil` `killzone` `kill/*` `restore/*` `cam/step` `cam/c*` `buildstep` `bld/*`
-`placectl` `builddone` `startbuild` `clearstep` `clr/*` `cleardone` `pre/*` `pro/*`
-`unpro/*` `prostep` `unprostep` `probuilddone` `proenter` `perfon`。
+完整指令表(必敲三条 / 控制台按钮 / 可选 / 救援 / 内部勿调)统一维护在
+**[仓库根 README《游戏内指令表》](../README.md#游戏内指令表)** — 只留一份,不在此重复。
 
 ## What's in this folder
 
