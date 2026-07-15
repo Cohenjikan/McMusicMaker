@@ -173,7 +173,7 @@ and skip the `.bat`.
    4. `/function <ns>:setup` (wait for "built") → press the **[播放]/[play]** sign-button.
    5. (可选,录制/跟拍) 先按 **[跟拍]** 再按 [play]:玩家骑上隐形相机架,与脉冲前沿**逐游戏刻
       锁定**变速前进(鼠标可自由转头,配 Flashback 录制正好);退出按 [stop] 或
-      `/function <ns>:camoff`。swave/straight/custom 形态可用。
+      `/function <ns>:camoff`。swave/straight/custom/multilane 形态可用。
 
 > **No sound?** Run `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir
 > <world>/datapacks --mc-version <ver> --ns <ns>` first — it prints a ✓/✗ checklist with a fix
@@ -183,8 +183,8 @@ and skip the `.bat`.
 
 ### 游戏内指令表 (in-game command reference)
 
-以 `<ns>` 代指你的命名空间(`--ns` 传的名字)。下表是 **swave / straight / custom** 形态的
-完整控制面;multilane / inplace 的按钮为其子集。**控制台按钮和 `/function` 等价** —— 按钮
+以 `<ns>` 代指你的命名空间(`--ns` 传的名字)。下表是 **swave / straight / custom / multilane** 形态的
+完整控制面(multilane 的按钮是同功能中文标签,如 [直接播放]/[停止]);inplace 为其子集。**控制台按钮和 `/function` 等价** —— 按钮
 只是替你敲了那条 function。
 
 **① 每次进世界必敲(顺序固定):**

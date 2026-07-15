@@ -1499,6 +1499,127 @@ def kill_function_bodies(ns, plan):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §1.6c  Cam-follow (实体锁定跟拍) — swave/straight/custom 与 multilane 共享.
+#   玩家骑一个隐形盔甲架([跟拍]按钮), 盔甲架由 ELAPSED 时基逐刻搬运, 与脉冲前沿
+#   (arr[] 到达刻)锁死。为什么不是飞行/追路标: 脉冲速度本就不恒定(repeater 1..4 档
+#   延迟 + 0 延迟 U 弯), 只有"生成期已知的到达时刻表"能精确跟住; 且 ELAPSED 与红石
+#   同为服务端游戏刻, /tick rate 缩放、服务器卡顿都自动同相, 永不漂移。客户端对
+#   载具移动做插值(骑乘=丝滑来源), 每刻一次小步 tp 即平滑。
+#   分工: 几何(相机锚点 pts)由生成器提供 — core 不发明机器几何(与 §1.6b 同约)。
+# ─────────────────────────────────────────────────────────────────────────────
+
+CAM_HEIGHT = 10          # 相机悬停高度 (Y + CAM_HEIGHT)
+CAM_BACK = 6.0           # 相机沿作者系 -X 退后量, 让前沿保持在画面前方
+CAM_SMOOTH_GT = 16       # 前沿位置移动平均半窗(gt) — 抹平延迟档位突变与 U 弯瞬移
+CAM_WIN_GT = 8           # 压缩窗口: 每窗一条绝对校准 + 一条逐刻相对步进(零累积漂移)
+CAM_BUCKET_GT = 1024     # 两级派发桶宽(对齐 killzone 手法, 压低每刻命令评估数)
+CAM_FIRE_OFS = 2         # playcore 后 fire 延迟 2t: arr=0 对应 ELAPSED≈2
+
+
+def cam_follow_plan(ns, pts, arr, music_ticks, y, start_dir, ox, oz):
+    """§1.6c cam-follow: 生成实体锁定跟拍的全部函数体。
+
+    输入: ``pts[i]`` = 生成器给的 cell i 相机锚点(作者 +X 系, float (x,z));
+    ``arr[i]`` = 脉冲到达 cell i 的游戏刻(相对 fire, arrival_gt_by_cell)。产出:
+
+      cam_body      <ns>:cam — 召唤隐形盔甲架 + ride 上架([跟拍]按钮)
+      camoff_body   <ns>:camoff — 下架 + 撤实体
+      ladder        <ns>:cam/step — ELAPSED 桶梯子(tick 每刻在 PLAY==1 时调用)
+      buckets       {n: body} <ns>:cam/c<n> — 每 CAM_WIN_GT 一条绝对校准(matches s)
+                    + 一条逐刻相对步进(matches s+1..e); 绝对线消漂移, 相对线保平滑
+      n_windows     窗口数(stats)
+      cam_home      playcore 用: 重播前把相机架(若在场)归位到起点 — tick 先自增
+                    ELAPSED 再派发, 窗口 0 的 matches 0 绝对校准永不命中, 重播时
+                    必须显式归位(空选择器无害失败)
+
+    坐标处理: 锚点退后 CAM_BACK、抬高 CAM_HEIGHT 后用 rot_xz 预旋转到 world 系,
+    渲染成带小数点的浮点字面量 — rotate_command 对非整数坐标 int() 失败原样放行,
+    write_function 不会二次旋转。相对步进包在 execute 里, 本就不被旋转, 故 (dx,dz)
+    同样预旋转。summon 不在 rotate_command 处理表内(任何方向都原样放行)。"""
+    n = len(pts)
+    a = [g + CAM_FIRE_OFS for g in arr]          # 到达刻 -> ELAPSED 域
+    T = music_ticks + CAM_FIRE_OFS
+
+    # 1. 逐刻采样前沿位置(相邻 cell 间线性插值; trig/U 弯的 0 时长段位置瞬移,
+    #    交给下面的移动平均抹平)。
+    raw = []
+    j = 0
+    for t in range(T + 1):
+        while j + 1 < n and a[j + 1] <= t:
+            j += 1
+        if j + 1 < n and a[j] <= t:
+            span = a[j + 1] - a[j]
+            f = (t - a[j]) / span if span else 1.0
+            x = pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f
+            z = pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f
+            raw.append((x, z))
+        else:
+            raw.append(pts[j if a[j] <= t else 0])
+
+    # 2. ±CAM_SMOOTH_GT 移动平均(前缀和) -> 平滑轨迹; 同时退后 + 预旋转到 world 系。
+    px = [0.0]
+    pz = [0.0]
+    for (x, z) in raw:
+        px.append(px[-1] + x)
+        pz.append(pz[-1] + z)
+    cam = []
+    for t in range(T + 1):
+        lo = max(0, t - CAM_SMOOTH_GT)
+        hi = min(T, t + CAM_SMOOTH_GT)
+        cnt = hi - lo + 1
+        sx = (px[hi + 1] - px[lo]) / cnt - CAM_BACK   # 作者系 -X 退后
+        sz = (pz[hi + 1] - pz[lo]) / cnt
+        cam.append(rot_xz(sx, sz, start_dir, ox, oz))
+    CY = y + CAM_HEIGHT
+
+    # 3. 压缩成窗口: 窗口 k 覆盖 ELAPSED [s, e] (e = min(s+W-1, T))。tick s 一条绝对
+    #    校准 tp(把上个窗口的舍入残差一并归零, 残差 ≤ 8gt x 5e-5 ≈ 4e-4 格, 不可见),
+    #    tick s+1..e 逐刻相对步进。每刻恰好命中一条 -> 无双移、无跳变、无累积漂移。
+    W = CAM_WIN_GT
+    sel = f"@e[tag={ns}_cam,limit=1]"
+    buckets = {}
+    n_windows = 0
+    for s in range(0, T + 1, W):
+        e = min(s + W - 1, T)
+        bn = s // CAM_BUCKET_GT
+        body = buckets.setdefault(bn, [])
+        x0, z0 = cam[s]
+        body.append(f"execute if score ELAPSED {ns} matches {s} run "
+                    f"tp {sel} {x0:.3f} {CY} {z0:.3f}")
+        if e > s:
+            dx = (cam[e][0] - cam[s][0]) / (e - s)
+            dz = (cam[e][1] - cam[s][1]) / (e - s)
+            body.append(f"execute if score ELAPSED {ns} matches {s + 1}..{e} "
+                        f"as {sel} at @s run tp @s ~{dx:.4f} ~ ~{dz:.4f}")
+        n_windows += 1
+
+    ladder = []
+    for bn in sorted(buckets):
+        lo = bn * CAM_BUCKET_GT
+        hi = lo + CAM_BUCKET_GT - 1
+        ladder.append(f"execute if score ELAPSED {ns} matches {lo}..{hi} run "
+                      f"function {ns}:cam/c{bn}")
+
+    # 4. 上/下架。ride 为 Java 1.19.4+ 语法 (ride <骑手> mount <载具>)。
+    x0, z0 = cam[0]
+    cam_body = [
+        f"kill @e[tag={ns}_cam]",
+        f'summon minecraft:armor_stand {x0:.3f} {CY} {z0:.3f} '
+        f'{{Tags:["{ns}_cam"],Invisible:1b,NoGravity:1b,Invulnerable:1b}}',
+        f"ride @p mount @e[tag={ns}_cam,limit=1]",
+        f'tellraw @a "[{ns}] 跟拍就位(可自由转头)。按 [play] 后相机与脉冲前沿逐刻锁定;'
+        f'中途退出按 [stop] 或 /function {ns}:camoff。"',
+    ]
+    camoff_body = [
+        f"execute as @e[tag={ns}_cam] on passengers run ride @s dismount",
+        f"kill @e[tag={ns}_cam]",
+        f'tellraw @a "[{ns}] 跟拍已退出。"',
+    ]
+    cam_home = f"tp {sel} {x0:.3f} {CY} {z0:.3f}"
+    return cam_body, camoff_body, ladder, buckets, n_windows, cam_home
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §1.7  Tick-rate handling
 # ─────────────────────────────────────────────────────────────────────────────
 

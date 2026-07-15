@@ -297,6 +297,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     kill_plan = core.plan_kill_buckets(rep_kill_records, MUSIC_TICKS)
     kill_kz, kill_bodies, restore_bodies = core.kill_function_bodies(ns, kill_plan)
 
+    # ── §E cam-follow plan (core.cam_follow_plan §1.6c, 与 swave 共享管线):
+    #    直线多轨的几何最简 — 相机锚点 = 轨带中线(恒定 Z), x 随 cell 索引即前沿。
+    #    坐标由 core 预旋转成 world 系浮点字面量, write_function 原样放行(勿改格式)。──
+    _cam_zmid = (min(lane_zs) + max(lane_zs)) / 2.0
+    cam_pts = [(float(OX + i), _cam_zmid) for i in range(ncells)]
+    (cam_body, camoff_body, cam_ladder, cam_buckets,
+     n_cam_windows, cam_home) = core.cam_follow_plan(
+        ns, cam_pts, arr, MUSIC_TICKS, Y, params.get("start_dir", "+X"), OX, OZ)
+
     # ── protection (prosetup) barrier-shell geometry, author +X frame. None unless
     #    protection.enabled — every emission below is gated on prot_cfg so the OFF path
     #    is byte-for-byte identical to the no-protection build (zero-diff contract). ──
@@ -307,8 +316,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     flshell = []
     if prot_cfg is not None:
         # union footprint = the occupied-cell bbox ∪ the hand-placed console button row
-        # (PBX..PBX-12 in X, OZ-2..OZ in Z — those blocks live in `placectl`, NOT the grid).
-        cx0, cx1 = PBX - 12, PBX
+        # (PBX..PBX-14 in X, OZ-2..OZ in Z — those blocks live in `placectl`, NOT the grid).
+        cx0, cx1 = PBX - 14, PBX          # buttons span PBX-14 .. PBX (§E adds [跟拍])
         cz0, cz1 = OZ - 2, OZ
         bx0, bz0 = min(min(allx), cx0), min(min(allz), cz0)
         bx1, bz1 = max(max(allx), cx1), max(max(allz), cz1)
@@ -338,6 +347,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # §C [音色展台] — tp to the physical stand (real note blocks + wall buttons). Replaces the
     # old [试音 <fam>] playsound row: a stand cell drives the genuine mod+resourcepack path.
     ctl += lbtn(PBX - 12, f"function {ns}:stand", ["[音色展台]", "去实体展台", "按墙钮听真声", ""])
+    # §E [跟拍] — 骑上隐形相机架; play 后与脉冲前沿逐刻锁定, camoff/停止/halt 下架。
+    ctl += lbtn(PBX - 14, f"function {ns}:cam", ["[跟拍]", "骑相机跟脉冲", "先按我再play", ""])
 
     RESET = [f"scoreboard players set PLAY {ns} 0", f"scoreboard players set SIL {ns} 0"]
     SCHED_CLEAR = [f"schedule clear {ns}:{f}" for f in
@@ -359,7 +370,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                f"scoreboard players set ELAPSED {ns} 0",
                f"scoreboard players set ARM {ns} 1",
                # mute联动: a clean-slate halt is unmuted (rpcfg exists post-load).
-               "scoreboard players set mute rpcfg 0"]
+               "scoreboard players set mute rpcfg 0",
+               # §E cam-follow: clean slate 顺手撤掉相机架(kill 自动让骑手落地)。
+               f"kill @e[tag={ns}_cam]"]
             + SCHED_CLEAR + TRIG_CLEAR)
     dp.write_function("halt", HALT)
 
@@ -394,6 +407,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
            f'再[停止]自动恢复)。"']
         + core.bossbar_init_lines(ns, with_pro=prot_cfg is not None)
         + SCHED_CLEAR + TRIG_CLEAR
+        # §E cam-follow: 世界重进时撤掉上次会话遗留的相机架(实体会存档)。
+        + [f"kill @e[tag={ns}_cam]"]
         # protection: park PRO idle + record "no shell yet" (PROT=0). Gated -> load stays
         # zero-diff when protection is off.
         + ([f"scoreboard players set PRO {ns} -1",
@@ -418,6 +433,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     dp.write_function("tick",
         # pulse-kill clock: count game-ticks while playing so `stop` can time the kill (§1.6b).
         [f"execute if score PLAY {ns} matches 1 run scoreboard players add ELAPSED {ns} 1",
+         # §E cam-follow: 播放中且相机架在场时逐刻派发 (不跟拍=一条 if entity 失败, 零负担).
+         f"execute if score PLAY {ns} matches 1 if entity @e[tag={ns}_cam] "
+         f"run function {ns}:cam/step",
          # bossbar: mirror each driving score into its progress bar beside the dispatch.
          f"execute if score BLD {ns} matches 0.. run function {ns}:buildstep",
          core.bossbar_track(ns, "bld", "BLD"),
@@ -461,6 +479,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
          # zero the pulse-kill clock BEFORE the pulse starts (fire is 2t out) so ELAPSED
          # tracks this performance's front from t0 (§1.6b).
          f"scoreboard players set ELAPSED {ns} 0",
+         # §E cam-follow: 相机架(若在场)归位到起点 — tick 先自增 ELAPSED 再派发, 窗口 0
+         # 的 matches 0 绝对校准永不命中, 重播时必须在这里显式归位(空选择器无害失败)。
+         cam_home,
          f"scoreboard players set PLAY {ns} 1", f"scoreboard players set SIL {ns} 0",
          "scoreboard players set mute rpcfg 0",     # SIL 0 -> unmute mod note sounds
          SSTOP, f"schedule clear {ns}:cutmel"] + TRIG_CLEAR
@@ -505,6 +526,14 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     for _n, _body in restore_bodies.items():
         dp.write_function(f"restore/k{_n}", _body)
 
+    # ── §E cam-follow functions. cam = 上架([跟拍]按钮), camoff = 下架, cam/step =
+    #    ELAPSED 桶梯子(每刻由 tick 在 PLAY==1 且实体存在时调用), cam/c<n> = 桶体。──
+    dp.write_function("cam", cam_body)
+    dp.write_function("camoff", camoff_body)
+    dp.write_function("cam/step", cam_ladder)
+    for _n, _body in cam_buckets.items():
+        dp.write_function(f"cam/c{_n}", _body)
+
     dp.write_function("stop",
         # NB: NO leading RESET — PLAY must stay 1 until killzone runs (it guards on PLAY==1).
         # Mute the samples, clear the schedule + sources, THEN physically kill the marching
@@ -526,7 +555,11 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
            # the pulse is physically dead, so SIL only needs to cover the sample tails (~1s),
            # not the whole END_TICKS window (an old jar without mute is still fine at SIL 100t).
            f"schedule function {ns}:unsil 100t",
-           f"tp @a {PBX} {Y + 3} {OZ}", f'tellraw @a "[{ns}] 已停止,可立即重播。"'])
+           f"tp @a {PBX} {Y + 3} {OZ}",
+           # §E cam-follow: tp @a 已让骑手下架, 顺手撤掉相机架 — 否则不重按[跟拍]直接
+           # 重播时, 孤儿架会无人空跑一整首。
+           f"kill @e[tag={ns}_cam]",
+           f'tellraw @a "[{ns}] 已停止,可立即重播。"'])
     dp.write_function("unsil",
         [f"scoreboard players set SIL {ns} 0",
          "scoreboard players set mute rpcfg 0"])  # SIL 0 -> unmute
@@ -732,6 +765,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         # repeater-kill count (all lanes + signal tracks pooled).
         "kill_buckets": kill_plan.n_buckets,
         "kill_cells_max": kill_plan.cells_max,
+        # §E cam-follow: 压缩后的相机步进窗口数 / 派发桶数
+        "cam_windows": n_cam_windows,
+        "cam_buckets": len(cam_buckets),
         "stand_cells": stand_cells,
         "stand_truncated": stand_truncated,
         # protection (barrier-shell / prosetup) — off => enabled False, 0 segments, no bbox
