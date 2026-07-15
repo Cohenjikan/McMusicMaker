@@ -76,6 +76,19 @@ RFACE = {
 # continuous S-wave path: +X, +Z, +X, -Z, repeat (poc/48 L214).
 DIRS = [(1, 0), (0, 1), (1, 0), (0, -1)]
 
+# ── §E cam-follow (实体锁定跟拍) ────────────────────────────────────────────
+# 玩家骑一个隐形盔甲架([跟拍]按钮), 盔甲架由 ELAPSED 时基逐刻搬运, 与脉冲前沿
+# (arr[] 到达刻)锁死。为什么不是飞行/追路标: 脉冲速度本就不恒定(delay 1..4 档 +
+# 0 延迟 U 弯), 只有"生成期已知的到达时刻表"能精确跟住; 且 ELAPSED 与红石同为
+# 服务端游戏刻, /tick rate 缩放、服务器卡顿都自动同相, 永不漂移。
+# 客户端对载具移动做插值(骑乘=博主验证的丝滑来源), 每刻一次小步 tp 即平滑。
+CAM_HEIGHT = 10          # 相机悬停高度 (Y + CAM_HEIGHT)
+CAM_BACK = 6.0           # 相机沿作者系 -X 退后量, 让前沿保持在画面前方
+CAM_SMOOTH_GT = 16       # 前沿位置移动平均半窗(gt) — 抹平延迟档位突变与 U 弯瞬移
+CAM_WIN_GT = 8           # 压缩窗口: 每窗一条绝对校准 + 一条逐刻相对步进(零累积漂移)
+CAM_BUCKET_GT = 1024     # 两级派发桶宽(对齐 killzone 手法, 压低每刻命令评估数)
+CAM_FIRE_OFS = 2         # playcore 后 fire 延迟 2t: arr=0 对应 ELAPSED≈2
+
 
 def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     """Build the S-wave (marching-pulse) RedPiano machine. See module docstring."""
@@ -436,6 +449,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     kill_plan = core.plan_kill_buckets(rep_kill_records, MUSIC_TICKS)
     kill_kz, kill_bodies, restore_bodies = core.kill_function_bodies(ns, kill_plan)
 
+    # ── §E cam-follow plan: 从共享骨架 arr[]+pos[] 采样"ELAPSED→相机坐标"逐刻时刻表,
+    #    平滑后压缩成分段步进 + 绝对校准, 两级 ELAPSED 梯子派发 (细节见常量区注释)。
+    #    坐标在此处用 core.rot_xz 预旋转成 world 系浮点数 — rotate_command 对带小数点的
+    #    坐标 int() 失败原样放行, 所以 write_function 不会二次旋转 (刻意依赖, 勿改格式)。──
+    (cam_body, camoff_body, cam_ladder, cam_buckets,
+     n_cam_windows, cam_home) = _cam_plan(
+        ns, arr, pos, MUSIC_TICKS, n_tracks, TRACK_Z, PATH_ZMIN, PATH_ZSPAN,
+        OX, OZ, Y, start_dir)
+
     # ── protection (prosetup) barrier-shell geometry, author +X frame. None unless
     #    protection.enabled — every emission below is gated on prot_cfg so the OFF path
     #    is byte-for-byte identical to the no-protection build (zero-diff contract). ──
@@ -446,8 +468,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     flshell = []
     if prot_cfg is not None:
         # union footprint = machine+stand grid bbox ∪ the hand-placed console button row
-        # (PBX..PBX-12 in X, OZ-2..OZ in Z — those blocks live in `placectl`, NOT the grid).
-        cx0, cx1 = PBX - 12, PBX          # buttons span PBX-12 .. PBX
+        # (PBX..PBX-14 in X, OZ-2..OZ in Z — those blocks live in `placectl`, NOT the grid).
+        cx0, cx1 = PBX - 14, PBX          # buttons span PBX-14 .. PBX (§E adds [跟拍])
         cz0, cz1 = OZ - 2, OZ             # sign row (OZ-2) .. button row (OZ)
         bx0, bz0 = min(minx, cx0), min(minz, cz0)
         bx1, bz1 = max(maxx, cx1), max(maxz, cz1)
@@ -490,7 +512,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                f"scoreboard players set ELAPSED {ns} 0",
                f"scoreboard players set ARM {ns} 1",
                # mute联动: a clean-slate halt is unmuted (rpcfg exists post-load).
-               "scoreboard players set mute rpcfg 0"]
+               "scoreboard players set mute rpcfg 0",
+               # §E cam-follow: clean slate 顺手撤掉相机架(kill 自动让骑手落地)。
+               f"kill @e[tag={ns}_cam]"]
             + SCHED_CLEAR
             + TRIG_CLEAR)
     dp.write_function("halt", HALT)
@@ -521,6 +545,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # old [试音 <fam>] playsound row: a stand cell drives the genuine mod+resourcepack path.
     ctl += core.labeled_button(PBX - 12, Y, OZ, f"function {ns}:stand",
                                ["[音色展台]", "去实体展台", "按墙钮听真声"], sign_dialect=sd)
+    # §E [跟拍] — 骑上隐形相机架; play 后与脉冲前沿逐刻锁定, camoff/停止/halt 下架。
+    ctl += core.labeled_button(PBX - 14, Y, OZ, f"function {ns}:cam",
+                               ["[跟拍]", "骑相机跟脉冲", "先按我再play"], sign_dialect=sd)
 
     dp.write_function("load",
                       [f"scoreboard objectives add {ns} dummy",
@@ -549,6 +576,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                       + core.bossbar_init_lines(ns, with_pro=prot_cfg is not None)
                       + SCHED_CLEAR
                       + TRIG_CLEAR
+                      # §E cam-follow: 世界重进时撤掉上次会话遗留的相机架(实体会存档)。
+                      + [f"kill @e[tag={ns}_cam]"]
                       # protection: park PRO idle + record "no shell yet" (PROT=0). Only
                       # emitted when protection.enabled -> load stays zero-diff otherwise.
                       + ([f"scoreboard players set PRO {ns} -1",
@@ -583,6 +612,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "tick",
         # pulse-kill clock: count game-ticks while playing so `stop` can time the kill (§1.6b).
         [f"execute if score PLAY {ns} matches 1 run scoreboard players add ELAPSED {ns} 1",
+         # §E cam-follow: 播放中且相机架在场时逐刻派发 (不跟拍=一条 if entity 失败, 零负担).
+         f"execute if score PLAY {ns} matches 1 if entity @e[tag={ns}_cam] "
+         f"run function {ns}:cam/step",
          # bossbar: mirror each driving score into its progress bar right beside the dispatch.
          f"execute if score BLD {ns} matches 0.. run function {ns}:buildstep",
          core.bossbar_track(ns, "bld", "BLD"),
@@ -633,6 +665,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
          # zero the pulse-kill clock BEFORE the pulse starts (fire is 2t out) so ELAPSED
          # tracks this performance's front from t0 (§1.6b).
          f"scoreboard players set ELAPSED {ns} 0",
+         # §E cam-follow: 相机架(若在场)归位到起点 — tick 先自增 ELAPSED 再派发, 窗口 0
+         # 的 matches 0 绝对校准永不命中, 重播时必须在这里显式归位(空选择器无害失败)。
+         cam_home,
          f"scoreboard players set PLAY {ns} 1",
          f"scoreboard players set SIL {ns} 0",
          "scoreboard players set mute rpcfg 0",     # SIL 0 -> unmute mod note sounds
@@ -690,6 +725,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     for _n, _body in restore_bodies.items():
         dp.write_function(f"restore/k{_n}", _body)
 
+    # ── §E cam-follow functions. cam = 上架([跟拍]按钮), camoff = 下架, cam/step =
+    #    ELAPSED 桶梯子(每刻由 tick 在 PLAY==1 且实体存在时调用), cam/c<n> = 桶体
+    #    (绝对校准 + 相对步进)。坐标已预旋转 (见 §E plan 注释), write_function 放行。──
+    dp.write_function("cam", cam_body)
+    dp.write_function("camoff", camoff_body)
+    dp.write_function("cam/step", cam_ladder)
+    for _n, _body in cam_buckets.items():
+        dp.write_function(f"cam/c{_n}", _body)
+
     dp.write_function(
         "stop",
         # NB: NO leading RESET here — PLAY must stay 1 until killzone runs (it guards on
@@ -714,6 +758,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
            # not the whole END_TICKS window (an old jar without mute is still fine at SIL 100t).
            f"schedule function {ns}:unsil 100t",
            f"tp @a {PBX} {Y + 3} {OZ}",
+           # §E cam-follow: tp @a 已让骑手下架, 顺手撤掉相机架 — 否则不重按[跟拍]直接
+           # 重播时, 孤儿架会无人空跑一整首(复审 nit)。
+           f"kill @e[tag={ns}_cam]",
            f'tellraw @a "[{ns}] 已停止,可立即重播。"'])
 
     dp.write_function("unsil",
@@ -972,6 +1019,9 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         # repeater-kill count (both tracks pooled).
         "kill_buckets": kill_plan.n_buckets,
         "kill_cells_max": kill_plan.cells_max,
+        # §E cam-follow: 压缩后的相机步进窗口数 / 派发桶数
+        "cam_windows": n_cam_windows,
+        "cam_buckets": len(cam_buckets),
         "instr_distribution": dict(instr_count),
         "stand_cells": stand_cells,
         "stand_truncated": stand_truncated,
@@ -1012,6 +1062,117 @@ def _instr_of(n):
     names (pno/bass/lead/pad/drum); fall back to pno on anything unexpected."""
     fam = n.get("family", "pno")
     return fam if fam in ("pno", "bass", "lead", "pad", "drum") else "pno"
+
+
+def _cam_plan(ns, arr, pos, music_ticks, n_tracks, TRACK_Z, PATH_ZMIN, PATH_ZSPAN,
+              OX, OZ, Y, start_dir):
+    """§E cam-follow: 生成实体锁定跟拍的全部函数体。
+
+    输入是共享骨架的单一事实源: ``arr[i]`` = 脉冲到达 cell i 的游戏刻(相对 fire),
+    ``pos[i]`` = cell i 的作者系路径坐标。产出:
+
+      cam_body      <ns>:cam — 召唤隐形盔甲架 + ride 上架([跟拍]按钮)
+      camoff_body   <ns>:camoff — 下架 + 撤实体
+      ladder        <ns>:cam/step — ELAPSED 桶梯子(tick 每刻在 PLAY==1 时调用)
+      buckets       {n: body} <ns>:cam/c<n> — 每 CAM_WIN_GT 一条绝对校准(matches s)
+                    + 一条逐刻相对步进(matches s+1..e); 绝对线消漂移, 相对线保平滑
+      n_windows     窗口数(stats)
+
+    坐标处理: 相机锚点在作者 +X 系计算(双镜像轨 = 两轨中线, Z 为常数; 单轨 = 沿路径),
+    退后 CAM_BACK、抬高 CAM_HEIGHT 后用 core.rot_xz 预旋转到 world 系, 并渲染成带小数
+    点的浮点字面量 — rotate_command 对非整数坐标 int() 失败原样放行, write_function
+    不会二次旋转。相对步进包在 execute 里, 本就不被旋转, 故 (dx,dz) 同样预旋转。"""
+    n = len(pos)
+    # 1. 作者系相机锚点(每 cell 一个)。双轨: 镜像对的中点 Z 与 local_z 无关, 恒为
+    #    (TRACK_Z[0]+TRACK_Z[-1]+PATH_ZSPAN-1)/2 — 相机走两轨正中; 单轨: 沿路径本身。
+    if n_tracks > 1:
+        z_mid = (TRACK_Z[0] + TRACK_Z[-1] + PATH_ZSPAN - 1) / 2.0
+        pts = [(float(OX + xo), z_mid) for (xo, _zo, _d) in pos]
+    else:
+        pts = [(float(OX + xo), float(TRACK_Z[0] + (zo - PATH_ZMIN)))
+               for (xo, zo, _d) in pos]
+    a = [g + CAM_FIRE_OFS for g in arr]          # 到达刻 -> ELAPSED 域
+    T = music_ticks + CAM_FIRE_OFS
+
+    # 2. 逐刻采样前沿位置(相邻 cell 间线性插值; trig/U 弯的 0 时长段位置瞬移,
+    #    交给下面的移动平均抹平)。
+    raw = []
+    j = 0
+    for t in range(T + 1):
+        while j + 1 < n and a[j + 1] <= t:
+            j += 1
+        if j + 1 < n and a[j] <= t:
+            span = a[j + 1] - a[j]
+            f = (t - a[j]) / span if span else 1.0
+            x = pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f
+            z = pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f
+            raw.append((x, z))
+        else:
+            raw.append(pts[j if a[j] <= t else 0])
+
+    # 3. ±CAM_SMOOTH_GT 移动平均(前缀和) -> 平滑轨迹; 同时退后 + 预旋转到 world 系。
+    px = [0.0]
+    pz = [0.0]
+    for (x, z) in raw:
+        px.append(px[-1] + x)
+        pz.append(pz[-1] + z)
+    cam = []
+    for t in range(T + 1):
+        lo = max(0, t - CAM_SMOOTH_GT)
+        hi = min(T, t + CAM_SMOOTH_GT)
+        cnt = hi - lo + 1
+        sx = (px[hi + 1] - px[lo]) / cnt - CAM_BACK   # 作者系 -X 退后
+        sz = (pz[hi + 1] - pz[lo]) / cnt
+        cam.append(core.rot_xz(sx, sz, start_dir, OX, OZ))
+    CY = Y + CAM_HEIGHT
+
+    # 4. 压缩成窗口: 窗口 k 覆盖 ELAPSED [s, e] (e = min(s+W-1, T))。tick s 一条绝对
+    #    校准 tp(把上个窗口的舍入残差一并归零, 残差 ≤ 8gt x 5e-5 ≈ 4e-4 格, 不可见),
+    #    tick s+1..e 逐刻相对步进。每刻恰好命中一条 -> 无双移、无跳变、无累积漂移。
+    W = CAM_WIN_GT
+    sel = f"@e[tag={ns}_cam,limit=1]"
+    buckets = {}
+    n_windows = 0
+    for s in range(0, T + 1, W):
+        e = min(s + W - 1, T)
+        bn = s // CAM_BUCKET_GT
+        body = buckets.setdefault(bn, [])
+        x0, z0 = cam[s]
+        body.append(f"execute if score ELAPSED {ns} matches {s} run "
+                    f"tp {sel} {x0:.3f} {CY} {z0:.3f}")
+        if e > s:
+            dx = (cam[e][0] - cam[s][0]) / (e - s)
+            dz = (cam[e][1] - cam[s][1]) / (e - s)
+            body.append(f"execute if score ELAPSED {ns} matches {s + 1}..{e} "
+                        f"as {sel} at @s run tp @s ~{dx:.4f} ~ ~{dz:.4f}")
+        n_windows += 1
+
+    ladder = []
+    for bn in sorted(buckets):
+        lo = bn * CAM_BUCKET_GT
+        hi = lo + CAM_BUCKET_GT - 1
+        ladder.append(f"execute if score ELAPSED {ns} matches {lo}..{hi} run "
+                      f"function {ns}:cam/c{bn}")
+
+    # 5. 上/下架。summon 不在 rotate_command 处理表内(任何方向都原样放行), 坐标必须
+    #    在这里给 world 系成品; ride 为 Java 1.19.4+ 语法 (ride <骑手> mount <载具>)。
+    x0, z0 = cam[0]
+    cam_body = [
+        f"kill @e[tag={ns}_cam]",
+        f'summon minecraft:armor_stand {x0:.3f} {CY} {z0:.3f} '
+        f'{{Tags:["{ns}_cam"],Invisible:1b,NoGravity:1b,Invulnerable:1b}}',
+        f"ride @p mount @e[tag={ns}_cam,limit=1]",
+        f'tellraw @a "[{ns}] 跟拍就位(可自由转头)。按 [play] 后相机与脉冲前沿逐刻锁定;'
+        f'中途退出按 [stop] 或 /function {ns}:camoff。"',
+    ]
+    camoff_body = [
+        f"execute as @e[tag={ns}_cam] on passengers run ride @s dismount",
+        f"kill @e[tag={ns}_cam]",
+        f'tellraw @a "[{ns}] 跟拍已退出。"',
+    ]
+    # playcore 用: 重播前把相机架(若在场)归位到起点 — 见 build() 内注释。
+    cam_home = f"tp {sel} {x0:.3f} {CY} {z0:.3f}"
+    return cam_body, camoff_body, ladder, buckets, n_windows, cam_home
 
 
 def _layout_swave(seq, XRUN, ZMAX, SEGLENS):

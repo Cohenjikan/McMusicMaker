@@ -168,6 +168,15 @@ In-game: `/reload`, then `/function <ns>:setup` (forceload + build), wait for "b
 type `/tick rate 80` manually (the machine does NOT set it), then press the
 **[播放]/[play]** sign-button.
 
+**Cam-follow (§E, swave/straight/custom only, not multilane/inplace):** the console's
+**[跟拍]** button mounts the player on an invisible armor-stand camera; after **[play]**
+the stand is tp'd **every game tick** along the track midline, phase-locked to the pulse
+front via the same `arr[]`/ELAPSED time base the kill plan uses (variable speed by design —
+repeater delays are 1..4). Client vehicle interpolation makes riding smooth; free mouse-look
+is preserved; replays snap the camera back to the start. Exit via **[stop]** or
+`/function <ns>:camoff`. Emitted as `cam`, `camoff`, `cam/step` (two-level ELAPSED ladder,
+~130 evals/tick) + `cam/c<n>` buckets; ~2 lines per 8 gt window.
+
 ---
 
 ## Known constraints

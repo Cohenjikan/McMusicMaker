@@ -459,6 +459,14 @@ below, then run the build command in step 4.
         > 连续按时看到"机器复位中,约1秒后再按"提示属正常复位锁(ARM lock),稍等即可,不是 bug。
      8. (展示用,可选) 控制台后方有一个 **`[音色展台]`** 按钮,按下会 tp 到一座实体展台逐格试听
         真实发声路径——**⚠ 别右键展台里的音符盒,会改音高毁掉展品,只用侧面石按钮试听**。
+     9. (录制/跟拍,可选) 控制台最左有一个 **`[跟拍]`** 按钮(swave/straight/custom 形态):按下把
+        玩家骑上一个隐形盔甲架相机,**再按 `[play]`** 后相机沿两轨正中(单轨=沿路径)与脉冲前沿
+        **逐游戏刻锁定**前进——不是匀速,是按生成期算好的"到达时刻表"变速跟随,tick rate 缩放和
+        服务器卡顿都自动同相,不会漂。骑乘期间**鼠标可自由转头**(适合手持录屏或 Flashback);
+        重按 `[play]` 重播时相机自动弹回起点。退出:按 `[stop]`(会 tp 回控制台自动下架)或
+        `/function <ns>:camoff`。为什么不用飞行跟/tp 玩家:脉冲速度本就不恒定(中继器 1..4 档
+        延迟 + 0 延迟 U 弯),人工飞必漂出模拟距离,tp 玩家又触发区块重发断音——骑乘实体走的是
+        客户端载具插值,每刻一小步即丝滑,这是二者的结合点。
    > **⚠ 「完全没声」先跑一键体检 `doctor.py`, 再看这三项.** The fastest triage is
    > `python scripts/doctor.py --dist dist --profile-dir <profile> --world-dir <world>/datapacks
    > --mc-version <ver> --ns <ns>` — it prints a numbered ✓/✗ checklist (receipt present?
