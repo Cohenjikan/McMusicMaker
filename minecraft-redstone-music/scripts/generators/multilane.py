@@ -287,8 +287,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     MUSIC_TICKS = (MAXTICK + OFFSET) * 2
     END_TICKS = MUSIC_TICKS + 200
     PBX = OX - 3
-    CAMX = OX + (max(allx) - min(allx)) // 2
-    CAMZ = OZ + (max(allz) - min(allz)) // 2
+    # §E-fix: 俯瞰点对准轨带本体中点。占用 bbox 会被音色展台(-Z/-X 侧)拽偏, 旧式
+    # OZ+(span//2) 在轨带不从 OZ 起步时也跑偏(olk 实测 z=33, 轨带中心其实是 23)。
+    CAMX = OX + ncells // 2
+    CAMZ = (min(lane_zs) + max(lane_zs)) // 2
 
     # ── deterministic pulse-kill plan (§1.6b): bucket every chain's (lane + signal-track)
     #    repeater cells by the ELAPSED window that punches them to air on stop. Build-time
@@ -301,10 +303,12 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     #    直线多轨的几何最简 — 相机锚点 = 轨带中线(恒定 Z), x 随 cell 索引即前沿。
     #    坐标由 core 预旋转成 world 系浮点字面量, write_function 原样放行(勿改格式)。──
     _cam_zmid = (min(lane_zs) + max(lane_zs)) / 2.0
+    # 相机高度基准计入最高轨的垫高(lane_offsets 有 y 的阶梯机器, 相机不再贴着外侧高轨)。
+    _cam_ybase = Y + max(int(L.get("y", 0)) for L in LANES)
     cam_pts = [(float(OX + i), _cam_zmid) for i in range(ncells)]
     (cam_body, camoff_body, cam_ladder, cam_buckets,
      n_cam_windows, cam_home) = core.cam_follow_plan(
-        ns, cam_pts, arr, MUSIC_TICKS, Y, params.get("start_dir", "+X"), OX, OZ,
+        ns, cam_pts, arr, MUSIC_TICKS, _cam_ybase, params.get("start_dir", "+X"), OX, OZ,
         height=_get(params, "cam_height", None),
         back=_get(params, "cam_back", None),
         dz=_get(params, "cam_dz", None))
