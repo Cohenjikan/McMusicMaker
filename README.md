@@ -144,9 +144,11 @@ agent 完成构建后，会在 `dist` 文件夹里准备一个 `DEPLOY_TO_GAME.b
 | 指令 | 作用 |
 |---|---|
 | `/function <ns>:camoff` | 中途退出跟拍([stop] 也会自动下架) |
-| `/function <ns>:prosetup` | 代替 setup:先建屏障保护壳再建机器(需 params 开 protection) |
+| `/function <ns>:prosetup` | 保护版 setup:先给整台机器的施工区套一层封闭保护壳,再自动建机器,适合多人世界防误闯/误拆 |
 | `/function <ns>:unprotect` | 只拆保护壳,机器保留 |
 | `/function <ns>:cleanup` | 整机拆除(分段清空+撤 forceload) |
+
+> **想用 `prosetup` 不用自己改参数:** 直接告诉 agent「启用 prosetup」即可。agent 会在生成参数中开启 `protection`;这个功能默认关闭,未启用时数据包里不会生成 `prosetup` / `unprotect` 指令。
 
 **④ 出问题时的救援:**
 
