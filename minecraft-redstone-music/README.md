@@ -1,4 +1,10 @@
-# minecraft-redstone-music
+# minecraft-redstone-music — ⚡ uniform-straight 实验 fork
+
+> **这是匀速实验分支**(上游在 `Desktop\McMusicMaker`):默认 `--form straight` +
+> `pace=uniform`(匀速跑道)。脉冲前沿与跟拍相机全程恒速,休止占格不压缩——
+> 用于产出匀速视频素材,并重验上游"机器长=过载断音"的旧红线。
+> 音频时序与上游 compressed **零差异**(grid=1);`--grid 2/4` 可换更短机器,
+> `--pace compressed` 完全回退上游行为。详见 SKILL.md 顶部 FORK NOTE。
 
 Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**. The playable
 runtime is a **datapack + enabled `qzpno_mv` resourcepack + RedPiano mod + Fabric API**:

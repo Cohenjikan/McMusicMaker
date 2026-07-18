@@ -22,6 +22,27 @@ description: >-
 
 # Minecraft Redstone Music (Family A — RedPiano)
 
+> ## ⚡ FORK NOTE — uniform-straight 实验分支 (agent 必读)
+>
+> 本 fork 的**默认形态 = `straight`(直线型)+ `pace=uniform`(匀速跑道,grid=1)**,
+> 用于两件事:① 产出**匀速素材**(脉冲前沿/跟拍相机全程恒速,对齐社区大佬视频的观感);
+> ② **重验上游的 forceload/TPS 红线** —— 上游为省地皮把间隔用 delay-4 打包(变速),
+> 本 fork 故意不压缩,休止占格,机器更长,专门看"过载=断音"的旧结论今天还成不成立。
+>
+> 对 agent 的三条硬指令:
+> 1. 用户没有明确指定形态时,**默认 `--form straight`**(不是 inplace/swave);
+>    pace 不用传,schema 默认已是 uniform grid=1(对 compressed 零音频损失)。
+> 2. dry-run 报告里把 `pacing`/`cells`/`forceload` 三行**原样念给用户**,
+>    超 soft cap 时提示三个选项:`--grid 2/4`(量化换半长/四分之一长)、
+>    `--pace compressed`(回退旧行为)、换 `swave` 折叠。**不要自作主张回退**——
+>    这个 fork 的实验目的就是硬装直线机看会不会炸。
+> 3. 进游戏实测后,把结果(TPS/断音/相机是否匀速)记回 `docs/history/DEVLOG.md`。
+>
+> 上游(压缩默认)在 `C:\Users\Cohen\Desktop\McMusicMaker`;本 fork 改动集中在
+> `generators/swave.py` §2 时间轴、`params_schema.py`(pace/grid 字段)、
+> `build_machine.py`(--pace/--grid 旗标)。multilane 暂不支持 uniform(会在
+> WARNINGS 里声明)。
+
 ## 两条腿:先判断走哪条路 (READ FIRST)
 
 This skill is a **skill, not a one-size tool** — it plays a MIDI as redstone/note-block
@@ -221,11 +242,11 @@ below, then run the build command in step 4.
    >
    > | 参数值 | 对中文用户说 | 一句话解释 |
    > |---|---|---|
-   > | `inplace` | 原地紧凑型 | 占地小、不随歌曲变长,长曲首选 |
-   > | `swave` | S形折线型 | 默认推荐,脉冲沿 S 形巡游、灯流好看 |
-   > | `straight` | 直线型 | 一条直线跑到底,占地最长 |
+   > | `straight` | 直线型 | **本 fork 默认**:一条匀速跑道跑到底,拍素材首选,占地最长 |
+   > | `swave` | S形折线型 | 脉冲沿 S 形巡游、灯流好看;直线太长时的折叠方案 |
+   > | `inplace` | 原地紧凑型 | 占地小、不随歌曲变长,只想听不想拍时的省心选 |
    > | `custom` | 自定义路线 | 用户自己在设计器里画走线 |
-   > | `multilane` | 多轨并行型 | 每个声部一条并行轨道,列对齐壮观 |
+   > | `multilane` | 多轨并行型 | 每个声部一条并行轨道,列对齐壮观(暂不支持匀速) |
    >
    > 另:根 README 的「开场怎么说」小节提供了 5 条可复制的开场提示词,用户很可能照着它开场——
    > **提示词里已给出的信息(版本/存档路径/意图)不要再重复问**。
@@ -505,12 +526,16 @@ Five forms share one MIDI→resolve→layout→melody-cut→emit pipeline. Pick 
 the full capability table, per-form verified status, and the 6-stage pipeline are in the
 authoritative reference — **don't re-derive them here**:
 
-- **`inplace`** — in-place palette, tiny footprint, **user-verified "特别好"**; functionally
-  complete but tested in-game fewer times than `swave`. The default.
+- **`straight`** — long constant-speed runway; **THE FORK DEFAULT** (uniform pacing,
+  filming-grade 匀速 front). Longest footprint — that stress test is the point of this fork.
 - **`swave`** — marching-pulse S-wave with the "playhead travels the line" effect;
-  **tested in-game multiple times and confirmed working**. Offer when the user wants the animation.
-- **`straight` / `custom` / `multilane`** — long line / drawn waypoint route / one lane per
-  voice. All v1, geometry-confirmed. `custom` and `multilane` need a designer `--params` JSON.
+  **tested in-game multiple times and confirmed working**. The fold-down option when a
+  straight runway is too long; uniform pacing applies here too (行内匀速, U 弯瞬移).
+- **`inplace`** — in-place palette, tiny footprint, **user-verified "特别好"**; the
+  upstream default, for listening-only sessions (no pulse, nothing to film).
+- **`custom` / `multilane`** — drawn waypoint route / one lane per voice. All v1,
+  geometry-confirmed; both need a designer `--params` JSON. multilane is compressed-only
+  (a WARNING says so) — don't offer it for 匀速素材.
 
 → **Capability matrix + pipeline + known constraints:** [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
 (authoritative single source of truth; supersedes DEVLOG). Multi-instrument uses the 103-block

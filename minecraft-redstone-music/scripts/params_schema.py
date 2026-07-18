@@ -92,6 +92,15 @@ FIELD_TABLE = {
     "lane_dz":            (2,            _MULTILANE),
     "lane_offsets":       (None,         _MULTILANE),
     "side_view":          (False,        "ignore"),  # render toggle, not a build param
+    # ── marching-pulse pacing(匀速 fork 新增; swave/straight/custom)──────────
+    # pace: "uniform" = 匀速跑道 — 每 grid 红石刻恒定 [rep(grid)+槽位格] 2 格,
+    #       休止占格不压缩, 脉冲前沿/跟拍相机全程恒速(拍素材用; 本 fork 默认)。
+    #       "compressed" = 上游旧默认 — 间隔用 delay-4 打包, 机器最短但前沿变速。
+    # grid: uniform 的网格周期(红石刻/槽位)。1 = 对 compressed 零音频损失;
+    #       2/4 = 时序量化到 2/4 rt 换更短机器 + 更慢镜头(tick80 下 4rt=100ms
+    #       恰为社区 tick20 机器的网格)。
+    "pace":               ("uniform",    _MARCH),
+    "grid":               (1,            _MARCH),
     # ── §E cam-follow tuning([跟拍]相机锚点微调, line 形态; inplace 无相机) ──
     "cam_height":         (10,           _LINE),   # 相机悬停高度 (start_y + cam_height)
     "cam_back":           (6.0,          _LINE),   # 相机沿作者系 -X 退后量

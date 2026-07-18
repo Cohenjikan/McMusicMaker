@@ -746,6 +746,14 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     nnote = sum(1 for vv in occ.values() if vv.startswith("minecraft:note_block"))
     # dropped notes MUST surface in WARNINGS (not just the stat field); >10% -> strong prefix
     warnings = list(plan.warnings)
+    # 匀速 fork: uniform pacing is NOT implemented for multilane yet — the schema
+    # default is pace=uniform, so say so honestly instead of silently building the
+    # legacy compressed skeleton and letting the user expect a constant-speed front.
+    if str(params.get("pace") or "uniform").lower() == "uniform":
+        warnings.insert(0, (
+            "multilane builds the legacy COMPRESSED (variable-speed) skeleton — "
+            "pace=uniform 匀速跑道 is swave/straight/custom only for now; use "
+            "--form straight for constant-speed filming"))
     if dropped > 0:
         placed = sum(lane_counts)
         total = placed + dropped

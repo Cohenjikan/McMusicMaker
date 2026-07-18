@@ -252,6 +252,14 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
         if "fire_ticks" in stats:
             print(f"  fire ticks     : {stats['fire_ticks']}")
     elif args.form in ("swave", "straight", "custom"):
+        if "pace" in stats:
+            if stats["pace"] == "uniform":
+                g = stats.get("grid_rt") or 1
+                mps = {1: 80, 2: 40, 3: 27, 4: 20}.get(g, "?")
+                print(f"  pacing         : uniform 匀速跑道 (grid {g} rt/slot, "
+                      f"{stats.get('pad_cells', 0)} rest cells, front ~{mps} m/s @tick80)")
+            else:
+                print(f"  pacing         : compressed (legacy variable-speed packing)")
         if "cells" in stats:
             print(f"  cells          : {stats['cells']}")
         if "turns" in stats:
@@ -352,6 +360,17 @@ def build_argparser():
     p.add_argument("--params", default=None,
                    help="optional designer JSON (file path). Omitted = all defaults "
                         "for --form.")
+    p.add_argument("--pace", default=None, choices=["uniform", "compressed"],
+                   help="marching-pulse pacing (swave/straight/custom). uniform="
+                        "匀速跑道: constant front speed, rests take space — the fork "
+                        "default, best for filming. compressed=legacy delay-4 gap "
+                        "packing: shortest machine, variable speed. Omitted = params "
+                        "value or the schema default (uniform).")
+    p.add_argument("--grid", type=int, default=None, choices=[1, 2, 3, 4],
+                   help="uniform pacing step in redstone-ticks per slot. 1=loss-free "
+                        "(default); 2/4 quantize onsets to 2/4 rt to halve/quarter "
+                        "machine length and slow the camera (tick80: 80/40/20 m/s "
+                        "for grid 1/2/4).")
     p.add_argument("--form", required=True,
                    choices=["inplace", "swave", "straight", "custom", "multilane"],
                    help="machine form. swave=S-wave (default product), straight=long "
@@ -464,6 +483,17 @@ def run(args):
     # carry the display name through (params.song is a display field)
     if not params.get("song") or params.get("song") == "untitled":
         params["song"] = args.name
+
+    # 2b. CLI pacing overrides (匀速 fork) — marching-pulse forms only.
+    if args.pace is not None or args.grid is not None:
+        if args.form not in ("swave", "straight", "custom"):
+            raise RedPianoError(
+                f"--pace/--grid apply to swave/straight/custom only (form="
+                f"{args.form}: inplace has no pulse; multilane is compressed-only for now)")
+        if args.pace is not None:
+            params["pace"] = args.pace
+        if args.grid is not None:
+            params["grid"] = args.grid
 
     # 3. unimplemented designer features — fail fast before any block is emitted.
     assert_supported(params, args.form)

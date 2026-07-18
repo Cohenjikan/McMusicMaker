@@ -100,6 +100,16 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # designer track_sep override (DERIVED default -> None -> use poc PATH_ZSPAN+3)
     track_sep_override = _get(params, "track_sep", None)
 
+    # ── pacing(匀速 fork): uniform = 匀速跑道(默认), compressed = 旧 delay-4 打包 ──
+    pace = str(_get(params, "pace", "uniform")).lower()
+    if pace not in ("uniform", "compressed"):
+        raise RedPianoError(
+            f"pace must be 'uniform' or 'compressed', got {pace!r}")
+    grid_rt = int(_get(params, "grid", 1))   # ⚠ 命名避开下方的 core.Grid() 实例
+    if pace == "uniform" and grid_rt not in (1, 2, 3, 4):
+        raise RedPianoError(
+            f"grid must be 1..4 (redstone-ticks per uniform slot), got {grid_rt}")
+
     if XRUN < 2:
         raise RedPianoError("XRUN must be >= 2")
     if ZMAX < 2:
@@ -120,6 +130,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     for n in notes:
         if n.get("vel", 1.0) >= 0.04:
             bycell[round(n["t"] / U)].append(n)
+
+    # uniform pacing with grid>1: quantize cell ticks onto the grid BEFORE voice
+    # assignment, merging colliding cells (CELL_CAP dropping applies as usual).
+    # grid=1 is the identity — zero audio difference vs pace=compressed.
+    if pace == "uniform" and grid_rt > 1:
+        merged = defaultdict(list)
+        for tk, grp in bycell.items():
+            merged[int(round(tk / grid_rt)) * grid_rt].extend(grp)
+        bycell = merged
 
     # all notes below the velocity floor -> bycell empty; trig/cells/pos would be []
     # and later pos[0]/trig[-1] raise a bare IndexError. Fail loudly instead so
@@ -182,28 +201,48 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                     meldur[tick] = md if tick not in meldur else max(meldur[tick], md)
         dropped += max(0, len(g) - CELL_CAP)
 
-    # ── 2. shared timeline cells[]: trigger-tick union -> unique skeleton (poc/48 L168)
+    # ── 2. shared timeline cells[]: trigger-tick union -> unique skeleton ───────
+    #   pace=uniform(匀速跑道, fork default): every grid step emits a CONSTANT
+    #   [rep(grid), slot] pair — slot = trig if a chord lands on that grid line,
+    #   else a "pad" cell (conductive base, no notes). The pulse front covers
+    #   2 blocks per `grid` redstone-ticks EVERYWHERE (rests take space instead
+    #   of delay-4 packing), so arrival_gt is linear in path distance and the
+    #   §E cam-follow schedule is constant-speed — 匀速素材 comes for free.
+    #   grid=1 keeps every trig on its original redstone-tick: loss-free.
+    #   pace=compressed(upstream default): delay-4 gap packing, shortest machine,
+    #   variable front speed (10–80 m/s @tick80) — kept verbatim below.
     trig = sorted(bycell)
-    OFFSET = 1 if trig and trig[0] == 0 else 0
-    cells = []
-    prev = 0
-    for T0 in trig:
-        T = T0 + OFFSET
-        G = T - prev
-        reps = [4] * (G // 4) + ([G % 4] if G % 4 else [])
-        if not reps:
-            reps = [1]
-        for d in reps:
-            cells.append(("rep", d))
-        cells.append(("trig", T0))
-        prev = T
+    if pace == "uniform":
+        OFFSET = grid_rt if trig and trig[0] == 0 else 0
+        trigset = set(trig)
+        cells = []
+        last_step = (trig[-1] + OFFSET) // grid_rt
+        for k in range(1, last_step + 1):
+            cells.append(("rep", grid_rt))
+            T0 = k * grid_rt - OFFSET
+            cells.append(("trig", T0) if T0 in trigset else ("pad", None))
+    else:
+        OFFSET = 1 if trig and trig[0] == 0 else 0
+        cells = []
+        prev = 0
+        for T0 in trig:
+            T = T0 + OFFSET
+            G = T - prev
+            reps = [4] * (G // 4) + ([G % 4] if G % 4 else [])
+            if not reps:
+                reps = [1]
+            for d in reps:
+                cells.append(("rep", d))
+            cells.append(("trig", T0))
+            prev = T
 
-    # timing self-check (poc/48 L184-189) — preserved verbatim.
+    # timing self-check (poc/48 L184-189) — preserved; "pad" cells carry no tick
+    # and are skipped (they are 0-delay pass-throughs like turn bridges).
     cum = 0
     for kind, v in cells:
         if kind == "rep":
             cum += v
-        else:
+        elif kind == "trig":
             if cum != v + OFFSET:
                 raise RedPianoError(
                     f"timeline misalignment @tick {v}: cum={cum} != {v + OFFSET}")
@@ -386,6 +425,11 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                 rblock = f"minecraft:repeater[facing={RFACE[md]},delay={v}]"
                 grid.put(out, x, Y, z, rblock)
                 rep_kill_records.append((arr[i], x, Y, z, rblock))
+            elif kind == "pad":
+                # uniform-pacing rest slot: conductive pass-through (lamp base +
+                # PASS spine, what chord3 emits with no notes). Not a repeater —
+                # no kill record; not a trig — no playhead/schedule entry.
+                chord3(out, x, z, md, [None, None, None])
             else:
                 vals = [trackvoice[t][p].get(v) for p in range(3)]
                 chord3(out, x, z, md, vals)
@@ -983,6 +1027,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     # ── 9. stats ───────────────────────────────────────────────────────────────
     n_rep = sum(1 for kind, _ in cells if kind == "rep")
     n_trig = sum(1 for kind, _ in cells if kind == "trig")
+    n_pad = sum(1 for kind, _ in cells if kind == "pad")
     nplaced = sum(len(trackvoice[t][p]) for t in range(n_tracks) for p in range(3))
     song_s = (trig[-1] - trig[0]) * U if len(trig) > 1 else 0.0
 
@@ -1014,6 +1059,12 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "z_span": maxz - minz + 1,
         "repeaters": n_rep,
         "trigger_cells": n_trig,
+        "pad_cells": n_pad,
+        # pacing (匀速 fork): uniform = constant-speed runway; front speed is
+        # 2 blocks per grid redstone-ticks — at tick80 that is 80/40/20 m/s for
+        # grid 1/2/4. compressed = legacy variable-speed gap packing.
+        "pace": pace,
+        "grid_rt": grid_rt if pace == "uniform" else None,
         "tracks": n_tracks,
         "mel_cut_cells": len(mel_ticks),
         "cut_events": len(cut_events_sorted),
