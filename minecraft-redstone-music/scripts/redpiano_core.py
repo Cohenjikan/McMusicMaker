@@ -1382,6 +1382,29 @@ KILL_WIN_FWD = 80      # ...and this many gt past the bucket's ELAPSED end (fron
 KILL_RESTORE_DELAY_GT = 4  # restore the punched repeaters this many game-ticks later
 
 
+def auto_grid(ticks, candidates=(4, 3, 2), on_grid_min=0.95):
+    """按节奏选最适配的 uniform 网格周期 P(红石刻)— 匀速 fork 的 grid="auto"。
+
+    不追求某个恒定镜头速度, 只看歌自己的节奏坐在哪个网格上: 取 candidates 里
+    最大的 P, 要求 (a) 零合并 — 不能有两个本来不同时的 onset 被并到同一网格线
+    (听感上节奏塌成同击), 且 (b) >= on_grid_min 比例的 onset 本来就精确落在
+    P 网格上(其余 onset 量化位移 <= P/2 rt)。都不满足 -> 落回 1(无损)。
+
+    Returns (P, fit) — fit = {"grid", "on_grid", "merges", "max_shift_rt"}
+    for the build report (透明可解释, 用户能看懂为什么选了这个网格)。"""
+    ticks = sorted({int(t) for t in ticks})
+    n = max(1, len(ticks))
+    for P in sorted(candidates, reverse=True):
+        q = [int(round(t / P)) * P for t in ticks]
+        merges = len(q) - len(set(q))
+        on = sum(1 for t in ticks if t % P == 0) / n
+        shifts = [abs(t - qq) for t, qq in zip(ticks, q)]
+        if merges == 0 and on >= on_grid_min:
+            return P, {"grid": P, "on_grid": round(on, 4), "merges": 0,
+                       "max_shift_rt": max(shifts) if shifts else 0}
+    return 1, {"grid": 1, "on_grid": 1.0, "merges": 0, "max_shift_rt": 0}
+
+
 def arrival_gt_by_cell(cells):
     """Given the shared-timeline ``cells`` (list of ('rep', delay) | ('trig', tick)),
     return ``arr`` where ``arr[i]`` = the pulse arrival at cell i in GAME-TICKS =

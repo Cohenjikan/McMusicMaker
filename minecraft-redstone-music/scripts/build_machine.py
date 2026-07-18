@@ -245,6 +245,23 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
           f"(notes nudged +/-12 to fit sample range)")
     print(f"  forceload      : {stats.get('forceload_chunks', '?')} chunks")
 
+    def _print_pacing(stats):
+        if "pace" not in stats:
+            return
+        if stats["pace"] == "uniform":
+            g = stats.get("grid_rt") or 1
+            mps = {1: 80, 2: 40, 3: 27, 4: 20}.get(g, "?")
+            fit = stats.get("grid_fit") or {}
+            sfx = ""
+            if fit.get("auto"):
+                sfx = (f"; grid=auto -> {g} ({fit.get('on_grid', 0) * 100:.0f}% "
+                       f"on-grid, {fit.get('merges', 0)} merges, max shift "
+                       f"{fit.get('max_shift_rt', 0)} rt)")
+            print(f"  pacing         : uniform 匀速跑道 (grid {g} rt/slot, "
+                  f"{stats.get('pad_cells', 0)} rest cells, front ~{mps} m/s @tick80{sfx})")
+        else:
+            print(f"  pacing         : compressed (legacy variable-speed packing)")
+
     # form-specific lines
     if args.form == "inplace":
         if "palette_size" in stats:
@@ -252,14 +269,7 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
         if "fire_ticks" in stats:
             print(f"  fire ticks     : {stats['fire_ticks']}")
     elif args.form in ("swave", "straight", "custom"):
-        if "pace" in stats:
-            if stats["pace"] == "uniform":
-                g = stats.get("grid_rt") or 1
-                mps = {1: 80, 2: 40, 3: 27, 4: 20}.get(g, "?")
-                print(f"  pacing         : uniform 匀速跑道 (grid {g} rt/slot, "
-                      f"{stats.get('pad_cells', 0)} rest cells, front ~{mps} m/s @tick80)")
-            else:
-                print(f"  pacing         : compressed (legacy variable-speed packing)")
+        _print_pacing(stats)
         if "cells" in stats:
             print(f"  cells          : {stats['cells']}")
         if "turns" in stats:
@@ -267,6 +277,7 @@ def _print_report(args, notes, stats, deployed_to, profile=None):
         if "x_span" in stats:
             print(f"  x span         : {stats['x_span']} blocks")
     elif args.form == "multilane":
+        _print_pacing(stats)
         if "cells" in stats:
             print(f"  cells          : {stats['cells']}")
         if "lanes" in stats:
@@ -366,11 +377,12 @@ def build_argparser():
                         "default, best for filming. compressed=legacy delay-4 gap "
                         "packing: shortest machine, variable speed. Omitted = params "
                         "value or the schema default (uniform).")
-    p.add_argument("--grid", type=int, default=None, choices=[1, 2, 3, 4],
-                   help="uniform pacing step in redstone-ticks per slot. 1=loss-free "
-                        "(default); 2/4 quantize onsets to 2/4 rt to halve/quarter "
-                        "machine length and slow the camera (tick80: 80/40/20 m/s "
-                        "for grid 1/2/4).")
+    p.add_argument("--grid", default=None, choices=["auto", "1", "2", "3", "4"],
+                   help="uniform pacing step in redstone-ticks per slot. auto(默认)="
+                        "按节奏最适配: pick the largest of 4/3/2 that the song's "
+                        "onsets already sit on (zero merges, >=95%% on-grid), else "
+                        "fall back to 1 (loss-free). 1..4 = force a period "
+                        "(tick80 front speed ~80/40/27/20 m/s for 1/2/3/4).")
     p.add_argument("--form", required=True,
                    choices=["inplace", "swave", "straight", "custom", "multilane"],
                    help="machine form. swave=S-wave (default product), straight=long "
@@ -484,16 +496,16 @@ def run(args):
     if not params.get("song") or params.get("song") == "untitled":
         params["song"] = args.name
 
-    # 2b. CLI pacing overrides (匀速 fork) — marching-pulse forms only.
+    # 2b. CLI pacing overrides (匀速 fork) — every marching-pulse form, incl. multilane.
     if args.pace is not None or args.grid is not None:
-        if args.form not in ("swave", "straight", "custom"):
+        if args.form == "inplace":
             raise RedPianoError(
-                f"--pace/--grid apply to swave/straight/custom only (form="
-                f"{args.form}: inplace has no pulse; multilane is compressed-only for now)")
+                "--pace/--grid apply to the marching-pulse forms "
+                "(swave/straight/custom/multilane) — inplace has no pulse")
         if args.pace is not None:
             params["pace"] = args.pace
         if args.grid is not None:
-            params["grid"] = args.grid
+            params["grid"] = args.grid if args.grid == "auto" else int(args.grid)
 
     # 3. unimplemented designer features — fail fast before any block is emitted.
     assert_supported(params, args.form)

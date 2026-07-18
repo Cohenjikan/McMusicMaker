@@ -31,7 +31,10 @@ description: >-
 >
 > 对 agent 的三条硬指令:
 > 1. 用户没有明确指定形态时,**默认 `--form straight`**(不是 inplace/swave);
->    pace 不用传,schema 默认已是 uniform grid=1(对 compressed 零音频损失)。
+>    pace/grid 都不用传:schema 默认 pace=uniform + **grid=auto(按节奏最适配)**——
+>    自动选歌自己坐得上的最大网格(零合并 + ≥95% 在网,取 4/3/2 中最大),
+>    选不动就落回 grid=1(对 compressed 零音频损失)。**不追求某个恒定镜头速度,
+>    速度是网格的结果**;用户明确要求时才 `--grid 1..4` 强制。
 > 2. dry-run 报告里把 `pacing`/`cells`/`forceload` 三行**原样念给用户**,
 >    超 soft cap 时提示三个选项:`--grid 2/4`(量化换半长/四分之一长)、
 >    `--pace compressed`(回退旧行为)、换 `swave` 折叠。**不要自作主张回退**——
@@ -39,9 +42,10 @@ description: >-
 > 3. 进游戏实测后,把结果(TPS/断音/相机是否匀速)记回 `docs/history/DEVLOG.md`。
 >
 > 上游(压缩默认)在 `C:\Users\Cohen\Desktop\McMusicMaker`;本 fork 改动集中在
-> `generators/swave.py` §2 时间轴、`params_schema.py`(pace/grid 字段)、
-> `build_machine.py`(--pace/--grid 旗标)。multilane 暂不支持 uniform(会在
-> WARNINGS 里声明)。
+> `generators/swave.py` 与 `generators/multilane.py` 的 §2 时间轴、
+> `params_schema.py`(pace/grid 字段)、`build_machine.py`(--pace/--grid 旗标)、
+> `redpiano_core.py`(auto_grid 节奏适配)。**multilane 同样支持 uniform——
+> 它是本产品核心用户的核心形态,实测优先测它。**
 
 ## 两条腿:先判断走哪条路 (READ FIRST)
 
@@ -246,7 +250,7 @@ below, then run the build command in step 4.
    > | `swave` | S形折线型 | 脉冲沿 S 形巡游、灯流好看;直线太长时的折叠方案 |
    > | `inplace` | 原地紧凑型 | 占地小、不随歌曲变长,只想听不想拍时的省心选 |
    > | `custom` | 自定义路线 | 用户自己在设计器里画走线 |
-   > | `multilane` | 多轨并行型 | 每个声部一条并行轨道,列对齐壮观(暂不支持匀速) |
+   > | `multilane` | 多轨并行型 | 每个声部一条并行轨道,列对齐壮观;**核心形态,同样匀速** |
    >
    > 另:根 README 的「开场怎么说」小节提供了 5 条可复制的开场提示词,用户很可能照着它开场——
    > **提示词里已给出的信息(版本/存档路径/意图)不要再重复问**。
@@ -534,8 +538,9 @@ authoritative reference — **don't re-derive them here**:
 - **`inplace`** — in-place palette, tiny footprint, **user-verified "特别好"**; the
   upstream default, for listening-only sessions (no pulse, nothing to film).
 - **`custom` / `multilane`** — drawn waypoint route / one lane per voice. All v1,
-  geometry-confirmed; both need a designer `--params` JSON. multilane is compressed-only
-  (a WARNING says so) — don't offer it for 匀速素材.
+  geometry-confirmed. **multilane fully supports uniform pacing** (all lanes + signal
+  tracks share the one constant-speed skeleton) — it is the core users' core form;
+  test it first. `custom`/`multilane` designer `--params` JSON as before.
 
 → **Capability matrix + pipeline + known constraints:** [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
 (authoritative single source of truth; supersedes DEVLOG). Multi-instrument uses the 103-block

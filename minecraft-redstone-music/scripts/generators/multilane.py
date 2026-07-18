@@ -63,6 +63,20 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     BASE = _get(params, "base_block", "minecraft:stone")
     name = _get(params, "song", None) or ns
     melcap_s = float(_get(params, "melcap_s", MELCAP_S_DEFAULT))
+    # ── pacing(匀速 fork): uniform = 匀速跑道(默认), compressed = 旧 delay-4 打包 ──
+    pace = str(_get(params, "pace", "uniform")).lower()
+    if pace not in ("uniform", "compressed"):
+        raise RedPianoError(
+            f"pace must be 'uniform' or 'compressed', got {pace!r}")
+    grid_param = _get(params, "grid", "auto")   # "auto"(默认, 按节奏选) 或 1..4
+    if isinstance(grid_param, str) and grid_param.strip().lower() == "auto":
+        grid_param = "auto"
+    else:
+        grid_param = int(grid_param)
+        if pace == "uniform" and grid_param not in (1, 2, 3, 4):
+            raise RedPianoError(
+                f"grid must be 'auto' or 1..4 (redstone-ticks per uniform slot), "
+                f"got {grid_param}")
     MAXPOLY = int(_get(params, "max_poly", 7))
     lane_dz = int(_get(params, "lane_dz", 2))
     LANES = _get(params, "lane_offsets", None) or [
@@ -82,6 +96,23 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     if not bycell:
         # notes 非空但全部 vel<0.04 -> bycell 为空, 会静默生成 0 音符空机器. 硬失败.
         raise RedPianoError(f"{len(notes)} 个音符全部低于力度阈值 0.04 — nothing to build")
+    # uniform pacing: resolve grid (auto = 按节奏最适配, 见 core.auto_grid) and
+    # quantize cell ticks onto it BEFORE lane assignment (colliding cells merge;
+    # the NLANE polyphony cap drops as usual). grid=1 is loss-free vs compressed.
+    grid_fit = None
+    if pace == "uniform":
+        if grid_param == "auto":
+            grid_rt, grid_fit = core.auto_grid(sorted(bycell))
+            grid_fit["auto"] = True
+        else:
+            grid_rt = grid_param
+        if grid_rt > 1:
+            merged = defaultdict(list)
+            for tk, grp in bycell.items():
+                merged[int(round(tk / grid_rt)) * grid_rt].extend(grp)
+            bycell = merged
+    else:
+        grid_rt = 1
     trig = sorted(bycell)
     lane_voices = [dict() for _ in range(NLANE)]
     lane_counts = [0] * NLANE
@@ -121,25 +152,39 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
                     _mel_best_dur[tk] = md
                     mel_event_of[tk] = r.sound_event
 
-    # 2. shared timeline cells[] (rep delays + trig) — identical to swave/47/48
-    OFFSET = 1 if trig and trig[0] == 0 else 0
-    cells = []
-    prev = 0
-    for T0 in trig:
-        T = T0 + OFFSET
-        G = T - prev
-        reps = [4] * (G // 4) + ([G % 4] if G % 4 else [])
-        if not reps:
-            reps = [1]
-        for d in reps:
-            cells.append(("rep", d))
-        cells.append(("trig", T0))
-        prev = T
+    # 2. shared timeline cells[] — same pacing branch as swave (§2 there):
+    #    uniform(默认) = constant [rep(grid), slot] pairs, rests become "pad"
+    #    cells (conductive BASE, no note) — every lane + signal track share the
+    #    one skeleton, so the whole lane band marches at constant speed;
+    #    compressed = legacy delay-4 gap packing (variable front speed).
+    if pace == "uniform":
+        OFFSET = grid_rt if trig and trig[0] == 0 else 0
+        trigset = set(trig)
+        cells = []
+        last_step = (trig[-1] + OFFSET) // grid_rt
+        for k in range(1, last_step + 1):
+            cells.append(("rep", grid_rt))
+            T0 = k * grid_rt - OFFSET
+            cells.append(("trig", T0) if T0 in trigset else ("pad", None))
+    else:
+        OFFSET = 1 if trig and trig[0] == 0 else 0
+        cells = []
+        prev = 0
+        for T0 in trig:
+            T = T0 + OFFSET
+            G = T - prev
+            reps = [4] * (G // 4) + ([G % 4] if G % 4 else [])
+            if not reps:
+                reps = [1]
+            for d in reps:
+                cells.append(("rep", d))
+            cells.append(("trig", T0))
+            prev = T
     cum = 0
     for kind, v in cells:
         if kind == "rep":
             cum += v
-        else:
+        elif kind == "trig":
             if cum != v + OFFSET:
                 raise RedPianoError(f"timeline misalignment @tick {v}: cum={cum} != {v + OFFSET}")
     used_trig = [v for k, v in cells if k == "trig"]
@@ -746,14 +791,6 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     nnote = sum(1 for vv in occ.values() if vv.startswith("minecraft:note_block"))
     # dropped notes MUST surface in WARNINGS (not just the stat field); >10% -> strong prefix
     warnings = list(plan.warnings)
-    # 匀速 fork: uniform pacing is NOT implemented for multilane yet — the schema
-    # default is pace=uniform, so say so honestly instead of silently building the
-    # legacy compressed skeleton and letting the user expect a constant-speed front.
-    if str(params.get("pace") or "uniform").lower() == "uniform":
-        warnings.insert(0, (
-            "multilane builds the legacy COMPRESSED (variable-speed) skeleton — "
-            "pace=uniform 匀速跑道 is swave/straight/custom only for now; use "
-            "--form straight for constant-speed filming"))
     if dropped > 0:
         placed = sum(lane_counts)
         total = placed + dropped
@@ -771,6 +808,10 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         "forceload_chunks": NCH,
         "duration_s": round(duration_s, 1),
         "cells": len(cells),
+        "pad_cells": sum(1 for k, _ in cells if k == "pad"),
+        "pace": pace,
+        "grid_rt": grid_rt if pace == "uniform" else None,
+        "grid_fit": grid_fit,
         "lanes": NLANE,
         "signal_tracks": len(SIGS),
         "lane_counts": lane_counts,

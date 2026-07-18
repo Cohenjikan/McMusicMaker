@@ -105,10 +105,15 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
     if pace not in ("uniform", "compressed"):
         raise RedPianoError(
             f"pace must be 'uniform' or 'compressed', got {pace!r}")
-    grid_rt = int(_get(params, "grid", 1))   # ⚠ 命名避开下方的 core.Grid() 实例
-    if pace == "uniform" and grid_rt not in (1, 2, 3, 4):
-        raise RedPianoError(
-            f"grid must be 1..4 (redstone-ticks per uniform slot), got {grid_rt}")
+    grid_param = _get(params, "grid", "auto")   # "auto"(默认, 按节奏选) 或 1..4
+    if isinstance(grid_param, str) and grid_param.strip().lower() == "auto":
+        grid_param = "auto"
+    else:
+        grid_param = int(grid_param)
+        if pace == "uniform" and grid_param not in (1, 2, 3, 4):
+            raise RedPianoError(
+                f"grid must be 'auto' or 1..4 (redstone-ticks per uniform slot), "
+                f"got {grid_param}")
 
     if XRUN < 2:
         raise RedPianoError("XRUN must be >= 2")
@@ -131,14 +136,25 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         if n.get("vel", 1.0) >= 0.04:
             bycell[round(n["t"] / U)].append(n)
 
-    # uniform pacing with grid>1: quantize cell ticks onto the grid BEFORE voice
-    # assignment, merging colliding cells (CELL_CAP dropping applies as usual).
-    # grid=1 is the identity — zero audio difference vs pace=compressed.
-    if pace == "uniform" and grid_rt > 1:
-        merged = defaultdict(list)
-        for tk, grp in bycell.items():
-            merged[int(round(tk / grid_rt)) * grid_rt].extend(grp)
-        bycell = merged
+    # uniform pacing: resolve the grid period FIRST — grid="auto" 只看节奏最适配
+    # (core.auto_grid picks the largest P∈{4,3,2} the song's own onsets already sit
+    # on; nothing fits -> 1 = loss-free), 不追求某个恒定镜头速度. Then quantize cell
+    # ticks onto the grid BEFORE voice assignment (colliding cells merge; CELL_CAP
+    # dropping applies as usual). grid=1 is the identity vs pace=compressed.
+    grid_fit = None
+    if pace == "uniform":
+        if grid_param == "auto":
+            grid_rt, grid_fit = core.auto_grid(sorted(bycell))
+            grid_fit["auto"] = True
+        else:
+            grid_rt = grid_param
+        if grid_rt > 1:
+            merged = defaultdict(list)
+            for tk, grp in bycell.items():
+                merged[int(round(tk / grid_rt)) * grid_rt].extend(grp)
+            bycell = merged
+    else:
+        grid_rt = 1   # ⚠ 命名避开下方的 core.Grid() 实例
 
     # all notes below the velocity floor -> bycell empty; trig/cells/pos would be []
     # and later pos[0]/trig[-1] raise a bare IndexError. Fail loudly instead so
@@ -1065,6 +1081,7 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
         # grid 1/2/4. compressed = legacy variable-speed gap packing.
         "pace": pace,
         "grid_rt": grid_rt if pace == "uniform" else None,
+        "grid_fit": grid_fit,
         "tracks": n_tracks,
         "mel_cut_cells": len(mel_ticks),
         "cut_events": len(cut_events_sorted),
