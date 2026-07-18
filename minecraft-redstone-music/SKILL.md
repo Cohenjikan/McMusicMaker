@@ -22,30 +22,31 @@ description: >-
 
 # Minecraft Redstone Music (Family A — RedPiano)
 
-> ## ⚡ FORK NOTE — uniform-straight 实验分支 (agent 必读)
+> ## ⚡ 匀速跑道 = 正式默认 (uniform pacing, agent 必读)
 >
-> 本 fork 的**默认形态 = `straight`(直线型)+ `pace=uniform`(匀速跑道,grid=1)**,
-> 用于两件事:① 产出**匀速素材**(脉冲前沿/跟拍相机全程恒速,对齐社区大佬视频的观感);
-> ② **重验上游的 forceload/TPS 红线** —— 上游为省地皮把间隔用 delay-4 打包(变速),
-> 本 fork 故意不压缩,休止占格,机器更长,专门看"过载=断音"的旧结论今天还成不成立。
+> **默认 = `--form straight` + `pace=uniform` + `grid=auto`**。脉冲前沿与跟拍相机
+> 全程恒速(匀速素材),休止占格不压缩;multilane/swave/custom 同样匀速,
+> **multilane 是核心用户的核心形态**。旧的变速打包保留为 `--pace compressed`
+> (占地最小的兼容选项,不再是默认)。
 >
-> 对 agent 的三条硬指令:
-> 1. 用户没有明确指定形态时,**默认 `--form straight`**(不是 inplace/swave);
->    pace/grid 都不用传:schema 默认 pace=uniform + **grid=auto(按节奏最适配)**——
->    自动选歌自己坐得上的最大网格(零合并 + ≥95% 在网,取 4/3/2 中最大),
->    选不动就落回 grid=1(对 compressed 零音频损失)。**不追求某个恒定镜头速度,
->    速度是网格的结果**;用户明确要求时才 `--grid 1..4` 强制。
+> 对 agent 的硬指令:
+> 1. 用户没有明确指定形态时,**默认 `--form straight`**;pace/grid 都不用传:
+>    schema 默认 uniform + grid=auto——按节奏最适配,自动选歌自己坐得上的最大
+>    网格(零合并 + ≥95% 在网,取 4/3/2 中最大),选不动就落回 grid=1(对
+>    compressed 零音频损失)。**速度是网格的结果,不追求恒定值**;`--grid 1..4`
+>    强制指定会牺牲节奏精度(量化),要向用户说明这笔交换。
 > 2. dry-run 报告里把 `pacing`/`cells`/`forceload` 三行**原样念给用户**,
->    超 soft cap 时提示三个选项:`--grid 2/4`(量化换半长/四分之一长)、
->    `--pace compressed`(回退旧行为)、换 `swave` 折叠。**不要自作主张回退**——
->    这个 fork 的实验目的就是硬装直线机看会不会炸。
-> 3. 进游戏实测后,把结果(TPS/断音/相机是否匀速)记回 `docs/history/DEVLOG.md`。
+>    超 soft cap 时给四个选项:`--grid 2/4`(量化换更短)、换 `swave` 折叠、
+>    `--force-cap` 硬装、`--pace compressed`(最后手段)。
+> 3. 已知边界:**手动** grid=2/4 的量化可能把两个旋律音挤进 min_cut 间隔,
+>    构建期会洪亮报错(cut_delay floor >= gap)——这时改 `--grid 1` 或 auto,
+>    不是 bug。grid=auto 因零合并门槛天然避开此坑。
+> 4. 进游戏实测后,把结果(TPS/断音/相机是否匀速)记回 `docs/history/DEVLOG.md`。
 >
-> 上游(压缩默认)在 `C:\Users\Cohen\Desktop\McMusicMaker`;本 fork 改动集中在
-> `generators/swave.py` 与 `generators/multilane.py` 的 §2 时间轴、
+> 实现位置:`generators/swave.py` 与 `generators/multilane.py` 的 §2 时间轴、
 > `params_schema.py`(pace/grid 字段)、`build_machine.py`(--pace/--grid 旗标)、
-> `redpiano_core.py`(auto_grid 节奏适配)。**multilane 同样支持 uniform——
-> 它是本产品核心用户的核心形态,实测优先测它。**
+> `redpiano_core.py`(auto_grid 节奏适配)。发声路径与上游完全一致:真音符盒 +
+> 红石方块点火,数据包全程零 playsound(旋律截断的 stopsound 除外)。
 
 ## 两条腿:先判断走哪条路 (READ FIRST)
 
@@ -246,7 +247,7 @@ below, then run the build command in step 4.
    >
    > | 参数值 | 对中文用户说 | 一句话解释 |
    > |---|---|---|
-   > | `straight` | 直线型 | **本 fork 默认**:一条匀速跑道跑到底,拍素材首选,占地最长 |
+   > | `straight` | 直线型 | **默认**:一条匀速跑道跑到底,拍素材首选,占地最长 |
    > | `swave` | S形折线型 | 脉冲沿 S 形巡游、灯流好看;直线太长时的折叠方案 |
    > | `inplace` | 原地紧凑型 | 占地小、不随歌曲变长,只想听不想拍时的省心选 |
    > | `custom` | 自定义路线 | 用户自己在设计器里画走线 |
@@ -530,8 +531,8 @@ Five forms share one MIDI→resolve→layout→melody-cut→emit pipeline. Pick 
 the full capability table, per-form verified status, and the 6-stage pipeline are in the
 authoritative reference — **don't re-derive them here**:
 
-- **`straight`** — long constant-speed runway; **THE FORK DEFAULT** (uniform pacing,
-  filming-grade 匀速 front). Longest footprint — that stress test is the point of this fork.
+- **`straight`** — long constant-speed runway; **THE DEFAULT** (uniform pacing,
+  filming-grade 匀速 front). Longest footprint of the line forms.
 - **`swave`** — marching-pulse S-wave with the "playhead travels the line" effect;
   **tested in-game multiple times and confirmed working**. The fold-down option when a
   straight runway is too long; uniform pacing applies here too (行内匀速, U 弯瞬移).

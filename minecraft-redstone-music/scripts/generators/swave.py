@@ -274,7 +274,8 @@ def build(notes, params, imap, profile, ns, origin, out_dir, deploy_dir=None):
 
     # ── 3. melody-sustain cut plan via core scheduler (absolute mode, poc/48 L198) ─
     mel_events = [
-        (tk, meldur[tk], _event_for_cell(tk, notes, U, imap))
+        (tk, meldur[tk], _event_for_cell(tk, notes, U, imap,
+                                         grid_rt if pace == "uniform" else 1))
         for tk in sorted(meldur) if tk in used_trig_set
     ]
     # the sound_event used for the schedule key is irrelevant (the cut is event-level
@@ -1246,14 +1247,20 @@ def _layout_custom(seq, waypoints):
     return pos[:ncells], turns
 
 
-def _event_for_cell(tick, notes, U, imap):
+def _event_for_cell(tick, notes, U, imap, grid_rt=1):
     """Resolve a representative cut-instr sound event for a cell, for the
     plan_melody_cuts polyphony WARN (event-level cut shares one event). Picks the
-    longest cut-instr note quantizing to ``tick``; falls back to a sentinel event."""
+    longest cut-instr note quantizing to ``tick``; falls back to a sentinel event.
+    ``grid_rt``: uniform-pacing grid — cell ticks are grid-quantized, so the note
+    lookup must quantize the same way or off-grid notes miss and the sentinel
+    leaks into cutmel as a bogus (harmless no-op) stopsound line."""
     best = None
     best_dur = -1.0
     for n in notes:
-        if round(n["t"] / U) != tick:
+        tk = round(n["t"] / U)
+        if grid_rt > 1:
+            tk = int(round(tk / grid_rt)) * grid_rt
+        if tk != tick:
             continue
         if _instr_of(n) not in CUT_INSTR:
             continue

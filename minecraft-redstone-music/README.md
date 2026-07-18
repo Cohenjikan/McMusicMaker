@@ -1,11 +1,10 @@
-# minecraft-redstone-music — ⚡ uniform-straight 实验 fork
+# minecraft-redstone-music
 
-> **这是匀速实验分支**(上游在 `Desktop\McMusicMaker`):默认 `--form straight` +
-> `pace=uniform`(匀速跑道)。脉冲前沿与跟拍相机全程恒速,休止占格不压缩——
-> 用于产出匀速视频素材,并重验上游"机器长=过载断音"的旧红线。
-> grid 默认 **auto(按歌的节奏选最适配网格,选不动就落回 1 = 对上游零音频差异)**;
-> `--grid 1..4` 可强制,`--pace compressed` 完全回退上游行为。multilane 同样匀速。
-> 详见 SKILL.md 顶部 FORK NOTE。
+> **⚡ 匀速跑道已是正式默认**:`--form straight` + `pace=uniform` + `grid=auto`。
+> 脉冲前沿与跟拍相机全程恒速(匀速素材),休止占格不压缩;multilane 同样匀速。
+> grid=auto 按歌的节奏选最适配网格(选不动就落回 1 = 与旧行为零音频差异);
+> `--grid 1..4` 可强制(牺牲节奏精度换速度/长度),`--pace compressed` 回退旧的
+> 变速打包(占地最小)。详见 SKILL.md 顶部说明。
 
 Turn a **MIDI file** into a **Minecraft (Java) redstone-music machine**. The playable
 runtime is a **datapack + enabled `qzpno_mv` resourcepack + RedPiano mod + Fabric API**:
@@ -100,10 +99,12 @@ python scripts/build_machine.py --midi assets/demo.mid --form inplace \
 ```
 
 - `--midi` your `.mid` (a license-clean `assets/demo.mid` is bundled to smoke-test with).
-- `--form` `inplace` (tiny footprint, functionally complete, tested in-game fewer times than
-  `swave`) is a safe smoke test; **`swave`** is the recommended default for the full "playhead
-  travels the line" machine and **has been tested in-game multiple times and confirmed working**.
-  Other forms: `straight`, `custom`, `multilane` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
+- `--form` `inplace` (tiny footprint, no pulse) is a safe smoke test; **`straight`** is the
+  recommended default — a constant-speed uniform runway (pace=uniform + grid=auto), the
+  filming-grade "playhead travels the line" machine. `swave` is the fold-down option when a
+  straight runway is too long (**tested in-game multiple times and confirmed working**);
+  `multilane` (one lane per voice, also uniform) is the core users' core form.
+  Other forms: `custom` (see [SKILL.md](SKILL.md) / [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)).
 - `--ns` datapack namespace (also the scoreboard name — **pick a name you haven't used before**;
   reusing one overwrites that datapack's existing folder). `--origin X Z Y` is the world build
   origin (note the order: **X Z Y**, NOT the `X Y Z` order the in-game F3 screen shows — see
@@ -126,7 +127,7 @@ is silently redirected to a mirror the real game never reads (see
 sandbox can write reliably.
 
 ```bash
-python scripts/prepare_all.py --midi path/to/song.mid --form swave --ns mysong \
+python scripts/prepare_all.py --midi path/to/song.mid --form straight --ns mysong \
        --origin 0 0 255 --mc-version 1.21.8 \
        --world-dir "<profile>/saves/<world>/datapacks" \
        --profile-dir "<profile>" --dist dist \
