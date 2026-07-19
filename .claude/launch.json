@@ -12,6 +12,18 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8766", "--directory", "skill/designer"],
       "port": 8766
+    },
+    {
+      "name": "mrm-layout",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8801", "--directory", "minecraft-redstone-music/designer"],
+      "port": 8801
+    },
+    {
+      "name": "mrm-particle",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8802", "--directory", "minecraft-redstone-music/designer"],
+      "port": 8802
     }
   ]
 }

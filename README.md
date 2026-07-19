@@ -10,6 +10,12 @@
 [![Minecraft: Java 1.21–1.21.10](https://img.shields.io/badge/Minecraft-Java%201.21%E2%80%931.21.10-62B47A.svg?style=flat-square)](minecraft-redstone-music/docs/VERSION_TACTICS.md)
 [![Windows](https://img.shields.io/badge/交付-Windows-4B8BF5.svg?style=flat-square)](#开始前准备)
 
+<a href="docs/assets/skill_video.mp4"><img src="docs/assets/hero.gif" width="720" alt="McMusicMaker 演示"></a>
+
+**▶ [播放完整演示视频（57 秒 · 五种机型、走线设计器、命令方块编辑器）](docs/assets/skill_video.mp4)**
+
+<sub>本页所有动图与视频均为游戏内实录，未做后期合成。</sub>
+
 </div>
 
 ---
@@ -68,6 +74,17 @@ McMusicMaker 有 5 种机型。你可以自己选，也可以让 agent 分析歌
 | **自定义路线** (`custom`) | 在可视化设计器里自己画路线，让机器绕着建筑或景观行进 | 有明确造型想法、愿意自己设计路线的用户 | 需要多一步设计和导出；复杂路线应先检查是否相交或越界 |
 | **多轨并行型** (`multilane`) | 不同声部各走一条并行轨道，同一时刻的音符横向对齐 | 想展示歌曲层次、追求大型舞台效果的用户 | 最壮观，也最容易占用大量区块；长歌需要谨慎 |
 
+<div align="center">
+
+| 多轨并行型 `multilane` | S 形折线型 `swave` | 原地紧凑型 `inplace` |
+|:--:|:--:|:--:|
+| <img src="docs/assets/machine_multilane.gif" width="270" alt="多轨并行型"> | <img src="docs/assets/machine_swave.gif" width="270" alt="S 形折线型"> | <img src="docs/assets/machine_inplace.gif" width="270" alt="原地紧凑型"> |
+| 声部分轨并行，同刻音符横向对齐 | 线路折返成 S 形，脉冲沿线奔跑 | 全部音符集中在一个小型调色板 |
+
+<sub>游戏内实录。直线型与自定义路线暂无录像，形态参考上表与走线设计器。</sub>
+
+</div>
+
 拿不准时，可以直接对 agent 说：
 
 ```text
@@ -86,6 +103,14 @@ McMusicMaker 有 5 种机型。你可以自己选，也可以让 agent 分析歌
 |---|---|---|
 | [`layout_designer.html`](minecraft-redstone-music/designer/layout_designer.html) | 机器线路、形状、尺寸、折叠方式和起点，例如让线路绕着城堡或舞台行进 | 导出的线路参数 JSON |
 | [`particle_editor.html`](minecraft-redstone-music/designer/particle_editor.html) | 跟随音乐时间轴安排命令方块、粒子、烟花和其他命令，决定它们在何时、何地触发 | 导出的命令方块关键帧 JSON |
+
+<div align="center">
+
+| <img src="docs/assets/layout_designer.png" width="440" alt="走线设计器"> | <img src="docs/assets/particle_editor.png" width="440" alt="命令方块关键帧编辑器"> |
+|:--:|:--:|
+| **走线设计器**：拖动节点即可改变机器走线，实时预览尺寸与占地 | **命令方块关键帧编辑器**：像剪视频一样，在音乐时间轴上打关键帧 |
+
+</div>
 
 你不需要自己研究 JSON。对 agent 说“带我使用线路设计器”或“我想制作命令方块跟轨”，它应该指导你打开对应 HTML，等你设计完成后再接手构建。
 
