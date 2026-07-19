@@ -20,7 +20,7 @@ is bind-mounted to the real disk; **everything else is virtualized.** A write to
 `C:\Minecraft\ModrinthApp\profiles\Fabric 1.21.7\...` is transparently redirected to:
 
 ```
-%APPDATA%\Roaming\TRAE SOLO CN\VMCache\main-TRAE_SOLO-Yinli\drive\C\Minecraft\...
+%APPDATA%\Roaming\TRAE SOLO CN\VMCache\main-TRAE_SOLO-<profile>\drive\C\Minecraft\...
 ```
 
 The agent then reads that mirror back, sees its own files, and believes it succeeded.

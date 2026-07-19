@@ -128,7 +128,7 @@
 | **<曲名>_mv 资源包** `<ns>_mv.zip` | profile 的 `resourcepacks/` | **每首歌一个**, 含切片 ogg, **pack_format=64**, 手动启用 |
 | 生成的**数据包** `<ns>_redstone` | `world/datapacks/` | 切片管线自动部署 |
 | 游戏内 **`/tick rate 20`** | 默认值 | 切片按 200ms/格设计(DELAY=2); 残留 80 会快4倍 |
-| (生成端, 非玩家端) Demucs venv + ffmpeg | `C:\mc-noteblock-demo\venv-demucs\` | 跑 `add_song.py <audio> <name>` 出资源包+数据包 |
+| (生成端, 非玩家端) Demucs venv + ffmpeg | `<外部工具目录>\mc-noteblock-demo\venv-demucs\` | 跑 `add_song.py <audio> <name>` 出资源包+数据包 |
 
 ### 一句话
 - **A** = 模组 + 1 个通用资源包(qzpno_mv) + tick80, 一次装好所有歌通用。
@@ -178,7 +178,7 @@
 - **✅ `49_build_multilane.py` 已建**: 消费 `start_x/z/y`(平移)+`chord_mode=multilane`+`lane_offsets[{z,y}]`(侧视拖出的每轨相对位)+`signal_tracks`(纯中继器链拷贝, 无音符盒)+`base_block`。用户实测建出 `olkml`@2660000(OLK 7轨arch+1信号轨, 截图确认几何对)。几何=48 的中继器→强充导体→音符盒链, 每声部一条。**地板/导体统一用 base_block(不再红石灯, 用户要求)**。⚠ 直线长曲 forceload 634>360 易过载, 解药=设计器换S波折叠。start_dir 仅 +X 实装(其它方向留待)。
 - **✅ 设计器加 method 选择器**: `redpiano`(真音符盒, MIDI) | `slice`(命令方块切片, MP3/WAV, 无模组, 100%原音色)。slice 模式文件选 audio, 用 `<audio>` 实时回放驱动光标; 导出含 `method`+`audio_file`+`tick_rate:20`+`slice_note`(告诉 Claude 跑 mc-noteblock-demo 管线)。
 - **✅ 信号轨可侧视拖**: signal_tracks 加 `dy`; 侧视(Z-Y横截面)里黄色虚框可拖调 dz/dy; 侧视开关在多轨控件+信号组都有。
-- **切片管线命令(family B, 收到 method=slice 的 JSON 时跑)**: `"C:\\Users\\Cohen\\mc-noteblock-demo\\venv-demucs\\Scripts\\python.exe" add_song.py <audio> <name> [ox oz] [--dir +x|-x|+z|-z] [--lanes a,b,c]` → Demucs htdemucs_6s 6轨 → librosa onset → ffmpeg 逐音切原曲(20ms交叉淡入) → 资源包(pack_format **64**)+数据包(81), 部署到 `C:\\Users\\Cohen\\nbviz\\{resourcepacks,datapacks}`。**tick 20 / DELAY=2/cell / 无模组**。布局(form/多轨/侧视/基底/信号轨)是设计器新加、切片生成器(build_qingtian_v7)目前只做线性, 要按导出布局需扩生成器。
+- **切片管线命令(family B, 收到 method=slice 的 JSON 时跑)**: `"<外部工具目录>\\mc-noteblock-demo\\venv-demucs\\Scripts\\python.exe" add_song.py <audio> <name> [ox oz] [--dir +x|-x|+z|-z] [--lanes a,b,c]` → Demucs htdemucs_6s 6轨 → librosa onset → ffmpeg 逐音切原曲(20ms交叉淡入) → 资源包(pack_format **64**)+数据包(81), 部署到 `<外部工具目录>\\nbviz\\{resourcepacks,datapacks}`。**tick 20 / DELAY=2/cell / 无模组**。布局(form/多轨/侧视/基底/信号轨)是设计器新加、切片生成器(build_qingtian_v7)目前只做线性, 要按导出布局需扩生成器。
 - ⏳ 仍待: 47/48 读 start_dir 旋转 RFACE; 49 加 S波折叠分支(解长直线过载); slice 生成器按导出布局扩展。都用 `P.get(k,默认)` 安全读。
 
 ---
@@ -642,7 +642,7 @@ profile 层:`mods/redpiano-1.0.0.jar`(103映射, 11.6KB)、`resourcepacks/qzpno_
 ```
 
 ### 第二首歌构建记(Do You Feel It? — Chaos Chaos,2026-06-22)
-- 来源 bilibili BV1Te411u7S9 原曲(247.9s)。**下载坑**:`playurl` 端点 412 拦 yt-dlp 的 WBI 签名 → 直接打 bilibili API(自造 `buvid3/buvid4` cookie + 取 DASH 音频流 curl 下载)绕过;原始音频在桌面 `dyfi.wav`(私人用,**不入任何公开库**)。
+- 原曲(247.9s)音频另行私下获取,仅本地制作使用(**不入任何公开库**)。
 - 一条命令:`<外部工具目录>\mc-noteblock-demo\venv-demucs\Scripts\python.exe add_song.py <音频文件>.wav dyfi`(幂等跑完 分轨→onset分析→切片→资源包+数据包→部署到 nbviz 桥)。
 - 自动选轨:5 乐器轨全入(vocals/guitar/bass/drums/piano,onset 469/351/82/750/251,均过能量门)+ `other` 连续垫底。
 - 部署:`dyfi_redstone.zip`→`新的世界\datapacks\`;`dyfi_mv.zip`(44MB/1769段ogg)→profile `resourcepacks\` 并已写入 `options.txt`。(桥 `nbviz\datapacks`、`nbviz\resourcepacks` 非 junction 到本 profile,故手动 copy;songs.json 注册项 add_song 已写。)
@@ -760,7 +760,7 @@ MIDI 文件 (晴天钢琴版, 1927 音符, 已知 tempo)
 | `08_test_pulse.py` | 单轨脉冲隔离测试(诊断用) |
 | `01_transcribe.py` / `02*_make_samples*.py` / `03_build_pack.py` | 早期音频转写路线(电吉他版,已弃用,留作脉络) |
 | `07_build_scheduler.py` | 数据包游戏刻调度器路线(已弃用,见 §4-3) |
-| `gen_demo_midi.py` | 生成公有领域测试 MIDI(验证精确管线) |
+| `gen_demo_midi.py` | 生成随包原创测试 MIDI(5 声部, 验证精确管线) |
 
 > 早期"可行性/继承"分析见 `00_继承分析.md`、`01_可行性与架构.md`(红石音乐三档可行性、硬约束核实、样本库许可)。
 

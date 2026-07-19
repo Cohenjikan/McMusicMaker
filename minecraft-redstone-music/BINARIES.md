@@ -150,9 +150,9 @@ rewrites `binaries_manifest.json` (parsing `<ver>` from each filename, re-hashin
 ## Building them yourself (from the source repo)
 
 Both are produced from the **McMusicMaker source repository** (this skill folder is a packaged
-*subset* of it; the mod source and sample pipeline are **not** copied in here). The **mod jar**
-already ships prebuilt in `binaries/`; the **resourcepack** never ships and always requires this
-build step (or a `qzpno_mv.zip` you already have).
+*subset* of it; the mod source and sample pipeline are **not** copied in here). Both ship
+prebuilt: the **mod jar** in `binaries/`, the **resourcepack** as `assets/qzpno_mv.zip` (with
+embedded credits). The build steps below are only needed to rebuild or replace them yourself.
 
 ### 1. RedPiano mod jar
 - Source: `mod/redpiano/` in the source repo. It's a **Fabric/Loom** mod whose **verified default
