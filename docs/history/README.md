@@ -14,4 +14,5 @@
 | `DEVLOG.md` | 逐代 agent 的开发日记（按时间堆叠）。 |
 | `RESEARCH_break_diagnosis.md` | 播放周期性断拍的成因深挖（区块存盘 stall 冻结服务端 tick）。 |
 | `RedPiano多版本兼容-深度调研报告.md` | 多版本 API 分水岭 / 格式数字 / 工具链矩阵（D-1..D-8），当前 `VERSION_TACTICS.md` 的事实底座。 |
+| `ENB_Phase1_最小验证.md` | ENB v1.9.1 / MC 1.21.1 最小探针、源码约束、自动化结果与尚未通过的人工验收门。 |
 | `_CONSOLIDATION.md` | 一次阶段性整理记录。 |
