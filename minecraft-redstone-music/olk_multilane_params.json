@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "song": "【Animenz】One Last Kiss - 新·福音战_爱给网_aigei_com",
+  "form": "multilane",
+  "method": "redpiano",
+  "cells": 5049,
+  "sounding": 1559,
+  "XRUN": 6,
+  "ZMAX": 10,
+  "line_width_radiate": 3,
+  "fold_gap": 1,
+  "dual_track_mirror": true,
+  "base_block": "minecraft:smooth_quartz",
+  "start_x": 0,
+  "start_z": 0,
+  "start_y": 150,
+  "start_dir": "+X",
+  "chord_mode": "multilane",
+  "max_poly": 7,
+  "lane_dz": 2,
+  "lane_offsets": [
+    {
+      "z": 23,
+      "y": 3
+    },
+    {
+      "z": 26,
+      "y": 0
+    },
+    {
+      "z": 20,
+      "y": 0
+    },
+    {
+      "z": 29,
+      "y": 3
+    },
+    {
+      "z": 17,
+      "y": 3
+    },
+    {
+      "z": 14,
+      "y": 6
+    },
+    {
+      "z": 32,
+      "y": 6
+    }
+  ],
+  "signal_tracks": null,
+  "result": {
+    "X_span": 5055,
+    "Z_width": 39,
+    "compression": 1,
+    "turns": 0,
+    "forceload_chunks": 632
+  },
+  "bbox_cells": {
+    "x": [
+      0,
+      5048
+    ],
+    "z": [
+      0,
+      0
+    ]
+  },
+  "waypoints": null
+}
